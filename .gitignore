@@ -1,0 +1,11 @@
+# Arquivos de configuração OpenVPN
+*.ovpn
+
+# Certificados
+*.crt
+
+# Chaves criptográficas
+*.key
+
+# Diretório de dependências do Node.js
+node_modules/

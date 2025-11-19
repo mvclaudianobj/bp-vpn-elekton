@@ -1,0 +1,24 @@
+[
+  {
+    "id": "bcsxiolwnmi5i4kgp",
+    "name": "BP DEV UTM",
+    "username": "marcos.claudiano",
+    "ovpnFileName": "UTM-UDP4-1203",
+    "server": "200.247.39.210:1203",
+    "createdAt": "2025-11-19T04:27:49.273Z",
+    "updatedAt": "2025-11-19T04:27:49.281Z",
+    "ovpnFile": "/media/marcos/Arquivos/projetos/bp-vpn-electron/ovpn_profiles/bcsxiolwnmi5i4kgp/bcsxiolwnmi5i4kgp.ovpn",
+    "profileDir": "/media/marcos/Arquivos/projetos/bp-vpn-electron/ovpn_profiles/bcsxiolwnmi5i4kgp"
+  },
+  {
+    "id": "sonzpgspomi5idr14",
+    "name": "VPN fenix local",
+    "username": "marcos",
+    "ovpnFileName": "fenixsis-UDP4-1195",
+    "server": "192.168.3.1:1195",
+    "createdAt": "2025-11-19T04:34:57.688Z",
+    "updatedAt": "2025-11-19T04:34:57.715Z",
+    "ovpnFile": "/media/marcos/Arquivos/projetos/bp-vpn-electron/ovpn_profiles/sonzpgspomi5idr14/sonzpgspomi5idr14.ovpn",
+    "profileDir": "/media/marcos/Arquivos/projetos/bp-vpn-electron/ovpn_profiles/sonzpgspomi5idr14"
+  }
+]

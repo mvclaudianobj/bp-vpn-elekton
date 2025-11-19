@@ -1,0 +1,8 @@
+{
+  "client_id": "9048af0b-7b65-44c6-ae70-e8aac67229fb",
+  "tenant_id": "10a9f605-3852-43d4-82fa-c39fe4693c69",
+  "scope": "https://graph.microsoft.com/.default openid profile offline_access",
+  "server_api": "http://wsutm.bluepex.com:30001/publish",
+  "openvpn_config": "/media/marcos/Arquivos/projetos/bp-vpn-electron/azure_ovpn_profiles/1ut8p10jwmi5i4kgy/1ut8p10jwmi5i4kgy.ovpn",
+  "openvpn_auth_file": "/tmp/openvpn_auth.txt"
+}

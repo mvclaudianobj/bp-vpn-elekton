@@ -1,0 +1,22 @@
+directories:
+  output: dist
+  buildResources: build
+appId: com.bluepex.vpn
+productName: BluePex VPN Connections
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - renderer.js
+      - index.html
+      - config.json
+      - logo.png
+      - node_modules/**/*
+win:
+  target: nsis
+  icon: icon.ico
+linux:
+  target: AppImage
+  icon: icon.png
+  category: Network
+electronVersion: 31.7.7

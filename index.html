@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BluePex VPN Connections</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(to bottom, #007BFF, #0A162E);
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-container {
+      max-width: 500px;
+      width: 90%;
+      margin: 2rem auto;
+      padding: 2rem;
+      background-color: #0A162E;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      color: white;
+      position: relative;
+    }
+    .logo {
+      display: block;
+      margin: 0 auto 1.5rem;
+      max-width: 200px;
+      height: auto;
+    }
+    .form-check-label {
+      font-weight: bold;
+    }
+    .status {
+      margin-top: 1rem;
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      background-color: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+    .status.alert {
+      background-color: rgba(220, 53, 69, 0.2);
+      border: 1px solid #dc3545;
+    }
+    .status.success {
+      background-color: rgba(40, 167, 69, 0.2);
+      border: 1px solid #28a745;
+    }
+    .btn {
+      font-weight: bold;
+      border-radius: 5px;
+    }
+    h2 {
+      text-align: center;
+      color: #007BFF;
+      margin-bottom: 1.5rem;
+    }
+    .btn-success {
+      background-color: #007BFF;
+      border-color: #007BFF;
+    }
+    .btn-success:hover {
+      background-color: #0056b3;
+      border-color: #0056b3;
+    }
+    .btn-danger {
+      background-color: #DC3545;
+      border-color: #DC3545;
+    }
+    .btn-danger:hover {
+      background-color: #c82333;
+      border-color: #bd2130;
+    }
+    .form-control {
+      background-color: #1A2B4F;
+      border-color: #007BFF;
+      color: white;
+    }
+    .form-control:focus {
+      border-color: #007BFF;
+      box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+    }
+
+    /* Menu Hamburguer */
+    .menu-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.5rem;
+      cursor: pointer;
+      z-index: 1000;
+      padding: 5px 10px;
+      border-radius: 4px;
+      transition: background 0.3s ease;
+    }
+
+    .menu-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Modal de Configurações */
+    .config-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .config-content {
+      background: #0A162E;
+      padding: 2rem;
+      border-radius: 10px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      border: 2px solid #007BFF;
+    }
+
+    .config-section {
+      margin-bottom: 2rem;
+      padding: 1rem;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      border-left: 3px solid #007BFF;
+    }
+
+    .config-section h4 {
+      color: #007BFF;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #007BFF;
+      padding-bottom: 0.5rem;
+    }
+
+    /* Estilos para modo usuário */
+    .profiles-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 10px;
+      background-color: #1A2B4F;
+    }
+
+    .profile-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #2a2a2a;
+      border-radius: 6px;
+      font-size: 12px;
+      transition: all 0.3s ease;
+      border: 1px solid #444;
+    }
+
+    .profile-item:hover {
+      background: #333;
+      border-color: #007BFF;
+    }
+
+    .profile-item.active {
+      border-left: 4px solid #4CAF50;
+      background: linear-gradient(135deg, #2d3a4f 0%, #1A2B4F 100%);
+      border-color: #4CAF50;
+    }
+
+    .profile-info {
+      flex: 1;
+    }
+
+    .profile-name {
+      font-weight: bold;
+      color: white;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .profile-username {
+      color: #aaa;
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+
+    .profile-server {
+      color: #17a2b8;
+      font-size: 10px;
+      margin-bottom: 3px;
+    }
+
+    .profile-ovpn {
+      color: #28a745;
+      font-size: 10px;
+    }
+
+    .profile-warning {
+      color: #ffc107;
+      font-size: 10px;
+    }
+
+    .profile-actions {
+      display: flex;
+      gap: 5px;
+    }
+
+    .profile-connect, .profile-load, .profile-delete {
+      background: #555;
+      border: none;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.3s ease;
+    }
+
+    .profile-connect {
+      background: #007BFF;
+    }
+
+    .profile-connect:hover { 
+      background: #0056b3; 
+    }
+
+    .profile-load:hover { 
+      background: #2196F3; 
+    }
+
+    .profile-delete:hover { 
+      background: #f44336; 
+    }
+
+    .connection-logs {
+      display: none;
+      max-height: 120px;
+      overflow-y: auto;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #00ff00;
+      margin-top: 10px;
+    }
+
+    .log-line {
+      margin-bottom: 2px;
+      line-height: 1.3;
+    }
+
+    .profile-options {
+      margin: 15px 0;
+      padding: 12px;
+      background: #2a2a2a;
+      border-radius: 6px;
+      border-left: 3px solid #007BFF;
+    }
+
+    .user-profiles-section h4,
+    .logs-section h4 {
+      color: #007BFF;
+      font-size: 1rem;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .form-section {
+      margin-bottom: 1.5rem;
+    }
+
+    /* MODE SELECTOR LADO A LADO */
+    .mode-selector {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .mode-checkboxes {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .mode-checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .mode-checkbox-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .mode-checkbox-item.active {
+      background: rgba(0, 123, 255, 0.2);
+      border: 1px solid #007BFF;
+    }
+
+    .form-check-input:checked {
+      background-color: #007BFF;
+      border-color: #007BFF;
+    }
+
+    .btn-outline-info {
+      border-color: #17a2b8;
+      color: #17a2b8;
+    }
+
+    .btn-outline-info:hover {
+      background-color: #17a2b8;
+      border-color: #17a2b8;
+      color: white;
+    }
+
+    .ovpn-file-info {
+      background: rgba(23, 162, 184, 0.1);
+      border: 1px solid #17a2b8;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+
+    .text-info {
+      color: #17a2b8 !important;
+    }
+
+    .text-warning {
+      color: #ffc107 !important;
+    }
+
+    .text-muted {
+      color: #6c757d !important;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: #6c757d;
+      font-style: italic;
+    }
+
+    .current-config {
+      background: rgba(40, 167, 69, 0.1);
+      border: 1px solid #28a745;
+      border-radius: 6px;
+      padding: 12px;
+      margin: 10px 0;
+    }
+
+    .config-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .active-profile-badge {
+      background: #28a745;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      margin-left: 8px;
+    }
+
+    /* Scrollbar personalizado */
+    .profiles-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .profiles-list::-webkit-scrollbar-track {
+      background: #1A2B4F;
+    }
+
+    .profiles-list::-webkit-scrollbar-thumb {
+      background: #007BFF;
+      border-radius: 3px;
+    }
+
+    .profiles-list::-webkit-scrollbar-thumb:hover {
+      background: #0056b3;
+    }
+
+    .profile-credentials {
+      color: #28a745;
+      font-size: 10px;
+      margin-bottom: 2px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .checkbox-item .form-check-input {
+      margin-top: 0;
+    }
+
+    /* Responsividade */
+    @media (max-width: 576px) {
+      .mode-checkboxes {
+        flex-direction: column;
+        gap: 10px;
+      }
+      
+      .checkbox-group {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <!-- Menu Hamburguer -->
+    <button class="menu-btn" id="menuBtn" title="Configurações">⚙️</button>
+
+    <!-- Logotipo -->
+    <img src="logo.png" alt="BluePex Logo" class="logo img-fluid">
+
+    <h2>Conectar à VPN</h2>
+
+    <!-- Seleção de Modo LADO A LADO -->
+    <div class="mode-selector">
+      <div class="mode-checkboxes">
+        <div class="mode-checkbox-item" id="modeUserItem">
+          <input class="form-check-input" type="checkbox" id="modoUsuario">
+          <label class="form-check-label" for="modoUsuario">
+            🔐 Usuário/Senha
+          </label>
+        </div>
+        <div class="mode-checkbox-item" id="modeAzureItem">
+          <input class="form-check-input" type="checkbox" id="modoAzure" checked>
+          <label class="form-check-label" for="modoAzure">
+            🌐 Azure AD
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulário de Usuário (escondido por padrão) -->
+    <div id="formUsuario" style="display: none;">
+      <!-- Informação do Perfil Ativo -->
+      <div id="currentConfigInfo" class="current-config" style="display: none;">
+        <strong>🎯 Perfil Ativo:</strong> 
+        <span id="currentConfigName">Nenhum perfil selecionado</span>
+        <span class="active-profile-badge">ATIVO</span>
+      </div>
+
+      <!-- Seção de Credenciais ÚNICA -->
+      <div class="form-section">
+        <div class="mb-3">
+          <label for="userUsername" class="form-label">👤 Usuário</label>
+          <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
+        </div>
+        <div class="mb-3">
+          <label for="userPassword" class="form-label">🔒 Senha</label>
+          <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
+        </div>
+        
+        <!-- Checkbox para lembrar credenciais -->
+        <div class="mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="rememberCredentials">
+            <label class="form-check-label" for="rememberCredentials">
+              💾 Lembrar usuário e senha
+            </label>
+          </div>
+          <small class="text-muted">As credenciais são salvas de forma segura no seu computador</small>
+        </div>
+      </div>
+
+      <!-- Botões de Conexão Usuário -->
+      <div class="d-grid gap-2 mt-3">
+        <button class="btn btn-success" id="btnConectarUsuario">🔗 Conectar VPN</button>
+        <button class="btn btn-danger" id="btnDesconectarUsuario" disabled>🔴 Desconectar VPN</button>
+      </div>
+
+      <!-- Logs de Conexão -->
+      <div class="logs-section mt-3">
+        <h4>📊 Logs de Conexão</h4>
+        <div id="userLogs" class="connection-logs"></div>
+      </div>
+    </div>
+
+    <!-- Formulário Azure AD -->
+    <div id="formAzure">
+      <!-- Informação do Perfil Ativo -->
+      <div id="azureConfigInfo" class="current-config" style="display: none;">
+        <strong>🎯 Perfil Azure Ativo:</strong> 
+        <span id="azureConfigName">Nenhum perfil Azure selecionado</span>
+        <span class="active-profile-badge">ATIVO</span>
+      </div>
+
+      <div class="d-grid gap-2">
+        <button class="btn btn-success" id="btnConectarAzure">🌐 Conectar com Azure AD</button>
+        <button class="btn btn-danger" id="btnDesconectarAzure" disabled>🔴 Desconectar VPN</button>
+      </div>
+
+      <!-- Campo de status -->
+      <div class="status mt-3" id="status" style="display: none;">
+        Status: Aguardando...
+      </div>
+
+      <!-- Botão Copiar Código -->
+      <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
+        📋 Copiar Código de Verificação
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal de Configurações -->
+  <div class="config-modal" id="configModal">
+    <div class="config-content">
+      <h3>⚙️ Configurações da VPN</h3>
+      
+      <!-- Configurações OpenVPN -->
+      <div class="config-section">
+        <h4>🔐 Configuração OpenVPN - Usuário/Senha</h4>
+        <div class="mb-3">
+          <label class="form-label">Arquivo de Configuração</label>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-outline-info" id="configSelectOvpn">
+              📁 Selecionar Arquivo .ovpn
+            </button>
+            <div id="configOvpnInfo" class="ovpn-file-info" style="display: none;">
+              <strong>Arquivo selecionado:</strong> <span id="configOvpnName">Nenhum arquivo selecionado</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Perfis Salvos -->
+        <div class="user-profiles-section">
+          <h4>💾 Perfis Salvos - Usuário/Senha</h4>
+          <div id="configProfilesList" class="profiles-list">
+            <div class="empty-state">Nenhum perfil salvo</div>
+          </div>
+        </div>
+
+        <!-- Opções de Perfil LADO A LADO -->
+        <div class="profile-options">
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="configSaveProfile">
+              <label for="configSaveProfile">💾 Salvar como novo perfil</label>
+            </div>
+          </div>
+          <input type="text" id="configProfileName" placeholder="Nome do perfil (ex: VPN Escritório, Casa, Mobile)" 
+                 style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+        </div>
+      </div>
+
+      <!-- Configurações Azure -->
+      <div class="config-section">
+        <h4>🌐 Configuração Azure AD</h4>
+        <div class="mb-3">
+          <label class="form-label">Arquivo de Configuração Azure</label>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-outline-info" id="configSelectAzureOvpn">
+              📁 Selecionar Arquivo .ovpn para Azure
+            </button>
+            <div id="configAzureOvpnInfo" class="ovpn-file-info" style="display: none;">
+              <strong>Arquivo selecionado:</strong> <span id="configAzureOvpnName">Nenhum arquivo selecionado</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Perfis Azure Salvos -->
+        <div class="user-profiles-section">
+          <h4>💾 Perfis Salvos - Azure AD</h4>
+          <div id="configAzureProfilesList" class="profiles-list">
+            <div class="empty-state">Nenhum perfil Azure salvo</div>
+          </div>
+        </div>
+
+        <!-- Opções de Perfil Azure LADO A LADO -->
+        <div class="profile-options">
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="configSaveAzureProfile">
+              <label for="configSaveAzureProfile">💾 Salvar como novo perfil Azure</label>
+            </div>
+          </div>
+          <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)" 
+                 style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+        </div>
+      </div>
+
+      <!-- Ações LADO A LADO -->
+      <div class="config-actions">
+        <button class="btn btn-success flex-fill" id="configSaveBtn">💾 Salvar Configurações</button>
+        <button class="btn btn-secondary flex-fill" id="configCloseBtn">❌ Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rodapé fixo na base -->
+  <div style="
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    padding: 1rem;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.7);
+    font-weight: 300;
+    background-color: rgba(10, 22, 46, 0.8);
+    z-index: 1000;
+  ">
+    BluePex® Cybersecurity © Copyright 2025
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
