@@ -6,41 +6,52 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",       
-    "build:linux": "electron-builder --linux",  
-    "build:all": "electron-builder --win --linux" 
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --linux"
   },
   "dependencies": {
     "@azure/msal-node": "^2.0.0",
+    "@capacitor-community/electron": "^5.0.1",
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/ios": "^7.4.4",
     "axios": "^1.6.0"
   },
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "clean": "rm -f app_state.json default_profiles.json user_profiles.json azure_profiles.json",
+    "reset": "npm run clean && npm start"
+  },
   "build": {
-      "appId": "com.bluepex.vpn",
-      "productName": "BluePex VPN Connections",
-      "directories": {
-        "output": "dist"
-      },
-      "files": [
-        "main.js",
-        "preload.js",
-        "renderer.js",
-        "index.html",
-        "config.json",
-        "logo.png",
-        "node_modules/**/*"
-      ],
-      "win": {
-        "target": "nsis",
-        "icon": "icon.png" 
-      },
-      "linux": {
-        "target": "AppImage",
-        "icon": "icon.png",
-        "category": "Network"
-      }
+    "appId": "com.bluepex.vpn",
+    "productName": "BluePex VPN Connections",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "config.json",
+      "logo.png",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "icon.png",
+      "category": "Network"
     }
+  }
 }

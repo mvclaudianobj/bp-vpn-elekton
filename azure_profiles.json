@@ -1,10 +1,18 @@
 [
   {
-    "id": "1ut8p10jwmi5i4kgy",
-    "name": "EntraID Fenix",
+    "id": "2qqy6geqwmi62ka2z",
+    "name": "EntraID fenix",
     "ovpnFileName": "fenixsis-UDP4-1196",
     "server": "168.0.227.139:1196",
-    "createdAt": "2025-11-19T04:27:49.290Z",
-    "updatedAt": "2025-11-19T04:27:49.290Z"
+    "createdAt": "2025-11-19T13:59:54.641Z",
+    "updatedAt": "2025-11-19T13:59:54.641Z"
+  },
+  {
+    "id": "mcmvze9u7mi63ovhw",
+    "name": "EntraID 2 fenix",
+    "ovpnFileName": "fenixsis-UDP4-1196",
+    "server": "168.0.227.139:1196",
+    "createdAt": "2025-11-19T14:31:28.634Z",
+    "updatedAt": "2025-11-19T14:31:28.634Z"
   }
 ]
