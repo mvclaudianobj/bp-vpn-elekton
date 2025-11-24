@@ -823,6 +823,20 @@
               <div id="configOvpnInfo" class="ovpn-file-info" style="display: none;">
                 <strong>Arquivo selecionado:</strong> <span id="configOvpnName">Nenhum arquivo selecionado</span>
               </div>
+              <!-- Opções de Perfil -->
+              <div class="profile-options">
+                <div class="checkbox-group">
+                  <div class="checkbox-item">
+                    <input type="checkbox" id="configSaveProfile">
+                    <label for="configSaveProfile">💾 Salvar como novo perfil</label>
+                  </div>
+                </div>
+                <input type="text" id="configProfileName" placeholder="Nome do perfil (ex: VPN Escritório, Casa, Mobile)" 
+                       style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+              </div>
+              <button type="button" class="btn btn-success" id="configSaveUserProfile" style="display: none;">
+                💾 Salvar Perfil de Usuário
+              </button>
             </div>
           </div>
 
@@ -832,18 +846,6 @@
             <div id="configProfilesList" class="profiles-list">
               <div class="empty-state">Nenhum perfil salvo</div>
             </div>
-          </div>
-
-          <!-- Opções de Perfil -->
-          <div class="profile-options">
-            <div class="checkbox-group">
-              <div class="checkbox-item">
-                <input type="checkbox" id="configSaveProfile">
-                <label for="configSaveProfile">💾 Salvar como novo perfil</label>
-              </div>
-            </div>
-            <input type="text" id="configProfileName" placeholder="Nome do perfil (ex: VPN Escritório, Casa, Mobile)" 
-                   style="display: none; margin-top: 8px;" class="form-control form-control-sm">
           </div>
         </div>
 
@@ -859,6 +861,20 @@
               <div id="configAzureOvpnInfo" class="ovpn-file-info" style="display: none;">
                 <strong>Arquivo selecionado:</strong> <span id="configAzureOvpnName">Nenhum arquivo selecionado</span>
               </div>
+              <!-- Opções de Perfil Azure -->
+              <div class="profile-options">
+                <div class="checkbox-group">
+                  <div class="checkbox-item">
+                    <input type="checkbox" id="configSaveAzureProfile">
+                    <label for="configSaveAzureProfile">💾 Salvar como novo perfil Azure</label>
+                  </div>
+                </div>
+                <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)" 
+                       style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+              </div>
+              <button type="button" class="btn btn-success" id="configSaveAzureProfileBtn" style="display: none;">
+                💾 Salvar Perfil Azure
+              </button>
             </div>
           </div>
 
@@ -868,18 +884,6 @@
             <div id="configAzureProfilesList" class="profiles-list">
               <div class="empty-state">Nenhum perfil Azure salvo</div>
             </div>
-          </div>
-
-          <!-- Opções de Perfil Azure -->
-          <div class="profile-options">
-            <div class="checkbox-group">
-              <div class="checkbox-item">
-                <input type="checkbox" id="configSaveAzureProfile">
-                <label for="configSaveAzureProfile">💾 Salvar como novo perfil Azure</label>
-              </div>
-            </div>
-            <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)" 
-                   style="display: none; margin-top: 8px;" class="form-control form-control-sm">
           </div>
         </div>
       </div>

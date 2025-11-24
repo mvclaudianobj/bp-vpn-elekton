@@ -1,10 +1,10 @@
 {
-  "userMode": true,
-  "azureMode": false,
-  "userProfileId": "ojhoxvivgmi65nljf",
-  "azureProfileId": "mcmvze9u7mi63ovhw",
-  "username": "marcos",
-  "rememberCredentials": true,
+  "userMode": false,
+  "azureMode": true,
+  "userProfileId": "devutmmi9b20vsk38x6u",
+  "azureProfileId": "entraidmi9ba917rmjuac",
+  "username": "",
+  "rememberCredentials": false,
   "vpnPid": null,
-  "lastSaved": "2025-11-19T20:24:37.007Z"
+  "lastSaved": "2025-11-21T20:37:13.157Z"
 }

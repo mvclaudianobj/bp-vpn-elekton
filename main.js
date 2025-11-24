@@ -88,51 +88,78 @@ async function fileExists(filePath) {
 }
 
 async function loadOvnFromProfile(profileId) {
-  // Primeiro tentar no diretório de perfis normais
-  const ovpnDir = path.join(__dirname, 'ovpn_profiles');
-  const profileDir = path.join(ovpnDir, profileId);
-  const ovpnFilePath = path.join(profileDir, `${profileId}.ovpn`);
+  console.log(`🔍 Iniciando busca por arquivo OVPN para perfil: ${profileId}`);
   
-  console.log(`🔍 Procurando arquivo OVPN para perfil: ${profileId}`);
-  console.log(`📁 Caminho procurado: ${ovpnFilePath}`);
-  
-  try {
-    if (await fileExists(ovpnFilePath)) {
-      const content = await fsAsync.readFile(ovpnFilePath, 'utf-8');
-      console.log(`✅ Arquivo OVPN encontrado: ${ovpnFilePath}`);
-      return { 
-        success: true, 
-        content: content, 
-        path: ovpnFilePath,
-        profileDir: profileDir 
-      };
+  // Lista de diretórios possíveis para procurar
+  const searchDirs = [
+    // Diretório de perfis normais
+    path.join(__dirname, 'ovpn_profiles'),
+    // Diretório Azure
+    path.join(__dirname, 'azure_ovpn_profiles'),
+    // Diretório raiz do projeto (fallback)
+    __dirname
+  ];
+
+  // Padrões de nome de arquivo possíveis
+  const possibleFilenames = [
+    `${profileId}.ovpn`,
+    `${profileId}.conf`,
+    `config.ovpn`,
+    `client.ovpn`
+  ];
+
+  for (const baseDir of searchDirs) {
+    console.log(`📁 Verificando diretório base: ${baseDir}`);
+    
+    // Primeiro: procurar no subdiretório com nome do perfil
+    const profileDir = path.join(baseDir, profileId);
+    for (const filename of possibleFilenames) {
+      const filePath = path.join(profileDir, filename);
+      console.log(`   🔎 Tentando: ${filePath}`);
+      
+      try {
+        if (await fileExists(filePath)) {
+          const content = await fsAsync.readFile(filePath, 'utf-8');
+          console.log(`✅ Arquivo OVPN encontrado: ${filePath}`);
+          return { 
+            success: true, 
+            content: content, 
+            path: filePath,
+            profileDir: profileDir 
+          };
+        }
+      } catch (error) {
+        console.log(`   ❌ Erro ao acessar ${filePath}: ${error.message}`);
+      }
     }
     
-    // Se não encontrou no diretório normal, tentar no diretório Azure
-    const azureOvpnDir = path.join(__dirname, 'azure_ovpn_profiles');
-    const azureProfileDir = path.join(azureOvpnDir, profileId);
-    const azureOvpnFilePath = path.join(azureProfileDir, `${profileId}.ovpn`);
-    
-    console.log(`🔍 Tentando diretório Azure: ${azureOvpnFilePath}`);
-    
-    if (await fileExists(azureOvpnFilePath)) {
-      const content = await fsAsync.readFile(azureOvpnFilePath, 'utf-8');
-      console.log(`✅ Arquivo OVPN Azure encontrado: ${azureOvpnFilePath}`);
-      return { 
-        success: true, 
-        content: content, 
-        path: azureOvpnFilePath,
-        profileDir: azureProfileDir 
-      };
+    // Segundo: procurar diretamente no diretório base
+    for (const filename of possibleFilenames) {
+      const filePath = path.join(baseDir, filename);
+      console.log(`   🔎 Tentando: ${filePath}`);
+      
+      try {
+        if (await fileExists(filePath)) {
+          const content = await fsAsync.readFile(filePath, 'utf-8');
+          console.log(`✅ Arquivo OVPN encontrado: ${filePath}`);
+          return { 
+            success: true, 
+            content: content, 
+            path: filePath,
+            profileDir: baseDir 
+          };
+        }
+      } catch (error) {
+        console.log(`   ❌ Erro ao acessar ${filePath}: ${error.message}`);
+      }
     }
-    
-    console.log(`❌ Arquivo OVPN não encontrado em nenhum diretório para perfil: ${profileId}`);
-    return { success: false, error: `Arquivo OVPN não encontrado para o perfil ${profileId}` };
-    
-  } catch (error) {
-    console.error(`❌ Erro ao carregar OVPN do perfil ${profileId}:`, error);
-    return { success: false, error: error.message };
   }
+  
+  console.log(`❌ Arquivo OVPN não encontrado em nenhum local para perfil: ${profileId}`);
+  return { 
+    success: false, 
+    error: `Arquivo OVPN não encontrado para o perfil ${profileId}. Verifique se o arquivo existe.` 
+  };
 }
 
 // ============ GESTÃO DE ARQUIVOS OVPN ============
