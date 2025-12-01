@@ -7,5 +7,10 @@
 # Chaves criptográficas
 *.key
 
+# Imagens e instalações
+*.deb
+*.AppImage
+
 # Diretório de dependências do Node.js
 node_modules/
+dist/

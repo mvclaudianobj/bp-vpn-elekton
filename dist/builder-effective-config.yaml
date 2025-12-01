@@ -2,21 +2,76 @@ directories:
   output: dist
   buildResources: build
 appId: com.bluepex.vpn
-productName: BluePex VPN Connections
+productName: BluePex VPN
+copyright: Copyright © 2025 BluePex
 files:
   - filter:
       - main.js
       - preload.js
       - renderer.js
       - index.html
+      - styles.css
       - config.json
       - logo.png
+      - ovpn_profiles/**/*
+      - build/com.bpvpn.pkexec.policy
       - node_modules/**/*
-win:
-  target: nsis
-  icon: icon.ico
+      - package.json
+extraResources:
+  - from: build/com.bpvpn.pkexec.policy
+    to: com.bpvpn.pkexec.policy
 linux:
-  target: AppImage
-  icon: icon.png
+  target:
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+    - target: AppImage
+      arch:
+        - x64
   category: Network
+  icon: build/icon.png
+  maintainer: BluePex <contato@bluepex.com>
+  vendor: BluePex
+  synopsis: Cliente OpenVPN com autenticação Azure AD
+  description: BluePex VPN - Cliente OpenVPN profissional com suporte a autenticação Azure AD e 2FA
+  desktop:
+    Name: BluePex VPN
+    Comment: Cliente OpenVPN com autenticação Azure AD
+    Categories: Network;Security;
+deb:
+  depends:
+    - openvpn
+    - policykit-1
+  priority: optional
+  maintainer: BluePex <contato@bluepex.com>
+  afterInstall: build/afterInstall.sh
+  afterRemove: build/afterRemove.sh
+rpm:
+  depends:
+    - openvpn
+    - polkit
+  vendor: BluePex
+  afterInstall: build/afterInstall.sh
+  afterRemove: build/afterRemove.sh
+  fpm:
+    - '--rpm-tag'
+    - 'License: MIT'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  requestedExecutionLevel: requireAdministrator
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BluePex VPN
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
 electronVersion: 31.7.7

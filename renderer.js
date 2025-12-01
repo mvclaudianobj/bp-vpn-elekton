@@ -77,29 +77,117 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
 });
 
-async function initializeApp() {
-    try {
-        console.log('🚀 Inicializando aplicação...');
-        
-        // Configurar event listeners primeiro
-        setupEventListeners();
-        
-        // Carregar perfis salvos
-        await loadUserProfiles();
-        await loadAzureProfiles();
-
-        // Restaurar estado da aplicação
-        await restoreApplicationState();
-        
-        // Inicializar interface
-        toggleMode();
-        
-        console.log('✅ Aplicação inicializada com sucesso');
-        showStatus('Aplicação carregada com sucesso!', 'success');
-    } catch (error) {
-        console.error('❌ Erro na inicialização:', error);
-        showStatus('Erro ao inicializar a aplicação', 'alert');
+function setupChallengeModalListeners() {
+    const submitBtn = document.getElementById('submitChallengeBtn');
+    const cancelBtn = document.getElementById('cancelChallengeBtn');
+    const challengeInput = document.getElementById('challengeResponse');
+    
+    // ✅ VERIFIQUE se os elementos existem antes de adicionar listeners
+    if (!submitBtn || !cancelBtn || !challengeInput) {
+        console.error('❌ Elementos do modal 2FA não encontrados');
+        return;
     }
+    
+    // ✅ REMOVA listeners existentes para evitar duplicação
+    submitBtn.replaceWith(submitBtn.cloneNode(true));
+    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+    challengeInput.replaceWith(challengeInput.cloneNode(true));
+    
+    // ✅ ADICIONE novos listeners
+    document.getElementById('submitChallengeBtn').addEventListener('click', handleChallengeSubmit);
+    document.getElementById('cancelChallengeBtn').addEventListener('click', handleChallengeCancel);
+    document.getElementById('challengeResponse').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            handleChallengeSubmit();
+        }
+    });
+    
+    // ✅ Listener para ESC
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('challengeModal').style.display === 'flex') {
+            handleChallengeCancel();
+        }
+    });
+    
+    console.log('✅ Listeners do modal 2FA configurados');
+}
+
+function handleChallengeSubmit() {
+    const token = document.getElementById('challengeResponse').value.trim();
+    if (!token || token.length !== 6) {
+        showStatus('Por favor, digite um token válido de 6 dígitos.', 'alert');
+        return;
+    }
+
+    console.log('✅ Enviando token 2FA:', token);
+
+    // ✅ ENVIE O TOKEN PARA O PROCESSO OPENVPN VIA API
+    if (window.electronAPI && window.electronAPI.sendChallengeResponse) {
+        window.electronAPI.sendChallengeResponse(token).then(() => {
+            console.log('✅ Token enviado com sucesso');
+            hideChallengeModal();
+            showStatus('Token 2FA enviado. Aguardando autenticação...', 'status');
+        }).catch(error => {
+            console.error('❌ Erro ao enviar token:', error);
+            showStatus('Erro ao enviar token 2FA', 'alert');
+        });
+    } else {
+        console.error('❌ electronAPI.sendChallengeResponse não disponível');
+        showStatus('Erro: API não disponível', 'alert');
+    }
+}
+
+function handleChallengeCancel() {
+    console.log('❌ Token 2FA cancelado pelo usuário');
+    
+    // ✅ CORREÇÃO: Enviar mensagem de cancelamento
+    if (window.electronAPI && window.electronAPI.sendChallengeResponse) {
+        window.electronAPI.sendChallengeResponse('CANCEL').then(() => {
+            hideChallengeModal();
+            showStatus('Autenticação 2FA cancelada', 'alert');
+        }).catch(error => {
+            console.error('❌ Erro ao cancelar:', error);
+            hideChallengeModal();
+            showStatus('Autenticação 2FA cancelada', 'alert');
+        });
+    } else {
+        hideChallengeModal();
+        showStatus('Autenticação 2FA cancelada', 'alert');
+    }
+}
+
+async function initializeApp() {
+  try {
+    console.log('🚀 Inicializando aplicação...');
+    
+    // Configurar event listeners primeiro
+    setupEventListeners();
+    
+    // ✅ INICIALIZAR ELEMENTOS 2FA DINAMICAMENTE
+    initialize2FAElements();
+    
+    // Configurar listener de desafios
+    setupChallengeListener();
+    
+    // Carregar perfis salvos
+    await loadUserProfiles();
+    await loadAzureProfiles();
+
+    // Restaurar estado da aplicação
+    await restoreApplicationState();
+    
+    // Inicializar interface
+    toggleMode();
+    
+    // ✅ GARANTIR QUE CAMPO 2FA ESTEJA ESCONDIDO INICIALMENTE
+    hide2FAField();
+    
+    console.log('✅ Aplicação inicializada com sucesso');
+    showStatus('Aplicação carregada com sucesso!', 'success');
+  } catch (error) {
+    console.error('❌ Erro na inicialização:', error);
+    showStatus('Erro ao inicializar a aplicação', 'alert');
+  }
 }
 
 // ============ SISTEMA DE PERSISTÊNCIA ============
@@ -285,6 +373,9 @@ function setupEventListeners() {
     if (userPassword) {
         userPassword.addEventListener('input', validateUserForm);
     }
+
+    // ✅ ADICIONE ESTA LINHA: Configurar listeners do modal 2FA
+    setupChallengeModalListeners();
     
     // Listeners do Electron
     setupElectronListeners();
@@ -446,134 +537,189 @@ function setupElectronListeners() {
     
     if (!window.electronAPI) {
         console.error('❌ electronAPI não disponível');
+        showStatus('Erro: API do Electron não carregada', 'alert');
         return;
     }
     
-    window.electronAPI.onDeviceCodeResponse((event, data) => {
-        console.log('📱 Device code response recebido');
-        currentDeviceCodeMessage = `Visite: ${data.verification_uri} e digite o código: ${data.user_code}`;
-        showStatus(currentDeviceCodeMessage, 'status');
-        if (btnCopiarCodigo) btnCopiarCodigo.style.display = 'block';
-    });
+    console.log('✅ electronAPI disponível, configurando listeners...');
     
-    window.electronAPI.onVPNDisconnected(() => {
-        console.log('🔌 VPN desconectada externamente');
-        showStatus('VPN desconectada externamente.', 'status');
-        vpnPid = null;
-        updateConnectionButtons();
-    });
-    
-    window.electronAPI.onVPNLog((event, log) => {
-        console.log('📝 Log VPN recebido:', log);
-        if (userLogs && userLogs.style.display === 'block') {
-            addLogEntry(log);
-        }
-    });
+    try {
+        window.electronAPI.onDeviceCodeResponse((event, data) => {
+            console.log('📱 Device code response recebido');
+            currentDeviceCodeMessage = `Visite: ${data.verification_uri} e digite o código: ${data.user_code}`;
+            showStatus(currentDeviceCodeMessage, 'status');
+            if (btnCopiarCodigo) btnCopiarCodigo.style.display = 'block';
+        });
+        
+        window.electronAPI.onVPNDisconnected(() => {
+            console.log('🔌 VPN desconectada externamente');
+            showStatus('VPN desconectada externamente.', 'status');
+            vpnPid = null;
+            updateConnectionButtons();
+        });
+        
+        window.electronAPI.onVPNLog((event, log) => {
+            console.log('📝 Log VPN recebido:', log);
+            if (userLogs && userLogs.style.display === 'block') {
+                addLogEntry(log);
+            }
+        });
 
-    // Listener para desafios VPN
-    setupChallengeListener();
+        // ✅ CORREÇÃO: Listener para desafios VPN
+        window.electronAPI.onVpnChallenge((event, challengeData) => {
+            console.log('🔐 Recebido desafio VPN:', challengeData);
+            
+            if (challengeData && challengeData.requiresInput) {
+                console.log('📢 Mostrando modal de desafio 2FA...');
+                showChallengeModal(challengeData.message);
+            }
+        });
+
+        console.log('✅ Listeners do Electron configurados com sucesso');
+        
+    } catch (error) {
+        console.error('❌ Erro ao configurar listeners do Electron:', error);
+        showStatus('Erro ao configurar comunicação com a aplicação', 'alert');
+    }
 }
 
-// ============ SISTEMA DE DESAFIO INTERATIVO ============
+// ============ GESTÃO DO MODAL 2FA ============
+
+let challengeTimer = null;
+let challengeTimeLeft = 120;
+
+function showChallengeModal(message) {
+    console.log('📢 Mostrando modal 2FA:', message);
+    
+    // Atualizar mensagem
+    document.getElementById('challengeMessage').textContent = message;
+    
+    // Resetar timer
+    challengeTimeLeft = 120;
+    updateChallengeTimer();
+    
+    // Mostrar modal
+    document.getElementById('challengeModal').style.display = 'flex';
+    
+    // Focar no input
+    document.getElementById('challengeResponse').focus();
+    
+    // Iniciar timer
+    challengeTimer = setInterval(() => {
+        challengeTimeLeft--;
+        updateChallengeTimer();
+        
+        if (challengeTimeLeft <= 0) {
+            hideChallengeModal();
+            // Timeout - enviar mensagem de erro
+            window.electronAPI.sendChallengeResponse('TIMEOUT');
+        }
+    }, 1000);
+}
+
+function hideChallengeModal() {
+    const modal = document.getElementById('challengeModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    
+    // Limpar timer se existir
+    if (window.challengeTimer) {
+        clearInterval(window.challengeTimer);
+        window.challengeTimer = null;
+    }
+}
+
+function updateChallengeTimer() {
+    const timerElement = document.getElementById('challengeTimer');
+    if (timerElement) {
+        timerElement.textContent = `Tempo restante: ${challengeTimeLeft} segundos`;
+        
+        // Mudar cor conforme o tempo diminui
+        if (challengeTimeLeft <= 30) {
+            timerElement.style.color = '#ff6b6b';
+        } else if (challengeTimeLeft <= 60) {
+            timerElement.style.color = '#ffc107';
+        } else {
+            timerElement.style.color = '#ffc107';
+        }
+    }
+}
+
+// ============ LISTENERS PARA OS EVENTOS DO MAIN PROCESS ============
+
 function setupChallengeListener() {
     if (!window.electronAPI) return;
-    
-    window.electronAPI.onVPNChallenge((event, challengeData) => {
-        console.log('🎯 Desafio VPN recebido:', challengeData);
-        
-        if (challengeData && challengeData.requiresInput) {
-            console.log('📢 Mostrando modal de desafio...');
-            showChallengeModal(challengeData.message, challengeData.systemdPrompt || false);
+
+    // Remover qualquer listener anterior
+    window.electronAPI.removeAllListeners('vpn-challenge');
+
+    // Adicionar novo listener - RECEBE APENAS OS DADOS, NÃO EVENTO
+    window.electronAPI.onVpnChallenge((challengeData) => {
+        console.log('🎯 Desafio VPN recebido (CORRIGIDO):', challengeData);
+
+        if (challengeData && challengeData.type === 'static-challenge' && challengeData.requiresInput) {
+            console.log('📢 Mostrando modal de desafio 2FA...');
+            showChallengeModal(challengeData.message);
         }
     });
+
+    console.log('✅ Listener de desafio VPN configurado corretamente');
 }
 
-function showChallengeModal(challengeMessage, isSystemdPrompt = false) {
-    console.log('🔄 showChallengeModal chamado com:', { challengeMessage, isSystemdPrompt });
+function showChallengeModal(challengeMessage) {
+  console.log('🔄 Mostrando modal 2FA com mensagem:', challengeMessage);
+  
+  const modal = document.getElementById('challengeModal');
+  const messageElement = document.getElementById('challengeMessage');
+  const inputElement = document.getElementById('challengeResponse');
+  
+  if (!modal || !messageElement || !inputElement) {
+    console.error('❌ Elementos do modal 2FA não encontrados');
+    return;
+  }
+  
+  // Atualizar mensagem
+  messageElement.textContent = challengeMessage;
+  
+  // Resetar e mostrar modal
+  inputElement.value = '';
+  modal.style.display = 'flex';
+  
+  // Focar no input
+  inputElement.focus();
+  
+  // Configurar timer
+  startChallengeTimer();
+}
 
-    const modalId = 'challengeModal';
-    let modal = document.getElementById(modalId);
+function startChallengeTimer() {
+    let timeLeft = 120;
+    const timerElement = document.getElementById('challengeTimer');
     
-    if (modal) {
-        const challengeText = document.getElementById('challengeText');
-        if (challengeText) {
-            challengeText.textContent = challengeMessage;
-        }
-        modal.style.display = 'flex';
-        return;
-    }
-    
-    modal = document.createElement('div');
-    modal.id = modalId;
-    modal.className = 'config-modal';
-    
-    const systemdWarning = isSystemdPrompt ? 
-        '<div style="margin-top: 10px; font-size: 0.8rem; color: #ffa000;"><strong>⚠️ Systemd Prompt:</strong> Esta solicitação vem do sistema.</div>' : 
-        '';
-    
-    modal.innerHTML = `
-        <div class="config-content" style="max-width: 500px;">
-            <h3>🔐 Autenticação de Dois Fatores</h3>
-            <div class="challenge-message" style="
-                background: rgba(255, 193, 7, 0.1);
-                border: 1px solid #ffc107;
-                border-radius: 8px;
-                padding: 15px;
-                margin-bottom: 20px;
-                font-size: 0.9rem;
-                color: #ffc107;
-            ">
-                <strong>Solicitação do Servidor:</strong><br>
-                <span id="challengeText">${challengeMessage}</span>
-                ${systemdWarning}
-            </div>
-            <div class="mb-3">
-                <label for="challengeResponse" class="form-label">Digite o token 2FA:</label>
-                <input type="text" class="form-control" id="challengeResponse" 
-                       placeholder="Token do Google Authenticator" autocomplete="one-time-code">
-            </div>
-            <div class="config-actions">
-                <button class="btn btn-success flex-fill" id="submitChallenge">✅ Enviar Token</button>
-                <button class="btn btn-danger flex-fill" id="cancelChallenge">❌ Cancelar</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    document.getElementById('submitChallenge').addEventListener('click', function() {
-        const responseInput = document.getElementById('challengeResponse');
-        const response = responseInput ? responseInput.value.trim() : '';
+    const timer = setInterval(() => {
+        timeLeft--;
         
-        if (!response) {
-            showStatus('Por favor, digite o token 2FA', 'alert');
-            return;
+        if (timerElement) {
+            timerElement.textContent = `Tempo restante: ${timeLeft} segundos`;
+            
+            // Mudar cor conforme o tempo diminui
+            if (timeLeft <= 30) {
+                timerElement.style.color = '#ff6b6b';
+            } else if (timeLeft <= 60) {
+                timerElement.style.color = '#ffc107';
+            }
         }
         
-        console.log('📤 Enviando token:', response);
-        
-        const apiMethod = isSystemdPrompt ? 
-            window.electronAPI.sendSystemdChallengeResponse : 
-            window.electronAPI.sendChallengeResponse;
-        
-        apiMethod(response).then(() => {
-            console.log('✅ Token enviado com sucesso');
-            closeChallengeModal();
-            showStatus('Token 2FA enviado. Aguardando autenticação...', 'status');
-        }).catch(error => {
-            console.error('❌ Erro ao enviar token:', error);
-            showStatus('Erro ao enviar token 2FA', 'alert');
-        });
-    });
+        if (timeLeft <= 0) {
+            clearInterval(timer);
+            hideChallengeModal();
+            showStatus('Tempo esgotado para o token 2FA', 'alert');
+        }
+    }, 1000);
     
-    document.getElementById('cancelChallenge').addEventListener('click', closeChallengeModal);
-    
-    setTimeout(() => {
-        const input = document.getElementById('challengeResponse');
-        if (input) input.focus();
-    }, 100);
-    
-    modal.style.display = 'flex';
+    // Guardar referencia do timer para limpar se necessário
+    window.challengeTimer = timer;
 }
 
 function closeChallengeModal() {
@@ -614,17 +760,18 @@ function handleModeChange() {
 }
 
 function toggleMode() {
-    if (modoUsuarioCheckbox.checked) {
-        formUsuario.style.display = 'block';
-        formAzure.style.display = 'none';
-        initializeUserMode();
-    } else {
-        formUsuario.style.display = 'none';
-        formAzure.style.display = 'block';
-        hide2FAField();
-        initializeAzureMode();
-    }
-    updateConnectionButtons();
+  if (modoUsuarioCheckbox.checked) {
+    formUsuario.style.display = 'block';
+    formAzure.style.display = 'none';
+    initializeUserMode();
+  } else {
+    formUsuario.style.display = 'none';
+    formAzure.style.display = 'block';
+    // ✅ GARANTIR QUE CAMPO 2FA ESTEJA ESCONDIDO NO MODO AZURE
+    hide2FAField();
+    initializeAzureMode();
+  }
+  updateConnectionButtons();
 }
 
 function initializeUserMode() {
@@ -719,114 +866,167 @@ async function selectOvpnFile(mode) {
     }
 }
 
-// ============ SISTEMA DE 2FA ============
-function create2FAElements() {
-    if (twoFAContainer) return;
-    
-    twoFAContainer = document.createElement('div');
-    twoFAContainer.id = 'twoFAContainer';
-    twoFAContainer.className = 'twofa-section';
-    twoFAContainer.style.display = 'none';
-    
-    twoFALabel = document.createElement('label');
-    twoFALabel.className = 'form-label';
-    twoFALabel.htmlFor = 'twoFAToken';
-    twoFALabel.innerHTML = '🔐 Token 2FA';
-    
-    twoFAInput = document.createElement('input');
-    twoFAInput.type = 'password';
-    twoFAInput.className = 'form-control';
-    twoFAInput.id = 'twoFAToken';
-    twoFAInput.placeholder = 'Digite o token de autenticação de dois fatores';
-    twoFAInput.autocomplete = 'one-time-code';
-    
-    const helpText = document.createElement('div');
-    helpText.className = 'form-text twofa-help';
-    helpText.innerHTML = 'Token temporário do Google Authenticator, Duo, Authy, etc.';
-    
-    const infoBadge = document.createElement('div');
-    infoBadge.className = 'twofa-info-badge';
-    infoBadge.innerHTML = '<strong>Autenticação de Dois Fatores</strong><br>Esta VPN requer verificação adicional de segurança';
-    infoBadge.style.display = 'none';
-    infoBadge.id = 'twoFAInfoBadge';
-    
-    twoFAContainer.appendChild(twoFALabel);
-    twoFAContainer.appendChild(twoFAInput);
-    twoFAContainer.appendChild(helpText);
-    twoFAContainer.appendChild(infoBadge);
-    
-    const passwordField = document.getElementById('userPassword');
-    if (passwordField && passwordField.parentNode) {
-        passwordField.parentNode.insertBefore(twoFAContainer, passwordField.nextSibling);
-    }
-    
-    twoFAInput.addEventListener('input', validateUserForm);
+// ============ SISTEMA DE 2FA CORRIGIDO ============
+
+// Inicializar elementos 2FA - criar dinamicamente
+function initialize2FAElements() {
+  console.log('🔧 Inicializando elementos 2FA...');
+  
+  // Crie um container para info de 2FA (não input)
+  twoFAContainer = document.createElement('div');
+  twoFAContainer.className = 'twofa-section';
+  twoFAContainer.style.display = 'none'; // Sempre escondido inicialmente
+  
+  twoFALabel = document.createElement('div');
+  twoFALabel.className = 'twofa-info-badge';
+  twoFALabel.innerHTML = '<strong>⚠️ Este perfil requer 2FA</strong><br>Digite usuário e senha para iniciar. O token será solicitado durante a conexão.';
+  
+  const helpText = document.createElement('small');
+  helpText.className = 'twofa-help text-muted';
+  helpText.textContent = 'Use o Google Authenticator para gerar o token quando solicitado.';
+  
+  twoFAContainer.appendChild(twoFALabel);
+  twoFAContainer.appendChild(helpText);
+  
+  // Insira após o campo de senha
+  const passwordField = document.getElementById('userPassword');
+  if (passwordField && passwordField.parentNode) {
+    passwordField.parentNode.insertAdjacentElement('afterend', twoFAContainer);
+  }
+  
+  console.log('✅ Elementos 2FA inicializados');
 }
 
+// Verificar se o perfil requer 2FA
 async function check2FARequirement(profileId) {
-    if (!profileId) {
-        hide2FAField();
-        return;
-    }
+  try {
+    const result = await window.electronAPI.detect2FARequirement(profileId);
     
-    try {
-        const result = await window.electronAPI.detect2FARequirement(profileId);
-        
-        if (result.success) {
-            requires2FA = result.requires2FA;
-            current2FAProfileId = profileId;
-            
-            if (requires2FA) {
-                let promptText = 'Token 2FA';
-                if (result.promptText) {
-                    promptText = result.promptText.replace(/Enter|Token|:/gi, '').trim();
-                    if (!promptText) promptText = 'Token 2FA';
-                }
-                show2FAField(promptText, result.usesEcho);
-            } else {
-                hide2FAField();
-            }
-        } else {
-            hide2FAField();
-        }
-    } catch (error) {
-        hide2FAField();
+    if (result.success) {
+      requires2FA = result.requires2FA;
+      current2FAProfileId = profileId;
+      
+      if (requires2FA) {
+        show2FAInfo(); // Mudei o nome da função para refletir que é só info
+        showStatus('Perfil requer autenticação de dois fatores (2FA). Token será solicitado após iniciar conexão.', 'status');
+      } else {
+        hide2FAInfo();
+      }
+      
+      validateUserForm();
     }
+  } catch (error) {
+    console.error('❌ Erro ao detectar requisito de 2FA:', error);
+    showStatus('Erro ao verificar 2FA', 'alert');
+  }
 }
 
-function show2FAField(promptText = 'Token 2FA', usesEcho = false) {
-    if (!twoFAContainer) {
-        create2FAElements();
-    }
-    
-    if (twoFALabel) twoFALabel.innerHTML = `🔐 ${promptText}`;
-    if (twoFAInput) {
-        if (usesEcho) {
-            twoFAInput.placeholder = `Digite ${promptText.toLowerCase()} (visível)`;
-            twoFAInput.type = 'text';
-        } else {
-            twoFAInput.placeholder = `Digite ${promptText.toLowerCase()}`;
-            twoFAInput.type = 'password';
-        }
-    }
-    
-    const infoBadge = document.getElementById('twoFAInfoBadge');
-    if (infoBadge) infoBadge.style.display = 'block';
-    
+function show2FAInfo() {
+  if (twoFAContainer) {
     twoFAContainer.style.display = 'block';
-    twoFAInput.required = true;
     twoFAContainer.classList.add('active');
+  }
 }
 
+function hide2FAInfo() {
+  if (twoFAContainer) {
+    twoFAContainer.style.display = 'none';
+    twoFAContainer.classList.remove('active');
+  }
+}
+
+// Mostrar campo 2FA
+function show2FAField(promptText = 'Token 2FA', usesEcho = false) {
+  console.log('📢 Mostrando campo 2FA:', { promptText, usesEcho });
+  
+  // Garantir que os elementos estão inicializados
+  if (!twoFAContainer || !twoFAInput) {
+    console.log('🔄 Elementos 2FA não inicializados, inicializando...');
+    initialize2FAElements();
+  }
+  
+  if (!twoFAContainer || !twoFAInput) {
+    console.error('❌ Elementos 2FA não disponíveis após inicialização');
+    return;
+  }
+  
+  // Atualizar label
+  if (twoFALabel) {
+    twoFALabel.innerHTML = `🔐 ${promptText}`;
+  }
+  
+  // Configurar input
+  if (usesEcho) {
+    twoFAInput.placeholder = `Digite ${promptText.toLowerCase()} (visível)`;
+    twoFAInput.type = 'text';
+  } else {
+    twoFAInput.placeholder = `Digite ${promptText.toLowerCase()}`;
+    twoFAInput.type = 'password';
+  }
+  
+  // Mostrar elementos
+  twoFAContainer.style.display = 'block';
+  twoFAInput.required = true;
+  twoFAContainer.classList.add('active');
+  
+  const infoBadge = document.getElementById('twoFAInfoBadge');
+  if (infoBadge) {
+    infoBadge.style.display = 'block';
+  }
+  
+  console.log('✅ Campo 2FA mostrado com sucesso');
+}
+
+// Esconder campo 2FA
 function hide2FAField() {
-    if (twoFAContainer) {
-        twoFAContainer.style.display = 'none';
-        twoFAInput.required = false;
-        twoFAInput.value = '';
-        twoFAContainer.classList.remove('active');
-    }
-    requires2FA = false;
-    current2FAProfileId = null;
+  console.log('👻 Escondendo campo 2FA');
+  
+  if (twoFAContainer) {
+    twoFAContainer.style.display = 'none';
+    twoFAContainer.classList.remove('active');
+  }
+  
+  if (twoFAInput) {
+    twoFAInput.required = false;
+    twoFAInput.value = '';
+    twoFAInput.type = 'password'; // Reset para password
+  }
+  
+  const infoBadge = document.getElementById('twoFAInfoBadge');
+  if (infoBadge) {
+    infoBadge.style.display = 'none';
+  }
+  
+  requires2FA = false;
+  current2FAProfileId = null;
+  
+  console.log('✅ Campo 2FA escondido com sucesso');
+}
+
+// Obter credenciais completas
+function getCompleteCredentials() {
+  const username = userUsername.value.trim();
+  const password = userPassword.value;
+  const twoFAToken = twoFAInput ? twoFAInput.value.trim() : '';
+  
+  console.log('🔐 Obtendo credenciais:', {
+    username,
+    passwordLength: password.length,
+    requires2FA,
+    twoFATokenLength: twoFAToken.length
+  });
+  
+  if (requires2FA && twoFAToken) {
+    return {
+      username: username,
+      password: password + twoFAToken,
+    };
+  }
+  
+  return {
+    username: username,
+    password: password,
+  };
 }
 
 function getCompleteCredentials() {
@@ -945,20 +1145,26 @@ function renderAzureProfiles() {
 
 // ============ OPERAÇÕES DE PERFIL ============
 async function setActiveUserProfile(profileId) {
-    const profile = availableUserProfiles.find(p => p.id === profileId);
-    if (profile) {
-        currentUserProfile = profile;
-        updateUserConfigDisplay();
-        closeConfigModal();
-        
-        await check2FARequirement(profileId);
-        await loadUserCredentials(profileId);
-        validateUserForm();
-        
-        saveApplicationState(); // SALVAR ESTADO
-        
-        showStatus(`Perfil "${profile.name}" ativado!`, 'success');
-    }
+  const profile = availableUserProfiles.find(p => p.id === profileId);
+  if (profile) {
+    currentUserProfile = profile;
+    updateUserConfigDisplay();
+    closeConfigModal();
+    
+    // ✅ CORREÇÃO: Primeiro esconder, depois verificar se precisa mostrar
+    hide2FAField();
+    
+    // Verificar se este perfil requer 2FA
+    await check2FARequirement(profileId);
+    
+    // Carregar credenciais salvas
+    await loadUserCredentials(profileId);
+    
+    validateUserForm();
+    saveApplicationState();
+    
+    showStatus(`Perfil "${profile.name}" ativado!`, 'success');
+  }
 }
 
 async function setActiveAzureProfile(profileId) {
@@ -1091,9 +1297,10 @@ async function loadUserCredentials(profileId) {
 
 // ============ CONEXÕES VPN ============
 async function connectUserVPN() {
-    const credentials = getCompleteCredentials();
-    
-    if (!credentials.username || !credentials.password) {
+    const username = userUsername.value.trim();
+    const password = userPassword.value;
+
+    if (!username || !password) {
         showStatus('Por favor, preencha usuário e senha.', 'alert');
         return;
     }
@@ -1106,39 +1313,21 @@ async function connectUserVPN() {
     try {
         btnConectarUsuario.disabled = true;
         btnDesconectarUsuario.disabled = false;
-        
-        const statusMsg = requires2FA ? 
-            `Conectando ao perfil "${currentUserProfile.name}" com autenticação de dois fatores...` :
-            `Conectando ao perfil "${currentUserProfile.name}"...`;
-            
-        showStatus(statusMsg, 'status');
-        
+        showStatus(`Iniciando conexão ao perfil "${currentUserProfile.name}"...`, 'status');
         userLogs.innerHTML = '';
         userLogs.style.display = 'block';
 
-        if (rememberCredentials.checked) {
-            await saveUserCredentials();
-        }
-
+        // ✅ ENVIAR APENAS USUÁRIO E SENHA
         const result = await window.electronAPI.connectOpenVPNUserPassProfile(
-            currentUserProfile.id, 
-            credentials.username, 
-            credentials.password
+            currentUserProfile.id,
+            username,
+            password
         );
 
         vpnPid = result.pid;
-        
-        const successMsg = requires2FA ?
-            `Conectado ao perfil "${currentUserProfile.name}" com autenticação de dois fatores! PID: ${vpnPid}` :
-            `Conectado ao perfil "${currentUserProfile.name}"! PID: ${vpnPid}`;
-            
-        showStatus(successMsg, 'success');
+        showStatus(`Conexão iniciada. Aguardando autenticação...`, 'status');
 
-        if (requires2FA && twoFAInput) {
-            twoFAInput.value = '';
-        }
-
-        saveApplicationState(); // SALVAR ESTADO APÓS CONEXÃO
+        saveApplicationState();
 
     } catch (err) {
         showStatus(`Erro: ${err.message}`, 'alert');
@@ -1249,22 +1438,13 @@ function updateAzureConfigDisplay() {
 
 function validateUserForm() {
     updateConnectionButtons();
-
-    if (twoFAInput) {
-        if (requires2FA && !twoFAInput.value.trim()) {
-            twoFAInput.classList.add('is-invalid');
-        } else {
-            twoFAInput.classList.remove('is-invalid');
-        }
-    }
 }
 
 function isUserFormValid() {
-    const credentials = getCompleteCredentials();
-    const hasBasicCredentials = credentials.username && credentials.password;
-    const has2FAIfRequired = !requires2FA || (requires2FA && twoFAInput.value.trim());
-    
-    return hasBasicCredentials && has2FAIfRequired && currentUserProfile;
+    const username = userUsername?.value?.trim() || '';
+    const password = userPassword?.value || '';
+    const hasBasicCredentials = username && password;
+    return hasBasicCredentials && currentUserProfile; // Só isso!
 }
 
 function toggleProfileNameField() {

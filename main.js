@@ -1,3 +1,31 @@
+// ============ CONFIGURAÇÃO DE DIRETÓRIOS ============
+
+// ✅ Usar diretório de dados do usuário (leitura/escrita permitida)
+const USER_DATA_DIR = app.getPath('userData');
+const PROFILES_DIR = path.join(USER_DATA_DIR, 'ovpn_profiles');
+const AZURE_PROFILES_DIR = path.join(USER_DATA_DIR, 'azure_ovpn_profiles');
+
+// Arquivos de configuração
+const USER_PROFILES_PATH = path.join(USER_DATA_DIR, 'user_profiles.json');
+const AZURE_PROFILES_PATH = path.join(USER_DATA_DIR, 'azure_profiles.json');
+const DEFAULT_PROFILES_PATH = path.join(USER_DATA_DIR, 'default_profiles.json');
+const APP_STATE_PATH = path.join(USER_DATA_DIR, 'app_state.json');
+const USER_CREDENTIALS_PATH = path.join(USER_DATA_DIR, 'user_credentials.json');
+const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
+
+// Criar diretórios necessários
+function ensureDirectories() {
+  const dirs = [USER_DATA_DIR, PROFILES_DIR, AZURE_PROFILES_DIR];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`📁 Diretório criado: ${dir}`);
+    }
+  }
+  console.log(`📁 Diretório de perfis: ${PROFILES_DIR}`);
+  console.log(`📁 Diretório de perfis Azure: ${AZURE_PROFILES_DIR}`);
+}
+
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -17,10 +45,30 @@ let vpnProcess = null;
 const cachePath = path.join(os.tmpdir(), 'electron_token_cache.json');
 const authPath = path.join(os.tmpdir(), 'openvpn_auth.txt');
 
+// Função para copiar a política para o local correto (se necessário)
+function ensurePolicyFile() {
+  if (process.platform === 'linux') {
+    const policySource = path.join(__dirname, 'build', 'com.bpvpn.pkexec.policy');
+    const policyDest = path.join(__dirname, 'resources', 'com.bpvpn.pkexec.policy');
+    
+    // Criar diretório resources se não existir
+    const resourcesDir = path.dirname(policyDest);
+    if (!fs.existsSync(resourcesDir)) {
+      fs.mkdirSync(resourcesDir, { recursive: true });
+    }
+    
+    // Copiar arquivo de política
+    if (fs.existsSync(policySource) && !fs.existsSync(policyDest)) {
+      fs.copyFileSync(policySource, policyDest);
+      console.log('✅ Arquivo de política copiado para resources');
+    }
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 650,  // Aumentei de 500 para 800
-    height: 700, // Mantive a altura
+    width: 650,
+    height: 700,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -28,8 +76,8 @@ function createWindow() {
     },
     title: 'BluePex VPN Connections',
     autoHideMenuBar: true,
-    resizable: true, // Permitir redimensionamento
-    center: true, // Centralizar na tela
+    resizable: true,
+    center: true,
   });
 
   mainWindow.loadFile('index.html');
@@ -44,10 +92,31 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    config = JSON.parse(fs.readFileSync('config.json', 'utf-8'));
+    ensurePolicyFile();
+    ensureDirectories(); // ✅ Criar diretórios
+    
+    // ✅ Carregar config do diretório do usuário
+    if (fs.existsSync(CONFIG_PATH)) {
+      config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    } else {
+      // Se não existir, tentar copiar do diretório da aplicação
+      const oldConfigPath = path.join(__dirname, 'config.json');
+      if (fs.existsSync(oldConfigPath)) {
+        config = JSON.parse(fs.readFileSync(oldConfigPath, 'utf-8'));
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+      } else {
+        config = {
+          client_id: "",
+          tenant_id: "",
+          scope: "https://graph.microsoft.com/.default",
+          server_api: "",
+          openvpn_config: ""
+        };
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+      }
+    }
   } catch (error) {
-    console.error('Erro ao carregar config.json:', error);
-    // Criar config padrão se não existir
+    console.error('Erro ao carregar configurações:', error);
     config = {
       client_id: "",
       tenant_id: "",
@@ -55,7 +124,6 @@ app.whenReady().then(async () => {
       server_api: "",
       openvpn_config: ""
     };
-    fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
   }
 
   pca = new PublicClientApplication({
@@ -90,17 +158,12 @@ async function fileExists(filePath) {
 async function loadOvnFromProfile(profileId) {
   console.log(`🔍 Iniciando busca por arquivo OVPN para perfil: ${profileId}`);
   
-  // Lista de diretórios possíveis para procurar
+  // ✅ CORREÇÃO: Usar diretórios do usuário
   const searchDirs = [
-    // Diretório de perfis normais
-    path.join(__dirname, 'ovpn_profiles'),
-    // Diretório Azure
-    path.join(__dirname, 'azure_ovpn_profiles'),
-    // Diretório raiz do projeto (fallback)
-    __dirname
+    PROFILES_DIR,           // ~/.config/bp-vpn-electron/ovpn_profiles
+    AZURE_PROFILES_DIR,     // ~/.config/bp-vpn-electron/azure_ovpn_profiles
   ];
 
-  // Padrões de nome de arquivo possíveis
   const possibleFilenames = [
     `${profileId}.ovpn`,
     `${profileId}.conf`,
@@ -111,7 +174,6 @@ async function loadOvnFromProfile(profileId) {
   for (const baseDir of searchDirs) {
     console.log(`📁 Verificando diretório base: ${baseDir}`);
     
-    // Primeiro: procurar no subdiretório com nome do perfil
     const profileDir = path.join(baseDir, profileId);
     for (const filename of possibleFilenames) {
       const filePath = path.join(profileDir, filename);
@@ -133,7 +195,6 @@ async function loadOvnFromProfile(profileId) {
       }
     }
     
-    // Segundo: procurar diretamente no diretório base
     for (const filename of possibleFilenames) {
       const filePath = path.join(baseDir, filename);
       console.log(`   🔎 Tentando: ${filePath}`);
@@ -162,87 +223,127 @@ async function loadOvnFromProfile(profileId) {
   };
 }
 
-// ============ GESTÃO DE ARQUIVOS OVPN ============
+// ============ FUNÇÃO PARA PROCESSAR ARQUIVOS OVPN ============
 
-// Função: Processar e copiar TODOS os arquivos do perfil OVPN
 async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = null) {
-  const defaultOvpnDir = path.join(__dirname, 'ovpn_profiles');
-  const ovpnDir = baseDir || defaultOvpnDir;
+  // ✅ CORREÇÃO: Usar diretório do usuário por padrão
+  const ovpnDir = baseDir || PROFILES_DIR;
   const profileDir = path.join(ovpnDir, profileId);
   
   try {
-    // Criar diretório do perfil
     await fsAsync.mkdir(profileDir, { recursive: true });
     
-    // Ler conteúdo original do OVPN
-    const originalContent = await fsAsync.readFile(originalOvpnPath, 'utf-8');
+    let originalContent = await fsAsync.readFile(originalOvpnPath, 'utf-8');
     const originalDir = path.dirname(originalOvpnPath);
     
-    // Processar cada linha do OVPN
+    console.log(`📂 Processando arquivo OVPN: ${originalOvpnPath}`);
+    console.log(`📁 Diretório do perfil: ${profileDir}`);
+    
     const processedLines = [];
     const filesToCopy = new Set();
     
     const lines = originalContent.split('\n');
-    for (let line of lines) {
-      let processedLine = line.trim();
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
       
-      // Ignorar linhas de autenticação que vamos adicionar depois
-      if (processedLine.startsWith('auth-user-pass')) {
+      if (!line || line.startsWith('#')) {
+        processedLines.push(line);
         continue;
       }
       
-      // Identificar e processar arquivos de certificado
-      if (processedLine.startsWith('ca ') || processedLine.startsWith('cert ') || 
-          processedLine.startsWith('key ') || processedLine.startsWith('tls-auth ') ||
-          processedLine.startsWith('pkcs12 ') || processedLine.startsWith('dh ') ||
-          processedLine.startsWith('crl-verify ')) {
-        
-        const parts = processedLine.split(' ');
-        if (parts.length >= 2) {
-          const originalFilePath = parts[1].trim();
-          let absoluteSourcePath;
+      if (line.startsWith('auth-user-pass')) {
+        continue;
+      }
+      
+      const fileDirectives = ['ca', 'cert', 'key', 'tls-auth', 'tls-crypt', 'pkcs12', 'dh', 'extra-certs', 'crl-verify'];
+      
+      for (const directive of fileDirectives) {
+        if (line.startsWith(directive + ' ')) {
+          console.log(`🔍 Processando diretiva: ${line}`);
           
-          // Determinar caminho absoluto do arquivo
-          if (path.isAbsolute(originalFilePath)) {
-            absoluteSourcePath = originalFilePath;
-          } else {
-            absoluteSourcePath = path.join(originalDir, originalFilePath);
-          }
-          
-          // Verificar se arquivo existe
-          if (await fileExists(absoluteSourcePath)) {
-            const fileName = path.basename(absoluteSourcePath);
-            const targetFilePath = path.join(profileDir, fileName);
+          const parts = line.split(/\s+/);
+          if (parts.length >= 2) {
+            const directiveName = parts[0];
+            let fileNamePart = parts[1];
+            let extraParams = parts.slice(2).join(' ');
             
-            // Adicionar à lista de arquivos para copiar
-            filesToCopy.add({ source: absoluteSourcePath, target: targetFilePath });
+            console.log(`   Diretiva: ${directiveName}, Arquivo: ${fileNamePart}, Extra: ${extraParams}`);
             
-            // Atualizar linha com novo caminho relativo
-            processedLine = `${parts[0]} ${fileName}`;
-            console.log(`Arquivo processado: ${fileName}`);
-          } else {
-            console.warn(`Arquivo não encontrado: ${absoluteSourcePath}`);
+            if (fileNamePart) {
+              let absoluteSourcePath;
+              
+              if (path.isAbsolute(fileNamePart)) {
+                absoluteSourcePath = fileNamePart;
+              } else {
+                const possiblePaths = [
+                  path.join(originalDir, fileNamePart),
+                  path.join(originalDir, '..', fileNamePart),
+                  path.join(__dirname, fileNamePart),
+                  fileNamePart
+                ];
+                
+                for (const possiblePath of possiblePaths) {
+                  if (await fileExists(possiblePath)) {
+                    absoluteSourcePath = possiblePath;
+                    break;
+                  }
+                }
+                
+                if (!absoluteSourcePath) {
+                  absoluteSourcePath = path.join(originalDir, fileNamePart);
+                }
+              }
+              
+              if (await fileExists(absoluteSourcePath)) {
+                const fileName = path.basename(absoluteSourcePath);
+                const targetFilePath = path.join(profileDir, fileName);
+                
+                filesToCopy.add({ 
+                  source: absoluteSourcePath, 
+                  target: targetFilePath,
+                  directive: directiveName
+                });
+                
+                // Usar caminho absoluto no arquivo OVPN processado
+                line = `${directiveName} ${targetFilePath}`;
+                if (extraParams) {
+                  line += ` ${extraParams}`;
+                }
+                
+                console.log(`✅ Arquivo identificado: ${fileName} (${directiveName})`);
+                console.log(`   Caminho absoluto: ${targetFilePath}`);
+              } else {
+                console.error(`❌ Arquivo não encontrado: ${absoluteSourcePath}`);
+                throw new Error(`Arquivo obrigatório não encontrado para ${directiveName}: ${fileNamePart}`);
+              }
+            }
           }
+          break;
         }
       }
       
-      processedLines.push(processedLine);
+      processedLines.push(line);
     }
     
-    // Copiar todos os arquivos identificados
     for (let file of filesToCopy) {
       try {
         await fsAsync.copyFile(file.source, file.target);
-        console.log(`✅ Arquivo copiado: ${path.basename(file.source)}`);
+        console.log(`✅ Arquivo copiado: ${path.basename(file.source)} -> ${file.target}`);
       } catch (copyError) {
         console.error(`❌ Erro ao copiar ${file.source}:`, copyError);
+        throw copyError;
       }
     }
     
-    // Salvar arquivo OVPN processado
-    const processedContent = processedLines.join('\n');
+    if (!processedLines.some(line => line.startsWith('auth-user-pass'))) {
+      processedLines.push('auth-user-pass');
+    }
+    
+    const processedContent = processedLines.filter(line => line.trim() !== '').join('\n');
     const targetOvpnPath = path.join(profileDir, `${profileId}.ovpn`);
     await fsAsync.writeFile(targetOvpnPath, processedContent, 'utf-8');
+    
+    console.log(`✅ Perfil OVPN processado salvo em: ${targetOvpnPath}`);
     
     return { 
       success: true, 
@@ -252,13 +353,13 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
     };
     
   } catch (error) {
+    console.error('❌ Erro ao processar perfil OVPN:', error);
     return { success: false, error: error.message };
   }
 }
 
 // ============ CONEXÕES VPN ============
 
-// ============ FUNÇÃO AUXILIAR PARA DETECTAR SYSTEMD CHALLENGE ============
 function detectSystemdChallenge(output) {
   return output.includes('Enter Google Authenticator Token') || 
          output.includes('CHALLENGE:') ||
@@ -269,10 +370,12 @@ function detectSystemdChallenge(output) {
 ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, username, password) => {
   return new Promise(async (resolve, reject) => {
     let authFilePath = null;
-    
+    let challengeHandler = null;
+    let challengeTimeout = null;
+   
     try {
       console.log(`🔗 Iniciando conexão para perfil: ${profileId}`);
-      
+     
       const ovpnResult = await loadOvnFromProfile(profileId);
       if (!ovpnResult.success) {
         console.error(`❌ Erro ao carregar perfil: ${ovpnResult.error}`);
@@ -282,43 +385,20 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       const profileDir = ovpnResult.profileDir;
       const configPath = ovpnResult.path;
-
+      
       console.log(`📁 Diretório do perfil: ${profileDir}`);
       console.log(`📄 Configuração: ${configPath}`);
 
-      if (!fs.existsSync(configPath)) {
-        const errorMsg = `Arquivo de configuração não encontrado: ${configPath}`;
-        console.error(`❌ ${errorMsg}`);
-        reject(new Error(errorMsg));
-        return;
-      }
-
-      if (!fs.existsSync(profileDir)) {
-        const errorMsg = `Diretório do perfil não encontrado: ${profileDir}`;
-        console.error(`❌ ${errorMsg}`);
-        reject(new Error(errorMsg));
-        return;
-      }
-
-      // CORREÇÃO: Criar arquivo temporário para auth com permissões seguras
+      // Criar arquivo de autenticação
       authFilePath = path.join(os.tmpdir(), `openvpn_auth_${Date.now()}.txt`);
       fs.writeFileSync(authFilePath, `${username}\n${password}\n`);
-      
-      // Definir permissões seguras (apenas usuário atual)
+     
       if (process.platform !== 'win32') {
         fs.chmodSync(authFilePath, 0o600);
-        // Também definir o proprietário correto
-        try {
-          const { uid, gid } = fs.statSync(authFilePath);
-          console.log(`📁 Arquivo de auth criado com proprietário: ${uid}:${gid}`);
-        } catch (e) {
-          console.log('⚠️ Não foi possível verificar proprietário do arquivo:', e.message);
-        }
       }
-
+      
       console.log(`🔐 Arquivo de autenticação criado: ${authFilePath}`);
 
-      // Método CORRIGIDO: usar arquivo temporário
       const openvpnArgs = [
         '--config', configPath,
         '--auth-user-pass', authFilePath,
@@ -326,202 +406,172 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       ];
 
       console.log('🔐 Executando OpenVPN...');
-      
+     
       let openvpnCommand;
       let openvpnArgsFinal;
       
-      if (process.platform !== 'win32') {
-        // CORREÇÃO: Usar sudo para garantir permissões adequadas
-        openvpnCommand = 'sudo';
-        openvpnArgsFinal = ['openvpn', ...openvpnArgs];
-        console.log('🔐 Executando OpenVPN com sudo para permissões adequadas');
-      } else {
-        const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
-        openvpnCommand = openvpnPath;
-        openvpnArgsFinal = openvpnArgs;
-      }
-
-      // CORREÇÃO: Executar com stdio configurado para interação
-      vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, {
-        cwd: profileDir,
+      let spawnOptions = {
         stdio: ['pipe', 'pipe', 'pipe']
-      });
+      };
 
+      if (process.platform === 'linux') {
+          // Usar pkexec para elevação gráfica no Linux (PolicyKit)
+          openvpnCommand = 'pkexec';
+          openvpnArgsFinal = ['openvpn', ...openvpnArgs];
+          console.log('🔐 Usando pkexec para elevação gráfica no Linux');
+      } else if (process.platform === 'win32') {
+        const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
+        openvpnCommand = 'powershell.exe';
+        openvpnArgsFinal = [
+          '-Command',
+          `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
+        ];
+        spawnOptions.shell = true;
+        console.log('🔐 Usando PowerShell com RunAs para elevação no Windows');
+      } else {
+        throw new Error('Plataforma não suportada');
+      }
+     
+      vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
+      
       let connectionEstablished = false;
       let challengeDetected = false;
-      let challengeTimeout;
-      let sudoPasswordSent = false;
+      let authFailed = false;
 
-      // Handler para resposta de desafio
-      const challengeHandler = (event, response) => {
+      // Handler para resposta do desafio
+      challengeHandler = (event, response) => {
         console.log('📤 Recebida resposta para desafio:', response);
-        if (vpnProcess && !vpnProcess.killed) {
+        if (vpnProcess && !vpnProcess.killed && challengeDetected) {
           vpnProcess.stdin.write(response + '\n');
           challengeDetected = false;
           if (challengeTimeout) clearTimeout(challengeTimeout);
+          
+          // Resetar timeout da conexão após enviar o token
+          connectionTimeout = setTimeout(() => {
+            if (!connectionEstablished && vpnProcess && !vpnProcess.killed) {
+              const errorMsg = 'Timeout na autenticação após token 2FA';
+              console.error(`❌ ${errorMsg}`);
+              reject(new Error(errorMsg));
+            }
+          }, 30000);
         }
       };
 
-      // Registrar handler para resposta de desafio
+      // Adicionar listener para resposta do desafio
       ipcMain.once('send-challenge-response', challengeHandler);
 
-      // CORREÇÃO: Handler para senha do sudo (se necessário)
-      const sudoPasswordHandler = (event, password) => {
-        console.log('📤 Recebida senha do sudo');
-        if (vpnProcess && !vpnProcess.killed && !sudoPasswordSent) {
-          vpnProcess.stdin.write(password + '\n');
-          sudoPasswordSent = true;
+      let connectionTimeout = setTimeout(() => {
+        if (!connectionEstablished && vpnProcess && !vpnProcess.killed && !challengeDetected) {
+          const errorMsg = 'Timeout na conexão OpenVPN';
+          console.error(`❌ ${errorMsg}`);
+          ipcMain.removeAllListeners('send-challenge-response');
+          reject(new Error(errorMsg));
         }
-      };
+      }, 60000);
 
-      // Registrar handler para senha do sudo
-      ipcMain.once('send-sudo-password', sudoPasswordHandler);
-
-      // CORREÇÃO: stdout e stderr separados corretamente
       vpnProcess.stdout.on('data', (data) => {
         const output = data.toString();
         console.log('OpenVPN stdout:', output);
         mainWindow.webContents.send('vpn-log', output);
-        
+       
         if (output.includes('Initialization Sequence Completed')) {
           connectionEstablished = true;
           console.log(`✅ Conexão estabelecida com sucesso! PID: ${vpnProcess.pid}`);
           ipcMain.removeAllListeners('send-challenge-response');
-          ipcMain.removeAllListeners('send-sudo-password');
-          
-          // Limpar arquivo de auth após conexão bem-sucedida
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+          if (challengeTimeout) clearTimeout(challengeTimeout);
+         
           if (authFilePath && fs.existsSync(authFilePath)) {
             fs.unlinkSync(authFilePath);
           }
-          
-          resolve({ 
-            pid: vpnProcess.pid, 
+         
+          resolve({
+            pid: vpnProcess.pid,
             success: true,
             message: 'Conexão estabelecida com sucesso'
           });
         }
-      
-        if (output.includes('AUTH_FAILED') || output.includes('auth-failure')) {
+     
+        if ((output.includes('AUTH_FAILED') || output.includes('auth-failure')) && !authFailed) {
           console.error(`❌ Falha na autenticação`);
+          authFailed = true;
           ipcMain.removeAllListeners('send-challenge-response');
-          ipcMain.removeAllListeners('send-sudo-password');
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+          if (challengeTimeout) clearTimeout(challengeTimeout);
           reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
         }
-      
-        // Detectar static challenge
-        if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected) {
+
+        // ✅ CORREÇÃO: Detectar desafio APÓS tentativa de autenticação inicial
+        if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
           console.log('🔐 Static challenge detectado!');
           challengeDetected = true;
-          
+         
           let challengeMessage = 'Enter Google Authenticator Token';
           const challengeMatch = output.match(/CHALLENGE:\s*([^\n\r]+)/);
           if (challengeMatch && challengeMatch[1]) {
             challengeMessage = challengeMatch[1].trim();
           }
-          
-          console.log('📢 Enviando challenge para frontend:', challengeMessage);
-          
-          // Enviar para frontend solicitar token
+         
+          // ✅ CORREÇÃO: Limpar timeout de conexão quando desafio é detectado
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+         
           mainWindow.webContents.send('vpn-challenge', {
             type: 'static-challenge',
             message: challengeMessage,
             requiresInput: true
           });
-
-          // Timeout para resposta do challenge
+          
+          // Timeout específico para o desafio
           challengeTimeout = setTimeout(() => {
             if (challengeDetected) {
               console.error('❌ Timeout no desafio 2FA');
               ipcMain.removeAllListeners('send-challenge-response');
-              ipcMain.removeAllListeners('send-sudo-password');
               reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
             }
           }, 120000);
         }
-
-        // Detectar systemd password prompts
-        if (detectSystemdChallenge(output) && !challengeDetected) {
-          console.log('🔐 Systemd password challenge detectado!');
-          challengeDetected = true;
-          
-          mainWindow.webContents.send('vpn-challenge', {
-            type: 'systemd-challenge',
-            message: 'Enter Google Authenticator Token',
-            requiresInput: true,
-            systemdPrompt: true
-          });
-        }
-
-        // CORREÇÃO: Detectar prompt de senha do sudo
-        if (output.includes('[sudo] password for') && !sudoPasswordSent) {
-          console.log('🔐 Solicitação de senha do sudo detectada');
-          mainWindow.webContents.send('vpn-challenge', {
-            type: 'sudo-password',
-            message: 'Digite sua senha de administrador para executar o OpenVPN',
-            requiresInput: true,
-            isSudoPrompt: true
-          });
-        }
       });
 
-      // CORREÇÃO: stderr separado do stdout
       vpnProcess.stderr.on('data', (data) => {
         const error = data.toString();
         console.error('OpenVPN stderr:', error);
         mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
-        
-        if (error.includes('AUTH_FAILED') || error.includes('auth-failure')) {
+       
+        if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
           console.error(`❌ Falha na autenticação`);
+          authFailed = true;
           ipcMain.removeAllListeners('send-challenge-response');
-          ipcMain.removeAllListeners('send-sudo-password');
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+          if (challengeTimeout) clearTimeout(challengeTimeout);
           reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
         }
 
-        // Detectar static challenge no stderr também
-        if ((error.includes('CHALLENGE:') || error.includes('Enter Google Authenticator Token')) && !challengeDetected) {
+        // ✅ CORREÇÃO: Detectar desafio também no stderr
+        if ((error.includes('CHALLENGE:') || error.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
           console.log('🔐 Static challenge detectado no stderr!');
           challengeDetected = true;
-          
+         
           let challengeMessage = 'Enter Google Authenticator Token';
-          const challengeMatch = error.match(/CHALLENGE:\s*([^\n\r]+)/);
+          const challengeMatch = error.match('/CHALLENGE:\s*([^\n\r]+)/');
           if (challengeMatch && challengeMatch[1]) {
             challengeMessage = challengeMatch[1].trim();
           }
-          
-          console.log('📢 Enviando challenge do stderr para frontend:', challengeMessage);
-          
+         
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+         
           mainWindow.webContents.send('vpn-challenge', {
             type: 'static-challenge',
             message: challengeMessage,
             requiresInput: true
           });
-
+          
           challengeTimeout = setTimeout(() => {
             if (challengeDetected) {
               console.error('❌ Timeout no desafio 2FA');
               ipcMain.removeAllListeners('send-challenge-response');
-              ipcMain.removeAllListeners('send-sudo-password');
               reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
             }
           }, 120000);
-        }
-        
-        if (error.includes('Failed to query password') || error.includes('Permission denied')) {
-          console.error(`❌ Erro de permissão no arquivo de autenticação`);
-          ipcMain.removeAllListeners('send-challenge-response');
-          ipcMain.removeAllListeners('send-sudo-password');
-          reject(new Error('Erro de permissão. O OpenVPN não pode acessar o arquivo de autenticação.'));
-        }
-        
-        if (error.includes('No such file or directory')) {
-          const fileMatch = error.match(/fails with '([^']+)'/);
-          if (fileMatch) {
-            const errorMsg = `Arquivo não encontrado: ${fileMatch[1]}. Certifique-se de que todos os arquivos de certificado estão no diretório do perfil.`;
-            console.error(`❌ ${errorMsg}`);
-            ipcMain.removeAllListeners('send-challenge-response');
-            ipcMain.removeAllListeners('send-sudo-password');
-            reject(new Error(errorMsg));
-          }
         }
       });
 
@@ -529,12 +579,11 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         console.log(`OpenVPN encerrado com código ${code}`);
         vpnProcess = null;
         ipcMain.removeAllListeners('send-challenge-response');
-        ipcMain.removeAllListeners('send-sudo-password');
         mainWindow.webContents.send('vpn-disconnected');
-        
+       
+        if (connectionTimeout) clearTimeout(connectionTimeout);
         if (challengeTimeout) clearTimeout(challengeTimeout);
-        
-        // CORREÇÃO: Limpar arquivo de auth ao fechar
+       
         try {
           if (authFilePath && fs.existsSync(authFilePath)) {
             fs.unlinkSync(authFilePath);
@@ -548,9 +597,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       vpnProcess.on('error', (error) => {
         console.error('❌ Erro ao executar OpenVPN:', error);
         ipcMain.removeAllListeners('send-challenge-response');
-        ipcMain.removeAllListeners('send-sudo-password');
-        
-        // Limpar arquivo de auth em caso de erro
+        if (connectionTimeout) clearTimeout(connectionTimeout);
+        if (challengeTimeout) clearTimeout(challengeTimeout);
+       
         try {
           if (authFilePath && fs.existsSync(authFilePath)) {
             fs.unlinkSync(authFilePath);
@@ -558,7 +607,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         } catch (e) {
           console.log('Erro ao limpar arquivo de auth:', e.message);
         }
-        
+       
         if (error.code === 'ENOENT') {
           reject(new Error('OpenVPN não encontrado. Certifique-se de que o OpenVPN está instalado.'));
         } else {
@@ -566,32 +615,11 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         }
       });
 
-      setTimeout(() => {
-        if (!connectionEstablished && vpnProcess && !vpnProcess.killed && !challengeDetected) {
-          const errorMsg = 'Timeout na conexão OpenVPN';
-          console.error(`❌ ${errorMsg}`);
-          ipcMain.removeAllListeners('send-challenge-response');
-          ipcMain.removeAllListeners('send-sudo-password');
-          
-          // Limpar arquivo de auth em caso de timeout
-          try {
-            if (authFilePath && fs.existsSync(authFilePath)) {
-              fs.unlinkSync(authFilePath);
-            }
-          } catch (e) {
-            console.log('Erro ao limpar arquivo de auth:', e.message);
-          }
-          
-          reject(new Error(errorMsg));
-        }
-      }, 60000);
-
     } catch (error) {
       console.error(`❌ Erro na conexão:`, error);
       ipcMain.removeAllListeners('send-challenge-response');
-      ipcMain.removeAllListeners('send-sudo-password');
-      
-      // Limpar arquivo de auth em caso de erro geral
+      if (challengeTimeout) clearTimeout(challengeTimeout);
+     
       try {
         if (authFilePath && fs.existsSync(authFilePath)) {
           fs.unlinkSync(authFilePath);
@@ -599,7 +627,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       } catch (e) {
         console.log('Erro ao limpar arquivo de auth:', e.message);
       }
-      
+     
       reject(error);
     }
   });
@@ -623,10 +651,16 @@ ipcMain.handle('send-sudo-password', async (event, password) => {
   return { success: false, error: 'Processo VPN não encontrado' };
 });
 
+ipcMain.handle('send-systemd-challenge-response', async (event, response) => {
+  if (vpnProcess && !vpnProcess.killed) {
+    vpnProcess.stdin.write(response + '\n');
+    return { success: true };
+  }
+  return { success: false, error: 'Processo VPN não encontrado' };
+});
 
 // ============ GESTÃO DE PERFIS USUÁRIO ============
 
-// Selecionar arquivo OVPN
 ipcMain.handle('select-ovpn-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Selecionar arquivo de configuração OpenVPN',
@@ -660,21 +694,12 @@ ipcMain.handle('select-ovpn-file', async () => {
   return { success: false, error: 'Nenhum arquivo selecionado' };
 });
 
-// No main.js, adicione esta função se não existir
-ipcMain.handle('send-systemd-challenge-response', async (event, response) => {
-  if (vpnProcess && !vpnProcess.killed) {
-    vpnProcess.stdin.write(response + '\n');
-    return { success: true };
-  }
-  return { success: false, error: 'Processo VPN não encontrado' };
-});
-
-// Salvar OVPN no perfil (COPIA TODOS OS ARQUIVOS)
 ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovpnFileName, originalOvpnPath) => {
-  const profilesPath = path.join(__dirname, 'user_profiles.json');
+  // ✅ CORREÇÃO
+  // const profilesPath = path.join(__dirname, 'user_profiles.json');
+  const profilesPath = USER_PROFILES_PATH;
   
   try {
-    // Processar e copiar TODOS os arquivos do perfil
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId);
     if (!processResult.success) {
       return { success: false, error: processResult.error };
@@ -682,9 +707,7 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
 
     console.log(`✅ Perfil salvo: ${profileId}`);
     console.log(`📁 Diretório: ${processResult.profileDir}`);
-    console.log(`📄 Arquivos copiados: ${processResult.filesCopied}`);
 
-    // Atualizar perfil no arquivo de perfis
     let profiles = [];
     if (await fileExists(profilesPath)) {
       const data = await fsAsync.readFile(profilesPath, 'utf-8');
@@ -712,7 +735,6 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
   }
 });
 
-// Carregar perfis salvos
 ipcMain.handle('load-user-profiles', async () => {
   const profilesPath = path.join(__dirname, 'user_profiles.json');
   try {
@@ -726,7 +748,6 @@ ipcMain.handle('load-user-profiles', async () => {
   }
 });
 
-// Salvar perfil de usuário
 ipcMain.handle('save-user-profile', async (event, profile) => {
   const profilesPath = path.join(__dirname, 'user_profiles.json');
   try {
@@ -750,18 +771,15 @@ ipcMain.handle('save-user-profile', async (event, profile) => {
   }
 });
 
-// Excluir perfil de usuário
 ipcMain.handle('delete-user-profile', async (event, profileId) => {
   const profilesPath = path.join(__dirname, 'user_profiles.json');
   const profileDir = path.join(__dirname, 'ovpn_profiles', profileId);
   
   try {
-    // Remover diretório do perfil com todos os arquivos
     if (await fileExists(profileDir)) {
       await fsAsync.rm(profileDir, { recursive: true, force: true });
     }
     
-    // Remover do arquivo de perfis
     if (await fileExists(profilesPath)) {
       let profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
       profiles = profiles.filter(p => p.id !== profileId);
@@ -776,7 +794,6 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
 
 // ============ GESTÃO DE CREDENCIAIS SEGURAS ============
 
-// Salvar credenciais de forma segura
 ipcMain.handle('save-user-credentials', async (event, profileId, username, password, rememberPassword) => {
   const credentialsPath = path.join(__dirname, 'user_credentials.json');
   
@@ -787,7 +804,6 @@ ipcMain.handle('save-user-credentials', async (event, profileId, username, passw
       credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
     }
     
-    // Criptografar a senha (simples base64 para exemplo - em produção use crypto)
     const encryptedPassword = rememberPassword ? Buffer.from(password).toString('base64') : '';
     
     credentials[profileId] = {
@@ -805,7 +821,6 @@ ipcMain.handle('save-user-credentials', async (event, profileId, username, passw
   }
 });
 
-// Carregar credenciais salvas
 ipcMain.handle('load-user-credentials', async (event, profileId) => {
   const credentialsPath = path.join(__dirname, 'user_credentials.json');
   
@@ -813,7 +828,6 @@ ipcMain.handle('load-user-credentials', async (event, profileId) => {
     if (await fileExists(credentialsPath)) {
       const credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
       if (credentials[profileId]) {
-        // Descriptografar a senha
         const creds = credentials[profileId];
         if (creds.rememberPassword && creds.password) {
           creds.password = Buffer.from(creds.password, 'base64').toString('utf-8');
@@ -831,7 +845,6 @@ ipcMain.handle('load-user-credentials', async (event, profileId) => {
 
 // ============ DETECÇÃO DE 2FA ============
 
-// Verificar se a configuração OVPN requer 2FA
 ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
   try {
     const ovpnResult = await loadOvnFromProfile(profileId);
@@ -841,11 +854,9 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
 
     const ovpnContent = ovpnResult.content;
     
-    // Procurar especificamente por static-challenge (padrão OpenVPN para 2FA)
     const staticChallengeMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"\s+(\d)/gi);
     const hasStaticChallenge = staticChallengeMatch && staticChallengeMatch.length > 0;
     
-    // Extrair o texto do prompt se existir
     let promptText = '';
     if (hasStaticChallenge) {
       const promptMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"/i);
@@ -854,7 +865,6 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
       }
     }
 
-    // Verificar se usa auth-user-pass (pré-requisito para static-challenge)
     const usesAuthUserPass = /auth-user-pass/gi.test(ovpnContent);
 
     return { 
@@ -873,22 +883,18 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
 
 // ============ GESTÃO DE CONFIGURAÇÕES AZURE AD ============
 
-// Salvar configuração Azure AD
 ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFileName, originalOvpnPath) => {
   const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
   const azureOvpnDir = path.join(__dirname, 'azure_ovpn_profiles');
   
   try {
-    // Processar e copiar TODOS os arquivos do perfil Azure
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId, azureOvpnDir);
     if (!processResult.success) {
       return { success: false, error: processResult.error };
     }
 
     console.log(`✅ Perfil Azure salvo: ${profileId}`);
-    console.log(`📁 Diretório Azure: ${processResult.profileDir}`);
 
-    // Atualizar perfil Azure no arquivo de perfis
     let azureProfiles = [];
     if (await fileExists(azureProfilesPath)) {
       const data = await fsAsync.readFile(azureProfilesPath, 'utf-8');
@@ -915,7 +921,6 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
     
     await fsAsync.writeFile(azureProfilesPath, JSON.stringify(azureProfiles, null, 2));
     
-    // Atualizar também o config.json principal se for o perfil ativo
     config.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
     
@@ -933,7 +938,6 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 
 // ============ GESTÃO DE CONFIGURAÇÕES PADRÃO ============
 
-// Salvar configurações padrão
 ipcMain.handle('save-default-profiles', async (event, defaultProfiles) => {
   const defaultsPath = path.join(__dirname, 'default_profiles.json');
   try {
@@ -944,7 +948,6 @@ ipcMain.handle('save-default-profiles', async (event, defaultProfiles) => {
   }
 });
 
-// Carregar configurações padrão
 ipcMain.handle('load-default-profiles', async () => {
   const defaultsPath = path.join(__dirname, 'default_profiles.json');
   try {
@@ -958,7 +961,6 @@ ipcMain.handle('load-default-profiles', async () => {
   }
 });
 
-// Salvar estado da aplicação
 ipcMain.handle('save-app-state', async (event, appState) => {
   const statePath = path.join(__dirname, 'app_state.json');
   try {
@@ -969,7 +971,6 @@ ipcMain.handle('save-app-state', async (event, appState) => {
   }
 });
 
-// Carregar estado da aplicação
 ipcMain.handle('load-app-state', async () => {
   const statePath = path.join(__dirname, 'app_state.json');
   try {
@@ -983,7 +984,6 @@ ipcMain.handle('load-app-state', async () => {
   }
 });
 
-// Carregar perfis Azure
 ipcMain.handle('load-azure-profiles', async () => {
   const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
   try {
@@ -997,7 +997,6 @@ ipcMain.handle('load-azure-profiles', async () => {
   }
 });
 
-// Salvar perfil Azure
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
   try {
@@ -1021,18 +1020,15 @@ ipcMain.handle('save-azure-profile', async (event, profile) => {
   }
 });
 
-// Excluir perfil Azure
 ipcMain.handle('delete-azure-profile', async (event, profileId) => {
   const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
   const profileDir = path.join(__dirname, 'azure_ovpn_profiles', profileId);
   
   try {
-    // Remover diretório do perfil Azure
     if (await fileExists(profileDir)) {
       await fsAsync.rm(profileDir, { recursive: true, force: true });
     }
     
-    // Remover do arquivo de perfis Azure
     if (await fileExists(azureProfilesPath)) {
       let profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
       profiles = profiles.filter(p => p.id !== profileId);
@@ -1120,11 +1116,16 @@ ipcMain.handle('connect-openvpn', async () => {
 
 ipcMain.handle('disconnect-openvpn', async (event, pid) => {
   return new Promise((resolve, reject) => {
+    console.log(`🔌 Solicitando desconexão do processo VPN PID: ${pid}`);
+    
     if (process.platform === 'win32') {
+      // Windows: usar taskkill
       exec(`taskkill /PID ${pid} /F`, (error) => {
         if (error) {
+          console.error(`❌ Erro ao desconectar no Windows: ${error.message}`);
           reject(new Error(`Falha ao desconectar: ${error.message}`));
         } else {
+          console.log(`✅ Processo VPN ${pid} finalizado no Windows`);
           if (vpnProcess && vpnProcess.pid === pid) {
             vpnProcess.kill();
             vpnProcess = null;
@@ -1133,10 +1134,44 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
         }
       });
     } else {
-      exec(`sudo kill ${pid}`, (error) => {
+      // Linux: usar pkexec para elevação gráfica
+      const killCommand = `kill ${pid}`;
+      console.log(`🔐 Executando comando de desconexão: ${killCommand}`);
+      
+      exec(`pkexec ${killCommand}`, (error) => {
         if (error) {
-          reject(new Error(`Falha ao desconectar: ${error.message}`));
+          console.warn(`⚠️ pkexec falhou, tentando sudo: ${error.message}`);
+          
+          // Fallback para sudo
+          exec(`sudo kill ${pid}`, (sudoError) => {
+            if (sudoError) {
+              console.error(`❌ Erro ao desconectar com sudo: ${sudoError.message}`);
+              
+              // Última tentativa: kill direto (pode não funcionar sem permissões)
+              exec(`kill ${pid}`, (killError) => {
+                if (killError) {
+                  console.error(`❌ Falha total ao desconectar: ${killError.message}`);
+                  reject(new Error(`Falha ao desconectar: Não foi possível finalizar o processo VPN`));
+                } else {
+                  console.log(`✅ Processo VPN ${pid} finalizado (sem elevação)`);
+                  if (vpnProcess && vpnProcess.pid === pid) {
+                    vpnProcess.kill();
+                    vpnProcess = null;
+                  }
+                  resolve({ success: true });
+                }
+              });
+            } else {
+              console.log(`✅ Processo VPN ${pid} finalizado com sudo`);
+              if (vpnProcess && vpnProcess.pid === pid) {
+                vpnProcess.kill();
+                vpnProcess = null;
+              }
+              resolve({ success: true });
+            }
+          });
         } else {
+          console.log(`✅ Processo VPN ${pid} finalizado com pkexec`);
           if (vpnProcess && vpnProcess.pid === pid) {
             vpnProcess.kill();
             vpnProcess = null;

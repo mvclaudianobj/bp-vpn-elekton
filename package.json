@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "description": "Cliente OpenVPN com autenticação Azure AD",
   "main": "main.js",
+  "author": {
+    "name": "BluePex",
+    "email": "contato@bluepex.com"
+  },
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
+    "clean": "rm -f app_state.json default_profiles.json user_profiles.json azure_profiles.json",
+    "reset": "npm run clean && npm start",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder --win --linux"
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --linux --win"
   },
   "dependencies": {
     "@azure/msal-node": "^2.0.0",
@@ -23,35 +30,109 @@
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },
-  "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
-    "clean": "rm -f app_state.json default_profiles.json user_profiles.json azure_profiles.json",
-    "reset": "npm run clean && npm start"
-  },
   "build": {
     "appId": "com.bluepex.vpn",
-    "productName": "BluePex VPN Connections",
+    "productName": "BluePex VPN",
+    "copyright": "Copyright © 2025 BluePex",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "main.js",
       "preload.js",
       "renderer.js",
       "index.html",
+      "styles.css",
       "config.json",
       "logo.png",
-      "node_modules/**/*"
+      "ovpn_profiles/**/*",
+      "build/com.bpvpn.pkexec.policy",
+      "node_modules/**/*",
+      "package.json"
     ],
-    "win": {
-      "target": "nsis",
-      "icon": "icon.png"
-    },
+    "extraResources": [
+      {
+        "from": "build/com.bpvpn.pkexec.policy",
+        "to": "com.bpvpn.pkexec.policy"
+      }
+    ],
     "linux": {
-      "target": "AppImage",
-      "icon": "icon.png",
-      "category": "Network"
+      "target": [
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "rpm",
+          "arch": ["x64"]
+        },
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Network",
+      "icon": "build/icon.png",
+      "maintainer": "BluePex <contato@bluepex.com>",
+      "vendor": "BluePex",
+      "synopsis": "Cliente OpenVPN com autenticação Azure AD",
+      "description": "BluePex VPN - Cliente OpenVPN profissional com suporte a autenticação Azure AD e 2FA",
+      "desktop": {
+        "Name": "BluePex VPN",
+        "Comment": "Cliente OpenVPN com autenticação Azure AD",
+        "Categories": "Network;Security;"
+      }
+    },
+    "deb": {
+      "depends": [
+        "openvpn",
+        "policykit-1"
+      ],
+      "priority": "optional",
+      "maintainer": "BluePex <contato@bluepex.com>",
+      "afterInstall": "build/afterInstall.sh",
+      "afterRemove": "build/afterRemove.sh"
+    },
+    "rpm": {
+      "depends": [
+        "openvpn",
+        "polkit"
+      ],
+      "vendor": "BluePex",
+      "afterInstall": "build/afterInstall.sh",
+      "afterRemove": "build/afterRemove.sh",
+      "fpm": [
+        "--rpm-tag",
+        "License: MIT"
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BluePex VPN",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
-  }
+  },
+  "keywords": [
+    "vpn",
+    "openvpn",
+    "azure",
+    "2fa",
+    "security"
+  ],
+  "license": "MIT"
 }

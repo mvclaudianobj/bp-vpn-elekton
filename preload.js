@@ -37,10 +37,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Configurações
   getCurrentConfig: () => ipcRenderer.invoke('get-current-config'),
   
+  // ✅ CORREÇÃO: Adicionar removeAllListeners para vpn-challenge
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
   // Event Listeners
   onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
   onVPNDisconnected: (callback) => ipcRenderer.on('vpn-disconnected', callback),
   onVPNLog: (callback) => ipcRenderer.on('vpn-log', callback),
+  onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', callback),
 
   // Configurações padrão
   saveDefaultProfiles: (defaultProfiles) => ipcRenderer.invoke('save-default-profiles', defaultProfiles),
@@ -55,7 +59,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
    // Desafio de autenticação - ADICIONE ESTAS
   sendChallengeResponse: (response) => ipcRenderer.invoke('send-challenge-response', response),
-  onVPNChallenge: (callback) => ipcRenderer.on('vpn-challenge', callback),
+  onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', (event, data) => {
+  console.log('🔐 Preload: Evento vpn-challenge recebido:', data);
+  callback(event, data);
+  }),
   sendSystemdChallengeResponse: (response) => ipcRenderer.invoke('send-systemd-challenge-response', response),
   sendSudoPassword: (password) => ipcRenderer.invoke('send-sudo-password', password),
 

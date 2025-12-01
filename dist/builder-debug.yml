@@ -7,8 +7,11 @@ x64:
     - preload.js
     - renderer.js
     - index.html
+    - styles.css
     - config.json
     - logo.png
+    - ovpn_profiles/**/*
+    - build/com.bpvpn.pkexec.policy
     - node_modules/**/*
     - package.json
     - '!**/*.{iml,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,suo,xproj,cc,d.ts,mk,a,o,forge-meta,pdb}'
@@ -24,6 +27,10 @@ x64:
     - preload.js
     - renderer.js
     - index.html
+    - styles.css
     - config.json
     - logo.png
+    - ovpn_profiles/**/*
+    - build/com.bpvpn.pkexec.policy
     - node_modules/**/*
+    - package.json
