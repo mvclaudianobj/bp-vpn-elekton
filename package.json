@@ -15,7 +15,12 @@
     "build": "electron-builder",
     "build:linux": "electron-builder --linux",
     "build:win": "electron-builder --win",
-    "build:all": "electron-builder --linux --win"
+    "build:all": "electron-builder --linux --win",
+    "release": "npm run build:all && electron-builder --publish=always",
+    "release:linux": "npm run build:linux && electron-builder --publish=always",
+    "release:win": "npm run build:win && electron-builder --publish=always",
+    "logs": "node scripts/view-logs.js",
+    "logs:tail": "tail -f /var/log/bp-vpn-electron/*.log 2>/dev/null || tail -f ~/.config/bp-vpn-electron/logs/*.log"
   },
   "dependencies": {
     "@azure/msal-node": "^2.0.0",
@@ -24,7 +29,8 @@
     "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",
     "@capacitor/ios": "^7.4.4",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -37,6 +43,12 @@
     "directories": {
       "output": "dist",
       "buildResources": "build"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "your-org",
+      "repo": "bp-vpn-electron",
+      "private": false
     },
     "files": [
       "main.js",
@@ -61,15 +73,21 @@
       "target": [
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "rpm",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Network",
@@ -111,7 +129,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",

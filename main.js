@@ -8,6 +8,465 @@ const { spawn, exec } = require('child_process');
 const axios = require('axios');
 const { PublicClientApplication } = require('@azure/msal-node');
 const { dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
+
+// ============ SISTEMA DE LOGGING ============
+
+class AppLogger {
+  constructor() {
+    this.logDir = this.getLogDirectory();
+    this.currentLogFile = null;
+    this.maxLogSize = 10 * 1024 * 1024; // 10MB
+    this.maxLogFiles = 5;
+    this.initializeLogger();
+  }
+
+  getLogDirectory() {
+    // Em produção (Linux), usar /var/log/
+    // Em desenvolvimento, usar diretório do usuário
+    if (process.platform === 'linux' && process.env.NODE_ENV !== 'development') {
+      return '/var/log/bp-vpn-electron';
+    } else {
+      // Desenvolvimento: usar ~/.config/bp-vpn-electron/logs/
+      return path.join(app.getPath('userData'), 'logs');
+    }
+  }
+
+  async initializeLogger() {
+    try {
+      // Criar diretório de logs se não existir
+      if (!fs.existsSync(this.logDir)) {
+        fs.mkdirSync(this.logDir, { recursive: true });
+        console.log(`📁 Diretório de logs criado: ${this.logDir}`);
+      }
+
+      // Verificar permissões de escrita
+      const testFile = path.join(this.logDir, '.write_test');
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+
+      this.currentLogFile = this.getCurrentLogFile();
+      console.log(`📝 Logger inicializado. Arquivo atual: ${this.currentLogFile}`);
+
+      // Log de inicialização
+      this.log('SYSTEM', 'APP_START', {
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        userData: app.getPath('userData'),
+        logDir: this.logDir,
+        packaged: app.isPackaged
+      });
+
+    } catch (error) {
+      console.error('❌ Erro ao inicializar logger:', error);
+
+      // Fallback: tentar usar diretório do usuário
+      try {
+        const fallbackLogDir = path.join(app.getPath('userData'), 'logs');
+        if (!fs.existsSync(fallbackLogDir)) {
+          fs.mkdirSync(fallbackLogDir, { recursive: true });
+        }
+
+        // Testar permissões no diretório fallback
+        const testFile = path.join(fallbackLogDir, '.write_test');
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+
+        this.logDir = fallbackLogDir;
+        this.currentLogFile = this.getCurrentLogFile();
+        console.log(`📝 Logger inicializado com fallback. Arquivo atual: ${this.currentLogFile}`);
+
+        this.log('SYSTEM', 'LOGGER_FALLBACK', {
+          originalDir: this.getLogDirectory(),
+          fallbackDir: fallbackLogDir,
+          reason: 'permission_denied'
+        });
+
+      } catch (fallbackError) {
+        console.error('❌ Fallback do logger também falhou:', fallbackError);
+        // Último fallback: apenas console
+        this.currentLogFile = null;
+      }
+    }
+  }
+
+  getCurrentLogFile() {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    return path.join(this.logDir, `bp-vpn-${today}.log`);
+  }
+
+  async checkLogRotation() {
+    if (!this.currentLogFile) return;
+
+    try {
+      const stats = await fsAsync.stat(this.currentLogFile);
+      if (stats.size > this.maxLogSize) {
+        await this.rotateLog();
+      }
+    } catch (error) {
+      // Arquivo não existe ainda, ok
+    }
+  }
+
+  async rotateLog() {
+    const baseName = path.basename(this.currentLogFile, '.log');
+
+    // Mover arquivos existentes
+    for (let i = this.maxLogFiles - 1; i >= 1; i--) {
+      const oldFile = path.join(this.logDir, `${baseName}.${i}.log`);
+      const newFile = path.join(this.logDir, `${baseName}.${i + 1}.log`);
+
+      try {
+        if (fs.existsSync(oldFile)) {
+          if (i === this.maxLogFiles - 1) {
+            fs.unlinkSync(oldFile); // Remover o mais antigo
+          } else {
+            fs.renameSync(oldFile, newFile);
+          }
+        }
+      } catch (error) {
+        console.error(`Erro ao rotacionar log ${oldFile}:`, error.message);
+      }
+    }
+
+    // Renomear arquivo atual
+    const rotatedFile = path.join(this.logDir, `${baseName}.1.log`);
+    try {
+      fs.renameSync(this.currentLogFile, rotatedFile);
+    } catch (error) {
+      console.error('Erro ao rotacionar log atual:', error.message);
+    }
+
+    this.currentLogFile = this.getCurrentLogFile();
+  }
+
+  log(category, action, data = {}, level = 'INFO') {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      level,
+      category,
+      action,
+      data,
+      pid: process.pid
+    };
+
+    // Formatar para arquivo
+    const logLine = JSON.stringify(logEntry) + '\n';
+
+    // Formatar para console (mais legível)
+    const consoleLine = `[${timestamp}] ${level} [${category}] ${action}: ${JSON.stringify(data)}`;
+
+    // Log no console
+    if (level === 'ERROR') {
+      console.error(consoleLine);
+    } else if (level === 'WARN') {
+      console.warn(consoleLine);
+    } else {
+      console.log(consoleLine);
+    }
+
+    // Log no arquivo
+    if (this.currentLogFile) {
+      try {
+        fs.appendFileSync(this.currentLogFile, logLine);
+      } catch (error) {
+        console.error('Erro ao escrever no arquivo de log:', error);
+      }
+    }
+  }
+
+  // Métodos específicos para diferentes tipos de eventos
+  logProfileCreate(profileId, profileType, profileName) {
+    this.log('PROFILE', 'CREATE', { profileId, profileType, profileName });
+  }
+
+  logProfileDelete(profileId, profileType, profileName) {
+    this.log('PROFILE', 'DELETE', { profileId, profileType, profileName });
+  }
+
+  logProfileUpdate(profileId, profileType, changes) {
+    this.log('PROFILE', 'UPDATE', { profileId, profileType, changes });
+  }
+
+  logConnectionStart(profileId, profileType, connectionType) {
+    this.log('CONNECTION', 'START', { profileId, profileType, connectionType });
+  }
+
+  logConnectionSuccess(profileId, profileType, details = {}) {
+    this.log('CONNECTION', 'SUCCESS', { profileId, profileType, ...details });
+  }
+
+  logConnectionFailure(profileId, profileType, error, details = {}) {
+    this.log('CONNECTION', 'FAILURE', { profileId, profileType, error: error.message, ...details }, 'ERROR');
+  }
+
+  logConnectionDisconnect(profileId, profileType, reason = '') {
+    this.log('CONNECTION', 'DISCONNECT', { profileId, profileType, reason });
+  }
+
+  logAuthSuccess(profileId, authType, details = {}) {
+    this.log('AUTH', 'SUCCESS', { profileId, authType, ...details });
+  }
+
+  logAuthFailure(profileId, authType, error, details = {}) {
+    this.log('AUTH', 'FAILURE', { profileId, authType, error: error.message, ...details }, 'ERROR');
+  }
+
+  logAzureTokenPublish(username, success, details = {}) {
+    this.log('AZURE', 'TOKEN_PUBLISH', { username, success, ...details }, success ? 'INFO' : 'ERROR');
+  }
+
+  logSystemError(component, error, details = {}) {
+    this.log('SYSTEM', 'ERROR', { component, error: error.message, ...details }, 'ERROR');
+  }
+
+  logSystemWarning(component, message, details = {}) {
+    this.log('SYSTEM', 'WARNING', { component, message, ...details }, 'WARN');
+  }
+
+  logConfigChange(configType, changes) {
+    this.log('CONFIG', 'CHANGE', { configType, changes });
+  }
+}
+
+// Instância global do logger
+const logger = new AppLogger();
+
+// ============ SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ============
+
+class AutoUpdaterManager {
+  constructor() {
+    this.updateAvailable = false;
+    this.updateDownloaded = false;
+    this.updateInfo = null;
+    this.checkInterval = null;
+    this.isChecking = false;
+
+    this.configureUpdater();
+    this.setupEventHandlers();
+    this.startPeriodicChecks();
+  }
+
+  configureUpdater() {
+    // Configurações do electron-updater
+    autoUpdater.autoDownload = false; // Não baixar automaticamente
+    autoUpdater.autoInstallOnAppQuit = false; // Não instalar automaticamente ao sair
+    autoUpdater.allowDowngrade = false; // Não permitir downgrade
+    autoUpdater.allowPrerelease = false; // Não usar pre-releases
+
+    // Configurar provedor (GitHub Releases)
+    if (process.env.GITHUB_TOKEN) {
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'your-org', // Substitua pelo seu owner do GitHub
+        repo: 'bp-vpn-electron',
+        private: true,
+        token: process.env.GITHUB_TOKEN
+      });
+    } else {
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'your-org', // Substitua pelo seu owner do GitHub
+        repo: 'bp-vpn-electron'
+      });
+    }
+
+    logger.log('UPDATE', 'CONFIGURED', {
+      autoDownload: autoUpdater.autoDownload,
+      autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
+      provider: 'github'
+    });
+  }
+
+  setupEventHandlers() {
+    // Evento: Atualização encontrada
+    autoUpdater.on('update-available', (info) => {
+      logger.log('UPDATE', 'AVAILABLE', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
+        currentVersion: app.getVersion()
+      });
+
+      this.updateAvailable = true;
+      this.updateInfo = info;
+
+      // Notificar renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-available', info);
+      }
+    });
+
+    // Evento: Nenhuma atualização disponível
+    autoUpdater.on('update-not-available', (info) => {
+      logger.log('UPDATE', 'NOT_AVAILABLE', {
+        currentVersion: app.getVersion(),
+        checkedAt: new Date().toISOString()
+      });
+
+      this.updateAvailable = false;
+      this.updateInfo = null;
+    });
+
+    // Evento: Download iniciado
+    autoUpdater.on('download-progress', (progressObj) => {
+      const progress = {
+        percent: Math.round(progressObj.percent),
+        speed: Math.round(progressObj.bytesPerSecond / 1024), // KB/s
+        transferred: Math.round(progressObj.transferred / 1024 / 1024), // MB
+        total: Math.round(progressObj.total / 1024 / 1024), // MB
+        remaining: progressObj.total - progressObj.transferred
+      };
+
+      // Notificar renderer a cada 10%
+      if (progress.percent % 10 === 0 || progress.percent === 100) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-progress', progress);
+        }
+      }
+    });
+
+    // Evento: Download concluído
+    autoUpdater.on('update-downloaded', (info) => {
+      logger.log('UPDATE', 'DOWNLOADED', {
+        version: info.version,
+        downloadedAt: new Date().toISOString()
+      });
+
+      this.updateDownloaded = true;
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-downloaded', info);
+      }
+    });
+
+    // Evento: Erro na atualização
+    autoUpdater.on('error', (error) => {
+      logger.logSystemError('AUTO_UPDATER', error, {
+        currentVersion: app.getVersion(),
+        platform: process.platform
+      });
+
+      this.updateAvailable = false;
+      this.updateDownloaded = false;
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-error', {
+          message: error.message,
+          code: error.code
+        });
+      }
+    });
+  }
+
+  startPeriodicChecks() {
+    // Verificar atualizações a cada 4 horas
+    const checkInterval = 4 * 60 * 60 * 1000; // 4 horas em ms
+
+    this.checkInterval = setInterval(() => {
+      if (!this.isChecking) {
+        this.checkForUpdates(false); // Verificação silenciosa
+      }
+    }, checkInterval);
+
+    // Primeira verificação após 30 segundos
+    setTimeout(() => {
+      this.checkForUpdates(false);
+    }, 30000);
+
+    logger.log('UPDATE', 'PERIODIC_CHECKS_STARTED', {
+      intervalHours: 4,
+      firstCheckDelaySeconds: 30
+    });
+  }
+
+  async checkForUpdates(showDialog = true) {
+    if (this.isChecking) {
+      logger.log('UPDATE', 'CHECK_ALREADY_RUNNING');
+      return;
+    }
+
+    this.isChecking = true;
+
+    try {
+      logger.log('UPDATE', 'CHECK_START', {
+        manual: showDialog,
+        currentVersion: app.getVersion()
+      });
+
+      const result = await autoUpdater.checkForUpdates();
+
+      if (showDialog && !this.updateAvailable) {
+        // Mostrar dialog informando que não há atualizações
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-check-complete', {
+            available: false,
+            currentVersion: app.getVersion()
+          });
+        }
+      }
+
+    } catch (error) {
+      logger.logSystemError('UPDATE_CHECK', error);
+    } finally {
+      this.isChecking = false;
+    }
+  }
+
+  async downloadUpdate() {
+    if (!this.updateAvailable) {
+      throw new Error('Nenhuma atualização disponível');
+    }
+
+    try {
+      logger.log('UPDATE', 'DOWNLOAD_START', {
+        version: this.updateInfo.version
+      });
+
+      await autoUpdater.downloadUpdate();
+
+    } catch (error) {
+      logger.logSystemError('UPDATE_DOWNLOAD', error);
+      throw error;
+    }
+  }
+
+  async installUpdate() {
+    if (!this.updateDownloaded) {
+      throw new Error('Atualização não foi baixada');
+    }
+
+    logger.log('UPDATE', 'INSTALL_START', {
+      version: this.updateInfo.version,
+      installAt: new Date().toISOString()
+    });
+
+    // Salvar estado antes da instalação
+    try {
+      await saveApplicationState();
+    } catch (error) {
+      logger.logSystemError('STATE_SAVE_BEFORE_UPDATE', error);
+    }
+
+    // Instalar e reiniciar
+    autoUpdater.quitAndInstall(false, true); // Não forçar, mas reiniciar
+  }
+
+  getStatus() {
+    return {
+      updateAvailable: this.updateAvailable,
+      updateDownloaded: this.updateDownloaded,
+      updateInfo: this.updateInfo,
+      currentVersion: app.getVersion(),
+      isChecking: this.isChecking
+    };
+  }
+}
+
+// Instância global do auto-updater
+const updaterManager = new AutoUpdaterManager();
 
 // Padronizar nome da aplicação para consistência de diretórios
 app.setName('bp-vpn-electron');
@@ -29,13 +488,101 @@ const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
 
 // Criar diretórios necessários
 function ensureDirectories() {
-  const dirs = [USER_DATA_DIR, PROFILES_DIR, AZURE_PROFILES_DIR];
+  const dirs = [
+    { path: USER_DATA_DIR, name: 'dados do usuário', critical: true },
+    { path: PROFILES_DIR, name: 'perfis VPN', critical: false },
+    { path: AZURE_PROFILES_DIR, name: 'perfis Azure', critical: false }
+  ];
+
+  logger.log('SYSTEM', 'DIRECTORY_CHECK_START', {
+    directories: dirs.map(d => ({ path: d.path, name: d.name, critical: d.critical })),
+    platform: process.platform,
+    user: process.env.USER || 'unknown'
+  });
+
   for (const dir of dirs) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`📁 Diretório criado: ${dir}`);
+    try {
+      const existsBefore = fs.existsSync(dir.path);
+      const stats = existsBefore ? fs.statSync(dir.path) : null;
+
+      if (!existsBefore) {
+        fs.mkdirSync(dir.path, { recursive: true });
+        logger.log('SYSTEM', 'DIRECTORY_CREATED', {
+          path: dir.path,
+          name: dir.name,
+          permissions: '0755',
+          recursive: true,
+          critical: dir.critical,
+          success: true
+        });
+        console.log(`📁 Diretório criado: ${dir.path}`);
+      } else {
+        logger.log('SYSTEM', 'DIRECTORY_EXISTS', {
+          path: dir.path,
+          name: dir.name,
+          isDirectory: stats.isDirectory(),
+          permissions: stats.mode.toString(8),
+          size: stats.size
+        });
+        console.log(`📁 Diretório já existe: ${dir.path}`);
+      }
+
+      // Verificar permissões de escrita detalhadamente
+      try {
+        const testFile = path.join(dir.path, '.write_test_' + Date.now());
+        const testContent = `permission_test_${Date.now()}`;
+
+        fs.writeFileSync(testFile, testContent);
+        const readBack = fs.readFileSync(testFile, 'utf-8');
+        fs.unlinkSync(testFile);
+
+        const writeSuccess = readBack === testContent;
+
+        logger.log('SYSTEM', 'DIRECTORY_PERMISSIONS_OK', {
+          path: dir.path,
+          name: dir.name,
+          testFile: path.basename(testFile),
+          writeSuccess,
+          readSuccess: true,
+          deleteSuccess: true,
+          critical: dir.critical
+        });
+        console.log(`✅ Permissões OK para: ${dir.path}`);
+      } catch (permError) {
+        logger.logSystemError('DIRECTORY_PERMISSIONS_DENIED', permError, {
+          path: dir.path,
+          name: dir.name,
+          errorCode: permError.code,
+          errorMessage: permError.message,
+          errno: permError.errno,
+          syscall: permError.syscall,
+          critical: dir.critical
+        });
+        console.error(`❌ Problema de permissões em: ${dir.path}`, permError.message);
+      }
+    } catch (error) {
+      logger.logSystemError('DIRECTORY_CREATION_FAILED', error, {
+        path: dir.path,
+        name: dir.name,
+        errorCode: error.code,
+        errorMessage: error.message,
+        errno: error.errno,
+        syscall: error.syscall,
+        critical: dir.critical
+      });
+      console.error(`❌ Erro ao criar diretório: ${dir.path}`, error.message);
     }
   }
+
+  logger.log('SYSTEM', 'DIRECTORY_CHECK_COMPLETE', {
+    userDataDir: USER_DATA_DIR,
+    profilesDir: PROFILES_DIR,
+    azureProfilesDir: AZURE_PROFILES_DIR,
+    totalDirectories: dirs.length,
+    criticalDirectories: dirs.filter(d => d.critical).length,
+    success: true
+  });
+
   console.log(`📁 Diretório de perfis: ${PROFILES_DIR}`);
   console.log(`📁 Diretório de perfis Azure: ${AZURE_PROFILES_DIR}`);
 }
@@ -43,6 +590,8 @@ function ensureDirectories() {
 let mainWindow;
 let pca;
 let config;
+let currentElevationMethod = null; // Armazena o método de elevação atual
+let currentOvpnPath = null; // Caminho do arquivo .ovpn atual
 let vpnProcess = null;
 
 // Caminhos dos arquivos
@@ -92,22 +641,77 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     if (vpnProcess) {
-      vpnProcess.kill();
-      console.log("VPN desconectada automaticamente ao fechar a janela.");
+      console.log("Tentando desconectar VPN automaticamente ao fechar a janela...");
+
+      // Usar pkexec pkill para desconectar (mesma lógica da desconexão manual)
+      const killCommand = `pkexec pkill -9 -f openvpn`;
+
+      require('child_process').exec(killCommand, (error, stdout, stderr) => {
+        if (!error) {
+          console.log("VPN desconectada automaticamente ao fechar a janela.");
+        } else {
+          console.error("Erro ao desconectar VPN automaticamente:", error.message);
+          // Fallback: tentar pkill sem elevação
+          require('child_process').exec(`pkill -9 -f openvpn`, (pkillError) => {
+            if (pkillError) {
+              console.error("Fallback também falhou:", pkillError.message);
+            }
+          });
+        }
+      });
     }
   });
 }
 
 app.whenReady().then(async () => {
   try {
+    logger.log('SYSTEM', 'APP_READY_START', {
+      electronVersion: process.versions.electron,
+      nodeVersion: process.versions.node,
+      chromeVersion: process.versions.chrome,
+      platform: process.platform,
+      arch: process.arch,
+      userInfo: {
+        uid: process.getuid ? process.getuid() : 'n/a',
+        gid: process.getgid ? process.getgid() : 'n/a',
+        username: process.env.USER || process.env.USERNAME || 'unknown'
+      },
+      environment: {
+        display: process.env.DISPLAY || 'not_set',
+        wayland: process.env.WAYLAND_DISPLAY || 'not_set',
+        xdgSessionType: process.env.XDG_SESSION_TYPE || 'not_set'
+      }
+    });
+
     // Verificar se há display disponível
-    if (!process.env.DISPLAY) {
+    if (!process.env.DISPLAY && process.platform === 'linux') {
+      logger.logSystemError('DISPLAY_CHECK_FAILED', new Error('DISPLAY não definido'), {
+        platform: process.platform,
+        wayland: process.env.WAYLAND_DISPLAY,
+        xdgSessionType: process.env.XDG_SESSION_TYPE,
+        suggestion: 'run_with_display'
+      });
       console.error('Erro: DISPLAY não definido. Execute em ambiente com interface gráfica.');
       app.quit();
       return;
     }
 
-    ensurePolicyFile();
+    logger.log('SYSTEM', 'DISPLAY_CHECK_PASSED', {
+      display: process.env.DISPLAY,
+      platform: process.platform
+    });
+
+    // Verificar e copiar arquivo de política
+    try {
+      ensurePolicyFile();
+      logger.log('SYSTEM', 'POLICY_FILE_CHECKED', {
+        policySource: path.join(__dirname, 'build', 'com.bpvpn.pkexec.policy'),
+        policyDest: path.join(__dirname, 'resources', 'com.bpvpn.pkexec.policy')
+      });
+    } catch (policyError) {
+      logger.logSystemError('POLICY_FILE_ERROR', policyError);
+    }
+
     ensureDirectories(); // ✅ Criar diretórios
     
     // ✅ Carregar config do diretório do usuário
@@ -132,6 +736,7 @@ app.whenReady().then(async () => {
     }
   } catch (error) {
     console.error('Erro ao carregar configurações:', error);
+    logger.logSystemError('CONFIG_LOAD', error);
     config = {
       client_id: "",
       tenant_id: "",
@@ -139,14 +744,32 @@ app.whenReady().then(async () => {
       server_api: "",
       openvpn_config: ""
     };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   }
 
-  pca = new PublicClientApplication({
-    auth: {
-      clientId: config.client_id,
-      authority: `https://login.microsoftonline.com/${config.tenant_id}`,
-    }
-  });
+   // Configurar Azure AD
+   try {
+     pca = new PublicClientApplication({
+       auth: {
+         clientId: config.client_id,
+         authority: `https://login.microsoftonline.com/${config.tenant_id}`,
+       }
+     });
+
+     logger.log('AZURE', 'CLIENT_CONFIGURED', {
+       hasClientId: !!config.client_id,
+       hasTenantId: !!config.tenant_id,
+       authority: `https://login.microsoftonline.com/${config.tenant_id}`,
+       scope: config.scope,
+       serverApi: config.server_api
+     });
+   } catch (azureError) {
+     logger.logSystemError('AZURE_CLIENT_INIT_FAILED', azureError, {
+       clientId: config.client_id ? '***configured***' : 'not_set',
+       tenantId: config.tenant_id ? '***configured***' : 'not_set'
+     });
+     console.error('Erro ao configurar cliente Azure:', azureError);
+   }
 
   createWindow();
 
@@ -395,16 +1018,43 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
     let authFilePath = null;
     let challengeHandler = null;
     let challengeTimeout = null;
-   
+
+    const connectionId = `conn_${profileId}_${Date.now()}`;
+
     try {
-      console.log(`🔗 Iniciando conexão para perfil: ${profileId}`);
-     
+      logger.log('CONNECTION', 'START', {
+        connectionId,
+        profileId,
+        profileType: 'user',
+        connectionType: 'openvpn-userpass',
+        username: username ? '***provided***' : 'empty',
+        passwordLength: password ? password.length : 0,
+        platform: process.platform,
+        user: process.env.USER || 'unknown',
+        timestamp: new Date().toISOString()
+      });
+
       const ovpnResult = await loadOvnFromProfile(profileId);
       if (!ovpnResult.success) {
         console.error(`❌ Erro ao carregar perfil: ${ovpnResult.error}`);
+        logger.log('CONNECTION', 'LOAD_PROFILE_FAILED', {
+          connectionId,
+          profileId,
+          error: ovpnResult.error,
+          step: 'load_ovpn_profile',
+          profileDir: ovpnResult.profileDir || 'unknown'
+        }, 'ERROR');
         reject(new Error(ovpnResult.error));
         return;
       }
+
+      logger.log('CONNECTION', 'PROFILE_LOADED', {
+        connectionId,
+        profileId,
+        configPath: ovpnResult.path,
+        profileDir: ovpnResult.profileDir,
+        configSize: ovpnResult.content ? ovpnResult.content.length : 0
+      });
 
       const profileDir = ovpnResult.profileDir;
       const configPath = ovpnResult.path;
@@ -440,45 +1090,111 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          env: { ...process.env, SYSTEMD_ASK_PASSWORD: '' }
        };
 
-       if (process.platform === 'linux') {
-           // Verificar se pkexec está disponível
-           const pkexecAvailable = await checkPkexecAvailable();
+        if (process.platform === 'linux') {
+            // Verificar disponibilidade de ferramentas de elevação
+            logger.log('CONNECTION', 'CHECK_ELEVATION_TOOLS', {
+              connectionId,
+              displayAvailable: !!process.env.DISPLAY,
+              checkingPkexec: true
+            });
 
-           // Encontrar caminho do openvpn
-           const openvpnPath = await new Promise((resolve) => {
-             exec('which openvpn', (error, stdout) => {
-               resolve(error ? 'openvpn' : stdout.trim());
-             });
-           });
+            const pkexecAvailable = await checkPkexecAvailable();
+            logger.log('CONNECTION', 'PKEXEC_AVAILABILITY', {
+              connectionId,
+              pkexecAvailable,
+              displayEnv: process.env.DISPLAY || 'not_set'
+            });
 
-           if (process.env.DISPLAY && pkexecAvailable) {
-             openvpnCommand = 'pkexec';
-             openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
-             console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
-           } else {
-             openvpnCommand = 'sudo';
-             openvpnArgsFinal = [openvpnPath, ...openvpnArgs];
-             console.log(`🔐 Usando sudo com ${openvpnPath} para elevação`);
-           }
-       } else if (process.platform === 'win32') {
-        const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
-        openvpnCommand = 'powershell.exe';
-        openvpnArgsFinal = [
-          '-Command',
-          `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
-        ];
-        spawnOptions.shell = true;
-        console.log('🔐 Usando PowerShell com RunAs para elevação no Windows');
-      } else {
-        throw new Error('Plataforma não suportada');
-      }
+            // Encontrar caminho do openvpn
+            const openvpnPath = await new Promise((resolve) => {
+              exec('which openvpn', (error, stdout) => {
+                if (error) {
+                  logger.log('CONNECTION', 'OPENVPN_NOT_FOUND', {
+                    connectionId,
+                    error: error.message,
+                    code: error.code
+                  }, 'ERROR');
+                  resolve('openvpn'); // fallback
+                } else {
+                  const path = stdout.trim();
+                  logger.log('CONNECTION', 'OPENVPN_FOUND', {
+                    connectionId,
+                    path,
+                    versionCheck: true
+                  });
+                  resolve(path);
+                }
+              });
+            });
+
+            // Estratégia de elevação
+            if (process.env.DISPLAY && pkexecAvailable) {
+              openvpnCommand = 'pkexec';
+              currentElevationMethod = 'pkexec'; // Armazenar método usado
+              openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
+              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                connectionId,
+                strategy: 'pkexec',
+                command: openvpnCommand,
+                args: openvpnArgsFinal.slice(0, 3), // primeiros args apenas
+                reason: 'display_and_pkexec_available',
+                elevationMethodStored: currentElevationMethod
+              });
+              console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
+              console.log(`🔐 Método de elevação armazenado: ${currentElevationMethod}`);
+            } else {
+              openvpnCommand = 'sudo';
+              currentElevationMethod = 'sudo'; // Armazenar método usado
+              openvpnArgsFinal = [openvpnPath, ...openvpnArgs];
+              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                connectionId,
+                strategy: 'sudo',
+                command: openvpnCommand,
+                reason: process.env.DISPLAY ? 'pkexec_not_available' : 'no_display',
+                elevationMethodStored: currentElevationMethod
+              });
+              console.log(`🔐 Usando sudo com ${openvpnPath} para elevação`);
+              console.log(`🔐 Método de elevação armazenado: ${currentElevationMethod}`);
+            }
+        } else if (process.platform === 'win32') {
+         const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
+         openvpnCommand = 'powershell.exe';
+         openvpnArgsFinal = [
+           '-Command',
+           `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
+         ];
+         spawnOptions.shell = true;
+         logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+           connectionId,
+           strategy: 'powershell_runas',
+           openvpnPath,
+           profileDir,
+           platform: 'windows'
+         });
+         console.log('🔐 Usando PowerShell com RunAs para elevação no Windows');
+       } else {
+         logger.log('CONNECTION', 'UNSUPPORTED_PLATFORM', {
+           connectionId,
+           platform: process.platform,
+           supported: ['linux', 'win32']
+         }, 'ERROR');
+         throw new Error('Plataforma não suportada');
+       }
      
-       vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
+        vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
 
-       let connectionEstablished = false;
-       let challengeDetected = false;
-       let authFailed = false;
-       let stdinReady = false;
+        // ✅ CORREÇÃO: Armazenar caminho do .ovpn para desconexão específica
+        currentOvpnPath = configPath;
+
+        // ✅ CORREÇÃO: Resolver imediatamente com o PID após spawn bem-sucedido
+        console.log(`🔌 [MAIN] Processo OpenVPN iniciado com PID: ${vpnProcess.pid}`);
+        logger.logConnectionStart(profileId, 'user', 'openvpn-userpass');
+        resolve({ pid: vpnProcess.pid });
+
+        let connectionEstablished = false;
+        let challengeDetected = false;
+        let authFailed = false;
+        let stdinReady = false;
 
        // Abrir fifo para escrita
        try {
@@ -519,18 +1235,30 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         }
       }, 60000);
 
-       vpnProcess.stdout.on('data', (data) => {
-         const output = data.toString();
-         console.log('OpenVPN stdout:', output);
-         mainWindow.webContents.send('vpn-log', output);
+        vpnProcess.stdout.on('data', (data) => {
+          const output = data.toString();
+          console.log('OpenVPN stdout:', output);
+          mainWindow.webContents.send('vpn-log', output);
 
-           // Marcar que stdin está pronto após primeira saída
-          if (!stdinReady) {
-            stdinReady = true;
-            console.log('🔄 OpenVPN stdin pronto para entrada');
+            // Marcar que stdin está pronto após primeira saída
+           if (!stdinReady) {
+             stdinReady = true;
+             console.log('🔄 OpenVPN stdin pronto para entrada');
+           }
+
+          // ✅ CORREÇÃO: Detectar conexão bem-sucedida
+          if ((output.includes('Initialization Sequence Completed') || output.includes('Connected')) && !connectionEstablished) {
+            connectionEstablished = true;
+            console.log('✅ [MAIN] VPN conectada com sucesso!');
+            logger.logConnectionSuccess(profileId, 'user', { pid: vpnProcess.pid });
+            mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
+
+            // Limpar timeouts
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            if (challengeTimeout) clearTimeout(challengeTimeout);
           }
 
-         // ✅ CORREÇÃO: Detectar desafio APÓS tentativa de autenticação inicial
+          // ✅ CORREÇÃO: Detectar desafio APÓS tentativa de autenticação inicial
          if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
            console.log('🔐 Static challenge detectado!');
            challengeDetected = true;
@@ -605,46 +1333,110 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        });
 
         vpnProcess.on('close', (code) => {
-          console.log(`OpenVPN encerrado com código ${code}`);
-          vpnProcess = null;
-          ipcMain.removeAllListeners('send-challenge-response');
-          mainWindow.webContents.send('vpn-disconnected');
+           console.log(`OpenVPN encerrado com código ${code}`);
+           vpnProcess = null;
+           ipcMain.removeAllListeners('send-challenge-response');
+           mainWindow.webContents.send('vpn-disconnected');
 
+           if (connectionTimeout) clearTimeout(connectionTimeout);
+           if (challengeTimeout) clearTimeout(challengeTimeout);
+
+           // Log de desconexão
+           if (code === 0) {
+             logger.logConnectionDisconnect(profileId, 'user', 'normal_exit');
+           } else {
+             logger.logConnectionDisconnect(profileId, 'user', `exit_code_${code}`);
+           }
+
+            // Limpar método de elevação quando a conexão termina
+            currentElevationMethod = null;
+            currentOvpnPath = null;
+
+           try {
+             if (authFilePath && fs.existsSync(authFilePath)) {
+               fs.unlinkSync(authFilePath);
+               console.log(`🧹 Arquivo de autenticação removido: ${authFilePath}`);
+             }
+           } catch (e) {
+             console.log('Erro ao limpar arquivos:', e.message);
+           }
+
+
+        });
+
+        vpnProcess.on('error', (error) => {
+          console.error('❌ Erro ao executar OpenVPN:', error);
+
+          logger.log('CONNECTION', 'PROCESS_SPAWN_ERROR', {
+            connectionId,
+            profileId,
+            errorCode: error.code,
+            errorMessage: error.message,
+            errno: error.errno,
+            syscall: error.syscall,
+            command: openvpnCommand,
+            argsCount: openvpnArgsFinal.length,
+            platform: process.platform,
+            elevationStrategy: openvpnCommand === 'pkexec' ? 'pkexec' : openvpnCommand === 'sudo' ? 'sudo' : 'direct'
+          }, 'ERROR');
+
+          ipcMain.removeAllListeners('send-challenge-response');
           if (connectionTimeout) clearTimeout(connectionTimeout);
           if (challengeTimeout) clearTimeout(challengeTimeout);
 
           try {
             if (authFilePath && fs.existsSync(authFilePath)) {
               fs.unlinkSync(authFilePath);
-              console.log(`🧹 Arquivo de autenticação removido: ${authFilePath}`);
+              logger.log('CONNECTION', 'AUTH_FILE_CLEANUP', {
+                connectionId,
+                authFilePath,
+                cleanupSuccess: true
+              });
             }
-          } catch (e) {
-            console.log('Erro ao limpar arquivos:', e.message);
+          } catch (cleanupError) {
+            logger.logSystemError('AUTH_FILE_CLEANUP_FAILED', cleanupError, {
+              connectionId,
+              authFilePath
+            });
+            console.log('Erro ao limpar arquivos:', cleanupError.message);
           }
 
+          let userFriendlyError;
+          if (error.code === 'ENOENT') {
+            userFriendlyError = 'OpenVPN não encontrado. Certifique-se de que o OpenVPN está instalado.';
+            logger.log('CONNECTION', 'OPENVPN_NOT_INSTALLED', {
+              connectionId,
+              command: openvpnCommand,
+              suggestion: 'install_openvpn'
+            }, 'ERROR');
+          } else if (error.code === 'EACCES' || error.code === 'EPERM') {
+            userFriendlyError = 'Permissões insuficientes para executar OpenVPN. Tente executar como administrador.';
+            logger.log('CONNECTION', 'INSUFFICIENT_PERMISSIONS', {
+              connectionId,
+              command: openvpnCommand,
+              errorCode: error.code,
+              suggestion: 'run_as_admin'
+            }, 'ERROR');
+          } else if (error.code === 'ENOEXEC') {
+            userFriendlyError = 'Erro na execução do comando de elevação. Verifique se pkexec/sudo estão instalados.';
+            logger.log('CONNECTION', 'ELEVATION_EXEC_ERROR', {
+              connectionId,
+              command: openvpnCommand,
+              errorCode: error.code,
+              suggestion: 'check_elevation_tools'
+            }, 'ERROR');
+          } else {
+            userFriendlyError = `Erro ao executar OpenVPN: ${error.message}`;
+            logger.log('CONNECTION', 'UNKNOWN_EXEC_ERROR', {
+              connectionId,
+              command: openvpnCommand,
+              errorCode: error.code,
+              errorMessage: error.message
+            }, 'ERROR');
+          }
 
-       });
-
-       vpnProcess.on('error', (error) => {
-         console.error('❌ Erro ao executar OpenVPN:', error);
-         ipcMain.removeAllListeners('send-challenge-response');
-         if (connectionTimeout) clearTimeout(connectionTimeout);
-         if (challengeTimeout) clearTimeout(challengeTimeout);
-
-         try {
-           if (authFilePath && fs.existsSync(authFilePath)) {
-             fs.unlinkSync(authFilePath);
-           }
-         } catch (e) {
-           console.log('Erro ao limpar arquivos:', e.message);
-         }
-
-         if (error.code === 'ENOENT') {
-           reject(new Error('OpenVPN não encontrado. Certifique-se de que o OpenVPN está instalado.'));
-         } else {
-           reject(new Error(`Erro ao executar OpenVPN: ${error.message}`));
-         }
-       });
+          reject(new Error(userFriendlyError));
+        });
 
     } catch (error) {
       console.error(`❌ Erro na conexão:`, error);
@@ -726,48 +1518,176 @@ ipcMain.handle('select-ovpn-file', async () => {
 });
 
 ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovpnFileName, originalOvpnPath) => {
-  // ✅ CORREÇÃO
-  // const profilesPath = path.join(__dirname, 'user_profiles.json');
   const profilesPath = USER_PROFILES_PATH;
-  
+
   try {
+    logger.log('PROFILE', 'SAVE_START', {
+      profileId,
+      ovpnFileName,
+      originalOvpnPath,
+      profilesPath,
+      operation: 'save_ovpn_to_profile'
+    });
+
+    // Verificar se arquivo OVPN original existe
+    if (!fs.existsSync(originalOvpnPath)) {
+      logger.log('PROFILE', 'ORIGINAL_FILE_NOT_FOUND', {
+        profileId,
+        ovpnFileName,
+        originalOvpnPath,
+        exists: false
+      }, 'ERROR');
+      return { success: false, error: `Arquivo OVPN não encontrado: ${originalOvpnPath}` };
+    }
+
+    const originalStats = fs.statSync(originalOvpnPath);
+    logger.log('PROFILE', 'ORIGINAL_FILE_INFO', {
+      profileId,
+      originalOvpnPath,
+      size: originalStats.size,
+      modified: originalStats.mtime.toISOString()
+    });
+
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId);
     if (!processResult.success) {
+      logger.log('PROFILE', 'PROCESS_OVPN_FAILED', {
+        profileId,
+        ovpnFileName,
+        originalOvpnPath,
+        error: processResult.error,
+        operation: 'process_and_copy_files'
+      }, 'ERROR');
       return { success: false, error: processResult.error };
     }
+
+    logger.log('PROFILE', 'OVPN_PROCESS_SUCCESS', {
+      profileId,
+      ovpnFileName,
+      profileDir: processResult.profileDir,
+      filesCopied: processResult.filesCopied,
+      content: processResult.content ? processResult.content.substring(0, 100) + '...' : null
+    });
 
     console.log(`✅ Perfil salvo: ${profileId}`);
     console.log(`📁 Diretório: ${processResult.profileDir}`);
 
+    // Carregar perfis existentes
     let profiles = [];
-    if (await fileExists(profilesPath)) {
+    const profilesExistBefore = await fileExists(profilesPath);
+
+    if (profilesExistBefore) {
       const data = await fsAsync.readFile(profilesPath, 'utf-8');
       profiles = JSON.parse(data);
+      logger.log('PROFILE', 'EXISTING_PROFILES_LOADED', {
+        profileId,
+        profilesCount: profiles.length,
+        profilesPath
+      });
+    } else {
+      logger.log('PROFILE', 'NO_EXISTING_PROFILES', {
+        profileId,
+        profilesPath,
+        willCreate: true
+      });
     }
-    
+
+    const isNew = profiles.findIndex(p => p.id === profileId) === -1;
     const profileIndex = profiles.findIndex(p => p.id === profileId);
+
     if (profileIndex >= 0) {
+      // Atualizar perfil existente
+      const oldProfile = { ...profiles[profileIndex] };
       profiles[profileIndex].ovpnFile = path.join(processResult.profileDir, `${profileId}.ovpn`);
       profiles[profileIndex].ovpnFileName = ovpnFileName;
       profiles[profileIndex].profileDir = processResult.profileDir;
       profiles[profileIndex].updatedAt = new Date().toISOString();
+
+      logger.log('PROFILE', 'PROFILE_UPDATED', {
+        profileId,
+        profileType: 'user',
+        oldValues: {
+          ovpnFile: oldProfile.ovpnFile,
+          ovpnFileName: oldProfile.ovpnFileName,
+          updatedAt: oldProfile.updatedAt
+        },
+        newValues: {
+          ovpnFile: profiles[profileIndex].ovpnFile,
+          ovpnFileName: ovpnFileName,
+          filesCopied: processResult.filesCopied
+        }
+      });
+    } else {
+      // Criar novo perfil
+      const newProfile = {
+        id: profileId,
+        name: ovpnFileName,
+        type: 'user',
+        ovpnFile: path.join(processResult.profileDir, `${profileId}.ovpn`),
+        ovpnFileName: ovpnFileName,
+        profileDir: processResult.profileDir,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      profiles.push(newProfile);
+
+      logger.log('PROFILE', 'PROFILE_CREATED', {
+        profileId,
+        profileType: 'user',
+        profileName: ovpnFileName,
+        ovpnFile: newProfile.ovpnFile,
+        profileDir: processResult.profileDir,
+        filesCopied: processResult.filesCopied,
+        totalProfiles: profiles.length
+      });
     }
-    
-    await fsAsync.writeFile(profilesPath, JSON.stringify(profiles, null, 2));
-    return { 
+
+    // Salvar arquivo de perfis
+    const profilesJson = JSON.stringify(profiles, null, 2);
+    await fsAsync.writeFile(profilesPath, profilesJson);
+
+    const finalStats = fs.statSync(profilesPath);
+    logger.log('PROFILE', 'PROFILES_FILE_SAVED', {
+      profileId,
+      profilesPath,
+      fileSize: finalStats.size,
+      profilesCount: profiles.length,
+      isNew,
+      success: true
+    });
+
+    logger.log('PROFILE', 'SAVE_SUCCESS', {
+      profileId,
+      profileType: 'user',
+      isNew,
+      filesCopied: processResult.filesCopied,
+      profileDir: processResult.profileDir,
+      totalProfiles: profiles.length
+    });
+
+    return {
       success: true,
       profileDir: processResult.profileDir,
       filesCopied: processResult.filesCopied
     };
-    
+
   } catch (error) {
     console.error('Erro ao salvar perfil:', error);
+    logger.logSystemError('PROFILE_SAVE_EXCEPTION', error, {
+      profileId,
+      ovpnFileName,
+      originalOvpnPath,
+      profilesPath,
+      errorCode: error.code,
+      errorMessage: error.message,
+      stack: error.stack
+    });
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('load-user-profiles', async () => {
-  const profilesPath = path.join(__dirname, 'user_profiles.json');
+  const profilesPath = USER_PROFILES_PATH;
   try {
     if (await fileExists(profilesPath)) {
       const profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
@@ -780,21 +1700,21 @@ ipcMain.handle('load-user-profiles', async () => {
 });
 
 ipcMain.handle('save-user-profile', async (event, profile) => {
-  const profilesPath = path.join(__dirname, 'user_profiles.json');
+  const profilesPath = USER_PROFILES_PATH;
   try {
     let profiles = [];
-    
+
     if (await fileExists(profilesPath)) {
       profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
     }
-    
+
     const existingIndex = profiles.findIndex(p => p.id === profile.id);
     if (existingIndex >= 0) {
       profiles[existingIndex] = profile;
     } else {
       profiles.push(profile);
     }
-    
+
     await fsAsync.writeFile(profilesPath, JSON.stringify(profiles, null, 2));
     return { success: true };
   } catch (error) {
@@ -803,22 +1723,35 @@ ipcMain.handle('save-user-profile', async (event, profile) => {
 });
 
 ipcMain.handle('delete-user-profile', async (event, profileId) => {
-  const profilesPath = path.join(__dirname, 'user_profiles.json');
-  const profileDir = path.join(__dirname, 'ovpn_profiles', profileId);
-  
+  const profilesPath = USER_PROFILES_PATH;
+  const profileDir = path.join(PROFILES_DIR, profileId);
+
   try {
+    logger.log('PROFILE', 'DELETE_START', { profileId, profileType: 'user' });
+
+    // Buscar nome do perfil antes de deletar
+    let profileName = 'Unknown';
+    if (await fileExists(profilesPath)) {
+      const profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
+      const profile = profiles.find(p => p.id === profileId);
+      if (profile) profileName = profile.name;
+    }
+
     if (await fileExists(profileDir)) {
       await fsAsync.rm(profileDir, { recursive: true, force: true });
+      logger.log('PROFILE', 'DIR_REMOVED', { profileId, profileDir });
     }
-    
+
     if (await fileExists(profilesPath)) {
       let profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
       profiles = profiles.filter(p => p.id !== profileId);
       await fsAsync.writeFile(profilesPath, JSON.stringify(profiles, null, 2));
     }
-    
+
+    logger.logProfileDelete(profileId, 'user', profileName);
     return { success: true };
   } catch (error) {
+    logger.logSystemError('PROFILE_DELETE', error, { profileId, profileType: 'user' });
     return { success: false, error: error.message };
   }
 });
@@ -826,35 +1759,35 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
 // ============ GESTÃO DE CREDENCIAIS SEGURAS ============
 
 ipcMain.handle('save-user-credentials', async (event, profileId, username, password, rememberPassword) => {
-  const credentialsPath = path.join(__dirname, 'user_credentials.json');
-  
+  const credentialsPath = USER_CREDENTIALS_PATH;
+
   try {
     let credentials = {};
-    
+
     if (await fileExists(credentialsPath)) {
       credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
     }
-    
+
     const encryptedPassword = rememberPassword ? Buffer.from(password).toString('base64') : '';
-    
+
     credentials[profileId] = {
       username: username,
       password: encryptedPassword,
       rememberPassword: rememberPassword,
       updatedAt: new Date().toISOString()
     };
-    
+
     await fsAsync.writeFile(credentialsPath, JSON.stringify(credentials, null, 2));
     return { success: true };
-    
+
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('load-user-credentials', async (event, profileId) => {
-  const credentialsPath = path.join(__dirname, 'user_credentials.json');
-  
+  const credentialsPath = USER_CREDENTIALS_PATH;
+
   try {
     if (await fileExists(credentialsPath)) {
       const credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
@@ -915,9 +1848,9 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
 // ============ GESTÃO DE CONFIGURAÇÕES AZURE AD ============
 
 ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFileName, originalOvpnPath) => {
-  const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
-  const azureOvpnDir = path.join(__dirname, 'azure_ovpn_profiles');
-  
+  const azureProfilesPath = AZURE_PROFILES_PATH;
+  const azureOvpnDir = AZURE_PROFILES_DIR;
+
   try {
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId, azureOvpnDir);
     if (!processResult.success) {
@@ -931,7 +1864,7 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       const data = await fsAsync.readFile(azureProfilesPath, 'utf-8');
       azureProfiles = JSON.parse(data);
     }
-    
+
     const profileIndex = azureProfiles.findIndex(p => p.id === profileId);
     if (profileIndex >= 0) {
       azureProfiles[profileIndex].ovpnFile = path.join(processResult.profileDir, `${profileId}.ovpn`);
@@ -949,18 +1882,18 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
         updatedAt: new Date().toISOString()
       });
     }
-    
+
     await fsAsync.writeFile(azureProfilesPath, JSON.stringify(azureProfiles, null, 2));
-    
+
     config.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
-    fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-    
-    return { 
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+    return {
       success: true,
       profileDir: processResult.profileDir,
       filesCopied: processResult.filesCopied
     };
-    
+
   } catch (error) {
     console.error('Erro ao salvar perfil Azure:', error);
     return { success: false, error: error.message };
@@ -970,7 +1903,7 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 // ============ GESTÃO DE CONFIGURAÇÕES PADRÃO ============
 
 ipcMain.handle('save-default-profiles', async (event, defaultProfiles) => {
-  const defaultsPath = path.join(__dirname, 'default_profiles.json');
+  const defaultsPath = DEFAULT_PROFILES_PATH;
   try {
     await fsAsync.writeFile(defaultsPath, JSON.stringify(defaultProfiles, null, 2));
     return { success: true };
@@ -980,7 +1913,7 @@ ipcMain.handle('save-default-profiles', async (event, defaultProfiles) => {
 });
 
 ipcMain.handle('load-default-profiles', async () => {
-  const defaultsPath = path.join(__dirname, 'default_profiles.json');
+  const defaultsPath = DEFAULT_PROFILES_PATH;
   try {
     if (await fileExists(defaultsPath)) {
       const defaults = JSON.parse(await fsAsync.readFile(defaultsPath, 'utf-8'));
@@ -993,7 +1926,7 @@ ipcMain.handle('load-default-profiles', async () => {
 });
 
 ipcMain.handle('save-app-state', async (event, appState) => {
-  const statePath = path.join(__dirname, 'app_state.json');
+  const statePath = APP_STATE_PATH;
   try {
     await fsAsync.writeFile(statePath, JSON.stringify(appState, null, 2));
     return { success: true };
@@ -1003,7 +1936,7 @@ ipcMain.handle('save-app-state', async (event, appState) => {
 });
 
 ipcMain.handle('load-app-state', async () => {
-  const statePath = path.join(__dirname, 'app_state.json');
+  const statePath = APP_STATE_PATH;
   try {
     if (await fileExists(statePath)) {
       const state = JSON.parse(await fsAsync.readFile(statePath, 'utf-8'));
@@ -1016,7 +1949,7 @@ ipcMain.handle('load-app-state', async () => {
 });
 
 ipcMain.handle('load-azure-profiles', async () => {
-  const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
+  const azureProfilesPath = AZURE_PROFILES_PATH;
   try {
     if (await fileExists(azureProfilesPath)) {
       const profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
@@ -1029,21 +1962,21 @@ ipcMain.handle('load-azure-profiles', async () => {
 });
 
 ipcMain.handle('save-azure-profile', async (event, profile) => {
-  const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
+  const azureProfilesPath = AZURE_PROFILES_PATH;
   try {
     let profiles = [];
-    
+
     if (await fileExists(azureProfilesPath)) {
       profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
     }
-    
+
     const existingIndex = profiles.findIndex(p => p.id === profile.id);
     if (existingIndex >= 0) {
       profiles[existingIndex] = profile;
     } else {
       profiles.push(profile);
     }
-    
+
     await fsAsync.writeFile(azureProfilesPath, JSON.stringify(profiles, null, 2));
     return { success: true };
   } catch (error) {
@@ -1052,20 +1985,20 @@ ipcMain.handle('save-azure-profile', async (event, profile) => {
 });
 
 ipcMain.handle('delete-azure-profile', async (event, profileId) => {
-  const azureProfilesPath = path.join(__dirname, 'azure_profiles.json');
-  const profileDir = path.join(__dirname, 'azure_ovpn_profiles', profileId);
-  
+  const azureProfilesPath = AZURE_PROFILES_PATH;
+  const profileDir = path.join(AZURE_PROFILES_DIR, profileId);
+
   try {
     if (await fileExists(profileDir)) {
       await fsAsync.rm(profileDir, { recursive: true, force: true });
     }
-    
+
     if (await fileExists(azureProfilesPath)) {
       let profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
       profiles = profiles.filter(p => p.id !== profileId);
       await fsAsync.writeFile(azureProfilesPath, JSON.stringify(profiles, null, 2));
     }
-    
+
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -1075,9 +2008,15 @@ ipcMain.handle('delete-azure-profile', async (event, profileId) => {
 // ============ FUNÇÕES AZURE EXISTENTES ============
 
 ipcMain.handle('login-azure', async () => {
+  logger.log('AZURE', 'LOGIN_START', { scopes: config.scope });
+
   const request = {
     scopes: config.scope.split(' '),
     deviceCodeCallback: (deviceCodeResponse) => {
+      logger.log('AZURE', 'DEVICE_CODE_GENERATED', {
+        verificationUri: deviceCodeResponse.verificationUri,
+        userCode: deviceCodeResponse.userCode
+      });
       const messageData = {
         verification_uri: deviceCodeResponse.verificationUri,
         user_code: deviceCodeResponse.userCode,
@@ -1098,22 +2037,44 @@ ipcMain.handle('login-azure', async () => {
     };
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
 
+    logger.logAuthSuccess('azure_device_code', 'azure_ad', {
+      username: account.username,
+      expiresAt: cache.expires_at
+    });
+
     return { token: accessToken, username: account.username };
   } catch (err) {
+    logger.logAuthFailure('azure_device_code', 'azure_ad', err);
     throw new Error(err.message);
   }
 });
 
 ipcMain.handle('publish-token', async (event, username, token) => {
   try {
+    logger.log('AZURE', 'TOKEN_PUBLISH_START', { username, serverApi: config.server_api });
+
     await axios.post(config.server_api, { username, jwt_token: token });
+
+    logger.logAzureTokenPublish(username, true, { serverApi: config.server_api });
     return { success: true };
   } catch (err) {
+    logger.logAzureTokenPublish(username, false, {
+      serverApi: config.server_api,
+      error: err.response?.data?.message || err.message
+    });
     throw new Error(err.response?.data?.message || err.message);
   }
 });
 
 ipcMain.handle('connect-openvpn', async () => {
+  console.log(`🔗 [MAIN] connect-openvpn chamado - Timestamp: ${new Date().toISOString()}`);
+
+  // ✅ PROTEÇÃO: Verificar se já há uma conexão ativa
+  if (vpnProcess && !vpnProcess.killed) {
+    console.log(`⚠️ [MAIN] Conexão Azure já ativa (PID: ${vpnProcess.pid})`);
+    throw new Error('Já existe uma conexão VPN ativa');
+  }
+
   let cache;
   try {
     cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
@@ -1124,9 +2085,15 @@ ipcMain.handle('connect-openvpn', async () => {
   const shortID = cache.access_token.substring(0, 16);
   fs.writeFileSync(authPath, `user\n${shortID}`, 'utf-8');
 
-  let openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
+   let openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
 
-  if (process.platform === 'win32') {
+   // ✅ DEFINIR CAMINHO DO ARQUIVO OVPN PARA DESCONEXÃO ESPECÍFICA
+   currentOvpnPath = config.openvpn_config;
+
+   // ✅ DEFINIR MÉTODO DE ELEVAÇÃO PARA DESCONEXÃO
+   currentElevationMethod = 'sudo';
+
+   if (process.platform === 'win32') {
     const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
     vpnProcess = spawn(openvpnPath, openvpnArgs);
   } else {
@@ -1145,66 +2112,97 @@ ipcMain.handle('connect-openvpn', async () => {
   return { pid: vpnProcess.pid, shortID };
 });
 
+// ============ DESCONEXÃO VPN ROBUSTA ============
+
+// ============ DESCONEXÃO VPN ULTRA FORÇADA ============
+
+// ============ DESCONEXÃO ULTRA SIMPLES E FORÇADA ============
+
 ipcMain.handle('disconnect-openvpn', async (event, pid) => {
-  return new Promise((resolve, reject) => {
-    console.log(`🔌 Solicitando desconexão do processo VPN PID: ${pid}`);
-    
-    if (process.platform === 'win32') {
-      // Windows: usar taskkill
-      exec(`taskkill /PID ${pid} /F`, (error) => {
-        if (error) {
-          console.error(`❌ Erro ao desconectar no Windows: ${error.message}`);
-          reject(new Error(`Falha ao desconectar: ${error.message}`));
-        } else {
-          console.log(`✅ Processo VPN ${pid} finalizado no Windows`);
-          if (vpnProcess && vpnProcess.pid === pid) {
-            vpnProcess.kill();
-            vpnProcess = null;
-          }
-          resolve({ success: true });
-        }
-      });
-    } else {
-      // Linux: usar pkexec para elevação gráfica
-      const killCommand = `kill ${pid}`;
-      console.log(`🔐 Executando comando de desconexão: ${killCommand}`);
-      
-      exec(`pkexec ${killCommand}`, (error) => {
-        if (error) {
-          console.warn(`⚠️ pkexec falhou, tentando sudo: ${error.message}`);
-          
-          // Fallback para sudo
-          exec(`sudo kill ${pid}`, (sudoError) => {
-            if (sudoError) {
-              console.error(`❌ Erro ao desconectar com sudo: ${sudoError.message}`);
-              
-              // Última tentativa: kill direto (pode não funcionar sem permissões)
-              exec(`kill ${pid}`, (killError) => {
-                if (killError) {
-                  console.error(`❌ Falha total ao desconectar: ${killError.message}`);
-                  reject(new Error(`Falha ao desconectar: Não foi possível finalizar o processo VPN`));
-                } else {
-                  console.log(`✅ Processo VPN ${pid} finalizado (sem elevação)`);
-                  if (vpnProcess && vpnProcess.pid === pid) {
-                    vpnProcess.kill();
-                    vpnProcess = null;
-                  }
-                  resolve({ success: true });
-                }
-              });
-        } else {
-          console.log(`✅ Processo VPN ${pid} finalizado com sudo`);
-          vpnProcess = null;
-          resolve({ success: true });
-        }
-          });
-        } else {
-      console.log(`✅ Processo VPN ${pid} finalizado com pkexec`);
+  console.log(`🔌 [MAIN] DESCONEXÃO FORÇADA INICIADA - PID alvo: ${pid}`);
+  console.log(`🔌 [MAIN] Método de elevação atual: ${currentElevationMethod || 'nenhum'}`);
+  console.log(`🔌 [MAIN] vpnProcess existe: ${!!vpnProcess}`);
+  console.log(`🔌 [MAIN] Arquivo .ovpn atual: ${currentOvpnPath || 'nenhum'}`);
+
+  // ✅ ESTRATÉGIA MELHORADA: Tentar métodos em ordem de prioridade
+  let killCommand;
+
+  if (vpnProcess && !vpnProcess.killed) {
+    // Método 1: Matar o processo diretamente (mais confiável)
+    console.log(`🗡️ [MAIN] Tentando matar processo diretamente (PID: ${vpnProcess.pid})`);
+    try {
+      vpnProcess.kill('SIGKILL');
+      console.log(`✅ [MAIN] Processo morto diretamente`);
+      // Limpar referências
       vpnProcess = null;
-      resolve({ success: true });
-        }
-      });
+      currentElevationMethod = null;
+      currentOvpnPath = null;
+      return { success: true };
+    } catch (directKillError) {
+      console.log(`⚠️ [MAIN] Falha ao matar diretamente: ${directKillError.message}`);
     }
+  }
+
+  // Método 2: Usar pkexec com PID específico
+  if (pid) {
+    killCommand = `pkexec kill -9 ${pid}`;
+    console.log(`🗡️ [MAIN] Usando pkexec kill com PID específico: ${pid}`);
+  }
+  // Método 3: Usar pkexec pkill com arquivo .ovpn específico
+  else if (currentOvpnPath) {
+    const ovpnFileName = path.basename(currentOvpnPath);
+    killCommand = `pkexec pkill -9 -f "${ovpnFileName}"`;
+    console.log(`🗡️ [MAIN] Usando desconexão específica por arquivo .ovpn: ${ovpnFileName}`);
+  }
+  // Método 4: Fallback - matar todos os processos openvpn
+  else {
+    killCommand = `pkexec pkill -9 -f openvpn`;
+    console.log(`🗡️ [MAIN] Fallback: matando todos os processos openvpn`);
+  }
+
+  console.log(`🗡️ [MAIN] Executando comando: ${killCommand}`);
+
+  return new Promise((resolve, reject) => {
+    exec(killCommand, (error, stdout, stderr) => {
+      console.log(`🗡️ [MAIN] Comando executado. Error: ${!!error}, stdout: ${stdout?.length || 0}, stderr: ${stderr?.length || 0}`);
+
+      if (!error) {
+        console.log(`✅ [MAIN] DESCONEXÃO BEM SUCEDIDA via pkexec pkill`);
+        console.log(`📄 [MAIN] stdout: ${stdout || 'nenhum'}`);
+        console.log(`📄 [MAIN] stderr: ${stderr || 'nenhum'}`);
+
+        // Limpar referências globais
+        if (vpnProcess) {
+          vpnProcess = null;
+        }
+        currentElevationMethod = null;
+        currentOvpnPath = null;
+
+        resolve({ success: true });
+      } else {
+        console.error(`❌ [MAIN] pkexec pkill falhou: ${error.message}`);
+        console.error(`❌ [MAIN] Error code: ${error.code}, errno: ${error.errno}`);
+
+        // Fallback: tentar pkill sem elevação
+        console.log(`🔄 [MAIN] Tentando pkill sem elevação...`);
+        const fallbackCommand = currentOvpnPath ? `pkill -9 -f "${path.basename(currentOvpnPath)}"` : `pkill -9 -f openvpn`;
+        exec(fallbackCommand, (pkillError) => {
+          console.log(`🔄 [MAIN] Fallback executado. Error: ${!!pkillError}`);
+
+          if (!pkillError) {
+            console.log(`✅ [MAIN] pkill sem elevação funcionou`);
+            if (vpnProcess) vpnProcess = null;
+            currentElevationMethod = null;
+            currentOvpnPath = null;
+            resolve({ success: true });
+          } else {
+            console.error(`❌ [MAIN] Todos os métodos falharam`);
+            console.error(`❌ [MAIN] pkill error: ${pkillError.message}`);
+            reject(new Error('Impossível desconectar VPN'));
+          }
+        });
+      }
+    });
   });
 });
 
@@ -1217,34 +2215,164 @@ ipcMain.handle('validate-openvpn-config', async () => {
       return;
     }
 
-    const checkCommand = process.platform === 'win32'
-      ? 'where openvpn'
-      : 'which openvpn';
+    try {
+      const content = fs.readFileSync(config.openvpn_config, 'utf-8');
+      const lines = content.split('\n');
 
-    exec(checkCommand, async (error) => {
-      if (error) {
-        resolve({
-          valid: false,
-          error: 'OpenVPN não encontrado. Instale o OpenVPN primeiro.'
-        });
-      } else {
-        // Verificar também permissões de elevação
-        const pkexecAvailable = process.platform === 'linux' ? await checkPkexecAvailable() : true;
-        const policyExists = process.platform === 'linux' ? fs.existsSync('/usr/share/polkit-1/actions/com.bpvpn.pkexec.policy') : true;
+      // Verificações básicas
+      const hasRemote = lines.some(line => line.trim().startsWith('remote '));
+      const hasCa = lines.some(line => line.trim().startsWith('ca '));
+      const hasCert = lines.some(line => line.trim().startsWith('cert '));
+      const hasKey = lines.some(line => line.trim().startsWith('key '));
 
-        resolve({
-          valid: true,
-          pkexecAvailable: pkexecAvailable,
-          policyExists: policyExists
-        });
+      if (!hasRemote) {
+        resolve({ valid: false, error: 'Configuração não possui servidor remoto (remote)' });
+        return;
       }
-    });
+
+      if (!hasCa) {
+        resolve({ valid: false, error: 'Configuração não possui certificado CA' });
+        return;
+      }
+
+      resolve({
+        valid: true,
+        info: {
+          hasRemote,
+          hasCa,
+          hasCert,
+          hasKey,
+          lineCount: lines.length
+        }
+      });
+    } catch (error) {
+      resolve({ valid: false, error: `Erro ao ler arquivo: ${error.message}` });
+    }
   });
 });
 
+ipcMain.handle('get-azure-app-config', async () => {
+  try {
+    logger.log('AZURE', 'GET_CONFIG_START');
+
+    const azureConfig = {
+      client_id: config.client_id || '',
+      tenant_id: config.tenant_id || '',
+      scope: config.scope || '',
+      server_api: config.server_api || ''
+    };
+
+    logger.log('AZURE', 'GET_CONFIG_SUCCESS', {
+      hasClientId: !!azureConfig.client_id,
+      hasTenantId: !!azureConfig.tenant_id,
+      hasScope: !!azureConfig.scope,
+      hasServerApi: !!azureConfig.server_api
+    });
+
+    return {
+      success: true,
+      config: azureConfig
+    };
+  } catch (error) {
+    logger.logSystemError('AZURE_GET_CONFIG_FAILED', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+ipcMain.handle('save-azure-app-config', async (event, newConfig) => {
+  try {
+    logger.log('AZURE', 'SAVE_CONFIG_START', {
+      hasClientId: !!newConfig.client_id,
+      hasTenantId: !!newConfig.tenant_id,
+      hasScope: !!newConfig.scope,
+      hasServerApi: !!newConfig.server_api
+    });
+
+    // Validação básica
+    if (!newConfig.client_id || !newConfig.tenant_id) {
+      logger.log('AZURE', 'SAVE_CONFIG_VALIDATION_FAILED', {
+        hasClientId: !!newConfig.client_id,
+        hasTenantId: !!newConfig.tenant_id
+      }, 'WARN');
+      return {
+        success: false,
+        error: 'Client ID e Tenant ID são obrigatórios'
+      };
+    }
+
+    // Registrar mudanças
+    const changes = {};
+    if (config.client_id !== newConfig.client_id) changes.client_id = { old: config.client_id, new: newConfig.client_id };
+    if (config.tenant_id !== newConfig.tenant_id) changes.tenant_id = { old: config.tenant_id, new: newConfig.tenant_id };
+    if (config.scope !== newConfig.scope) changes.scope = { old: config.scope, new: newConfig.scope };
+    if (config.server_api !== newConfig.server_api) changes.server_api = { old: config.server_api, new: newConfig.server_api };
+
+    // Atualizar o objeto config global
+    config.client_id = newConfig.client_id;
+    config.tenant_id = newConfig.tenant_id;
+    config.scope = newConfig.scope || config.scope;
+    config.server_api = newConfig.server_api || config.server_api;
+
+    // Salvar no arquivo
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+    logger.log('AZURE', 'SAVE_CONFIG_SUCCESS', {
+      changes: Object.keys(changes).length,
+      changesDetail: changes
+    });
+
+    return { success: true };
+  } catch (error) {
+    logger.logSystemError('AZURE_SAVE_CONFIG_FAILED', error, {
+      configKeys: Object.keys(newConfig || {})
+    });
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+ipcMain.handle('check-for-updates', async (event, showDialog = true) => {
+  try {
+    await updaterManager.checkForUpdates(showDialog);
+    return { success: true };
+  } catch (error) {
+    logger.logSystemError('CHECK_UPDATES_FAILED', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('download-update', async () => {
+  try {
+    await updaterManager.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    logger.logSystemError('DOWNLOAD_UPDATE_FAILED', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('install-update', async () => {
+  try {
+    await updaterManager.installUpdate();
+    return { success: true };
+  } catch (error) {
+    logger.logSystemError('INSTALL_UPDATE_FAILED', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-update-status', async () => {
+  return updaterManager.getStatus();
+});
+
 ipcMain.handle('get-current-config', async () => {
-  return { 
-    success: true, 
+  return {
+    success: true,
     config: {
       userOvpnFile: null,
       azureOvpnFile: config.openvpn_config,

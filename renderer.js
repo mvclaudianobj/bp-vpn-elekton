@@ -45,12 +45,19 @@ const configAzureProfileName = document.getElementById('configAzureProfileName')
 // NOVAS VARIÁVEIS PARA OS BOTÕES DE SALVAR
 const configSaveUserProfile = document.getElementById('configSaveUserProfile');
 const configSaveAzureProfileBtn = document.getElementById('configSaveAzureProfileBtn');
+const saveAzureConfigBtn = document.getElementById('saveAzureConfig');
 
 // Estado da Aplicação
 let vpnPid = null;
 let currentDeviceCodeMessage = null;
 let availableUserProfiles = [];
 let availableAzureProfiles = [];
+
+// Estado das Atualizações
+let updateAvailable = false;
+let updateDownloaded = false;
+let updateInfo = null;
+let updateProgressData = null;
 
 // VARIÁVEIS FALTANTES
 let currentUserProfile = null;
@@ -61,6 +68,21 @@ let currentUserOvpnContent = null;
 let currentAzureOvpnContent = null;
 let currentUserOvpnFileName = null;
 let currentAzureOvpnFileName = null;
+
+// Elementos de Atualização
+let updateBtn = null;
+let updateModal = null;
+let updateVersion = null;
+let updateDate = null;
+let updateNotes = null;
+let updateProgress = null;
+let progressFill = null;
+let progressPercent = null;
+let progressSpeed = null;
+let progressSize = null;
+let updateLaterBtn = null;
+let updateDownloadBtn = null;
+let updateInstallBtn = null;
 
 // Estado 2FA
 let requires2FA = false;
@@ -159,34 +181,259 @@ function handleChallengeCancel() {
 async function initializeApp() {
   try {
     console.log('🚀 Inicializando aplicação...');
-    
+
+    // Inicializar elementos de atualização
+    initializeUpdateElements();
+
+    console.log('🚀 Elementos inicializados. Verificando botões...');
+    console.log('🚀 btnDesconectarUsuario existe:', !!document.getElementById('btnDesconectarUsuario'));
+
     // Configurar event listeners primeiro
     setupEventListeners();
-    
+
     // ✅ INICIALIZAR ELEMENTOS 2FA DINAMICAMENTE
     initialize2FAElements();
-    
+
     // Configurar listener de desafios
     setupChallengeListener();
-    
+
+    // Configurar listeners de atualização
+    setupUpdateListeners();
+
     // Carregar perfis salvos
     await loadUserProfiles();
     await loadAzureProfiles();
 
+    // Verificar atualizações automaticamente
+    checkForUpdatesOnStartup();
+
     // Restaurar estado da aplicação
     await restoreApplicationState();
-    
+
     // Inicializar interface
     toggleMode();
-    
+
     // ✅ GARANTIR QUE CAMPO 2FA ESTEJA ESCONDIDO INICIALMENTE
     hide2FAField();
-    
+
+    // Mostrar botão de atualização
+    if (updateBtn) {
+      updateBtn.style.display = 'block';
+    }
+
     console.log('✅ Aplicação inicializada com sucesso');
     showStatus('Aplicação carregada com sucesso!', 'success');
   } catch (error) {
     console.error('❌ Erro na inicialização:', error);
     showStatus('Erro ao inicializar a aplicação', 'alert');
+  }
+}
+
+// ============ SISTEMA DE ATUALIZAÇÕES ============
+
+function initializeUpdateElements() {
+  updateBtn = document.getElementById('updateBtn');
+  updateModal = document.getElementById('updateModal');
+  updateVersion = document.getElementById('updateVersion');
+  updateDate = document.getElementById('updateDate');
+  updateNotes = document.getElementById('updateNotes');
+  updateProgress = document.getElementById('updateProgress');
+  progressFill = document.getElementById('progressFill');
+  progressPercent = document.getElementById('progressPercent');
+  progressSpeed = document.getElementById('progressSpeed');
+  progressSize = document.getElementById('progressSize');
+  updateLaterBtn = document.getElementById('updateLaterBtn');
+  updateDownloadBtn = document.getElementById('updateDownloadBtn');
+  updateInstallBtn = document.getElementById('updateInstallBtn');
+
+  console.log('🔄 Elementos de atualização inicializados');
+}
+
+function setupUpdateListeners() {
+  if (!window.electronAPI) return;
+
+  // Listener para atualização disponível
+  window.electronAPI.onUpdateAvailable((event, info) => {
+    console.log('🔄 Atualização disponível:', info);
+    updateAvailable = true;
+    updateInfo = info;
+    showUpdateNotification(info);
+  });
+
+  // Listener para progresso do download
+  window.electronAPI.onUpdateProgress((event, progress) => {
+    console.log('📥 Progresso do download:', progress);
+    updateProgressData = progress;
+    updateDownloadProgress(progress);
+  });
+
+  // Listener para download concluído
+  window.electronAPI.onUpdateDownloaded((event, info) => {
+    console.log('✅ Download concluído:', info);
+    updateDownloaded = true;
+    showUpdateReady(info);
+  });
+
+  // Listener para erros
+  window.electronAPI.onUpdateError((event, error) => {
+    console.error('❌ Erro na atualização:', error);
+    showUpdateError(error);
+  });
+
+  // Listener para verificação concluída
+  window.electronAPI.onUpdateCheckComplete((event, result) => {
+    console.log('🔍 Verificação de atualização concluída:', result);
+    if (!result.available) {
+      showStatus('Aplicação está atualizada!', 'success');
+    }
+  });
+
+  console.log('✅ Listeners de atualização configurados');
+}
+
+async function checkForUpdatesOnStartup() {
+  // Pequeno delay para não interferir na inicialização
+  setTimeout(async () => {
+    try {
+      const result = await window.electronAPI.checkForUpdates(false);
+      if (result.success) {
+        console.log('🔍 Verificação automática de atualizações realizada');
+      }
+    } catch (error) {
+      console.error('Erro ao verificar atualizações:', error);
+    }
+  }, 5000); // 5 segundos após inicialização
+}
+
+async function manualUpdateCheck() {
+  if (!updateBtn) return;
+
+  try {
+    // Mostrar indicador de carregamento
+    updateBtn.classList.add('updating');
+    updateBtn.disabled = true;
+
+    showStatus('Verificando atualizações...', 'status');
+
+    const result = await window.electronAPI.checkForUpdates(true);
+
+    if (result.success) {
+      showStatus('Verificação concluída!', 'success');
+    } else {
+      showStatus(`Erro na verificação: ${result.error}`, 'alert');
+    }
+
+  } catch (error) {
+    console.error('Erro ao verificar atualizações:', error);
+    showStatus('Erro ao verificar atualizações', 'alert');
+  } finally {
+    // Remover indicador de carregamento
+    updateBtn.classList.remove('updating');
+    updateBtn.disabled = false;
+  }
+}
+
+function showUpdateNotification(info) {
+  if (!updateModal || !updateVersion || !updateDate || !updateNotes) return;
+
+  updateVersion.textContent = info.version;
+  updateDate.textContent = new Date(info.releaseDate).toLocaleDateString();
+  updateNotes.textContent = info.releaseNotes || 'Nenhuma nota de release disponível.';
+
+  updateModal.style.display = 'flex';
+
+  // Tocar som de notificação (opcional)
+  // new Audio('notification.mp3').play().catch(() => {});
+}
+
+function updateDownloadProgress(progress) {
+  if (!progressFill || !progressPercent || !progressSpeed || !progressSize) return;
+
+  progressFill.style.width = `${progress.percent}%`;
+  progressPercent.textContent = `${progress.percent}%`;
+  progressSpeed.textContent = `${progress.speed} KB/s`;
+  progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
+
+  // Mostrar barra de progresso
+  if (updateProgress) {
+    updateProgress.style.display = 'block';
+  }
+}
+
+function showUpdateReady(info) {
+  if (!updateDownloadBtn || !updateInstallBtn) return;
+
+  // Esconder botão de download e mostrar botão de instalar
+  updateDownloadBtn.style.display = 'none';
+  updateInstallBtn.style.display = 'inline-block';
+
+  showStatus('Atualização baixada! Clique em "Instalar Agora" para aplicar.', 'success');
+}
+
+function showUpdateError(error) {
+  showStatus(`Erro na atualização: ${error.message}`, 'alert');
+
+  // Esconder modal após alguns segundos
+  setTimeout(() => {
+    if (updateModal) {
+      updateModal.style.display = 'none';
+    }
+  }, 5000);
+}
+
+async function downloadUpdate() {
+  if (!updateDownloadBtn) return;
+
+  try {
+    updateDownloadBtn.disabled = true;
+    updateDownloadBtn.textContent = '📥 Baixando...';
+
+    showStatus('Iniciando download da atualização...', 'status');
+
+    const result = await window.electronAPI.downloadUpdate();
+
+    if (result.success) {
+      showStatus('Download iniciado! Acompanhe o progresso.', 'success');
+    } else {
+      throw new Error(result.error);
+    }
+
+  } catch (error) {
+    console.error('Erro ao baixar atualização:', error);
+    showStatus(`Erro no download: ${error.message}`, 'alert');
+    updateDownloadBtn.disabled = false;
+    updateDownloadBtn.textContent = '📥 Baixar Atualização';
+  }
+}
+
+async function installUpdate() {
+  if (!updateInstallBtn) return;
+
+  try {
+    updateInstallBtn.disabled = true;
+    updateInstallBtn.textContent = '⚡ Instalando...';
+
+    showStatus('Instalando atualização... A aplicação será reiniciada.', 'status');
+
+    const result = await window.electronAPI.installUpdate();
+
+    if (result.success) {
+      showStatus('Instalação iniciada! A aplicação será reiniciada automaticamente.', 'success');
+    } else {
+      throw new Error(result.error);
+    }
+
+  } catch (error) {
+    console.error('Erro ao instalar atualização:', error);
+    showStatus(`Erro na instalação: ${error.message}`, 'alert');
+    updateInstallBtn.disabled = false;
+    updateInstallBtn.textContent = '⚡ Instalar Agora';
+  }
+}
+
+function closeUpdateModal() {
+  if (updateModal) {
+    updateModal.style.display = 'none';
   }
 }
 
@@ -282,9 +529,13 @@ async function restoreApplicationState() {
         showStatus('Erro ao restaurar configurações anteriores', 'alert');
     }
 }
-
 // ============ CONFIGURAÇÃO DE EVENT LISTENERS ============
+
 function setupEventListeners() {
+    console.log('🎧 [RENDERER] Configurando event listeners...');
+
+    // Verificar se os botões existem
+    console.log('🎧 [RENDERER] btnDesconectarUsuario encontrado:', !!btnDesconectarUsuario);
     console.log('🔧 Configurando event listeners...');
     
     // Verificar se elementos existem
@@ -335,6 +586,9 @@ function setupEventListeners() {
     if (configSaveAzureProfileBtn) {
         configSaveAzureProfileBtn.addEventListener('click', saveAzureProfileConfig);
     }
+    if (saveAzureConfigBtn) {
+        saveAzureConfigBtn.addEventListener('click', saveAzureConfig);
+    }
     
     // Opções de Perfil
     if (configSaveProfile) {
@@ -368,18 +622,39 @@ function setupEventListeners() {
     
     // Validação em tempo real
     if (userUsername) {
-        userUsername.addEventListener('input', validateUserForm);
+      userUsername.addEventListener('input', validateUserForm);
     }
     if (userPassword) {
-        userPassword.addEventListener('input', validateUserForm);
+      userPassword.addEventListener('input', validateUserForm);
     }
 
     // ✅ ADICIONE ESTA LINHA: Configurar listeners do modal 2FA
     setupChallengeModalListeners();
-    
+
+    // Listeners de atualização
+    if (updateBtn) {
+      updateBtn.addEventListener('click', manualUpdateCheck);
+    }
+    if (updateLaterBtn) {
+      updateLaterBtn.addEventListener('click', closeUpdateModal);
+    }
+    if (updateDownloadBtn) {
+      updateDownloadBtn.addEventListener('click', downloadUpdate);
+    }
+    if (updateInstallBtn) {
+      updateInstallBtn.addEventListener('click', installUpdate);
+    }
+
+    // Fechar modal de atualização ao clicar fora
+    if (updateModal) {
+      updateModal.addEventListener('click', (e) => {
+        if (e.target === updateModal) closeUpdateModal();
+      });
+    }
+
     // Listeners do Electron
     setupElectronListeners();
-    
+
     console.log('✅ Event listeners configurados');
 }
 
@@ -806,10 +1081,73 @@ function closeConfigModal() {
     }
 }
 
+// ============ GESTÃO DE CONFIGURAÇÕES AZURE ============
+
+async function loadAzureConfig() {
+    try {
+        console.log('🔧 Carregando configurações do app Azure...');
+        const result = await window.electronAPI.getAzureAppConfig();
+
+        if (result.success && result.config) {
+            const config = result.config;
+
+            // Preencher os campos do formulário
+            document.getElementById('azureClientId').value = config.client_id || '';
+            document.getElementById('azureTenantId').value = config.tenant_id || '';
+            document.getElementById('azureScope').value = config.scope || '';
+            document.getElementById('azureServerApi').value = config.server_api || '';
+
+            console.log('✅ Configurações do app Azure carregadas com sucesso');
+        } else {
+            console.log('ℹ️ Nenhuma configuração do app Azure encontrada, campos vazios');
+            // Limpar campos se não houver configuração
+            document.getElementById('azureClientId').value = '';
+            document.getElementById('azureTenantId').value = '';
+            document.getElementById('azureScope').value = '';
+            document.getElementById('azureServerApi').value = '';
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar configurações do app Azure:', error);
+        showStatus('Erro ao carregar configurações do app Azure', 'alert');
+    }
+}
+
+async function saveAzureConfig() {
+    try {
+        const config = {
+            client_id: document.getElementById('azureClientId').value.trim(),
+            tenant_id: document.getElementById('azureTenantId').value.trim(),
+            scope: document.getElementById('azureScope').value.trim(),
+            server_api: document.getElementById('azureServerApi').value.trim()
+        };
+
+        // Validação básica
+        if (!config.client_id || !config.tenant_id) {
+            showStatus('Client ID e Tenant ID são obrigatórios', 'alert');
+            return;
+        }
+
+        console.log('💾 Salvando configurações Azure...', config);
+
+        const result = await window.electronAPI.saveAzureAppConfig(config);
+
+        if (result.success) {
+            showStatus('✅ Configurações Azure salvas com sucesso!', 'success');
+            console.log('✅ Configurações Azure salvas com sucesso');
+        } else {
+            showStatus(`❌ Erro ao salvar configurações: ${result.error}`, 'alert');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao salvar configurações Azure:', error);
+        showStatus('Erro ao salvar configurações Azure', 'alert');
+    }
+}
+
 async function loadConfigModalData() {
     try {
         await loadUserProfiles();
         await loadAzureProfiles();
+        await loadAzureConfig();
         renderConfigProfiles();
         renderAzureProfiles();
     } catch (error) {
@@ -1339,11 +1677,15 @@ async function connectUserVPN() {
         );
 
         vpnPid = result.pid;
+        console.log(`🔌 [RENDERER] VPN PID definido: ${vpnPid}`);
         showStatus(`Conexão iniciada. Aguardando autenticação...`, 'status');
 
         saveApplicationState();
 
     } catch (err) {
+        console.log(`❌ [RENDERER] Erro na conexão: ${err.message}`);
+        console.log(`❌ [RENDERER] Limpando VPN PID devido a erro`);
+        vpnPid = null; // Garantir que vpnPid seja limpo em caso de erro
         showStatus(`Erro: ${err.message}`, 'alert');
         btnConectarUsuario.disabled = false;
         btnDesconectarUsuario.disabled = true;
@@ -1351,14 +1693,20 @@ async function connectUserVPN() {
 }
 
 async function disconnectUserVPN() {
-    try {
-        if (vpnPid) {
-            await window.electronAPI.disconnectOpenVPN(vpnPid);
-            showStatus(`VPN desconectada (PID: ${vpnPid})`, 'status');
-            vpnPid = null;
-        } else {
-            showStatus('Nenhuma conexão ativa encontrada.', 'status');
-        }
+  console.log(`🔌 [RENDERER] Botão desconectar clicado. VPN PID atual: ${vpnPid}`);
+  console.log(`🔌 [RENDERER] Verificando se electronAPI.disconnectOpenVPN existe:`, !!window.electronAPI?.disconnectOpenVPN);
+
+  try {
+    if (vpnPid) {
+      console.log(`🔌 [RENDERER] Enviando solicitação de desconexão para PID: ${vpnPid}`);
+      const result = await window.electronAPI.disconnectOpenVPN(vpnPid);
+      console.log(`🔌 [RENDERER] Resultado da desconexão:`, result);
+      showStatus(`VPN desconectada (PID: ${vpnPid})`, 'status');
+      vpnPid = null;
+    } else {
+      console.log(`🔌 [RENDERER] Nenhum VPN PID encontrado`);
+      showStatus('Nenhuma conexão ativa encontrada.', 'status');
+    }
         
         btnConectarUsuario.disabled = false;
         btnDesconectarUsuario.disabled = true;
@@ -1375,6 +1723,12 @@ async function disconnectUserVPN() {
 }
 
 async function connectAzureVPN() {
+    // ✅ PROTEÇÃO: Verificar se já há uma conexão em andamento
+    if (vpnPid !== null) {
+        showStatus('Já existe uma conexão VPN ativa', 'alert');
+        return;
+    }
+
     try {
         showStatus('Iniciando login Azure...', 'status');
         if (btnCopiarCodigo) btnCopiarCodigo.style.display = 'none';
