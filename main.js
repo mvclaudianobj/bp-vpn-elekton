@@ -875,23 +875,60 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
   // ✅ CORREÇÃO: Usar diretório do usuário por padrão
   const ovpnDir = baseDir || PROFILES_DIR;
   const profileDir = path.join(ovpnDir, profileId);
-  
+
   try {
     await fsAsync.mkdir(profileDir, { recursive: true });
-    
+
     let originalContent = await fsAsync.readFile(originalOvpnPath, 'utf-8');
     const originalDir = path.dirname(originalOvpnPath);
-    
+
     console.log(`📂 Processando arquivo OVPN: ${originalOvpnPath}`);
     console.log(`📁 Diretório do perfil: ${profileDir}`);
-    
+
     const processedLines = [];
     const filesToCopy = new Set();
+
+    // ✅ EXTRAÇÃO DE CONFIGURAÇÕES AZURE DO ARQUIVO .OVPN
+    const azureConfig = {
+      client_id: null,
+      tenant_id: null,
+      scope: null,
+      server_api: null
+    };
     
     const lines = originalContent.split('\n');
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i].trim();
-      
+
+      // ✅ EXTRAÇÃO DE CONFIGURAÇÕES AZURE DE COMENTÁRIOS ESPECIAIS
+      if (line.startsWith('#AZURE:')) {
+        const azureLine = line.substring(7).trim(); // Remove '#AZURE:'
+        const [key, value] = azureLine.split('=').map(s => s.trim());
+
+        if (key && value) {
+          switch (key.toLowerCase()) {
+            case 'client_id':
+              azureConfig.client_id = value;
+              console.log(`🔧 Configuração Azure extraída: client_id = ${value}`);
+              break;
+            case 'tenant_id':
+              azureConfig.tenant_id = value;
+              console.log(`🔧 Configuração Azure extraída: tenant_id = ${value}`);
+              break;
+            case 'scope':
+              azureConfig.scope = value;
+              console.log(`🔧 Configuração Azure extraída: scope = ${value}`);
+              break;
+            case 'server_api':
+              azureConfig.server_api = value;
+              console.log(`🔧 Configuração Azure extraída: server_api = ${value}`);
+              break;
+          }
+        }
+        // Não adiciona a linha de configuração Azure ao arquivo processado
+        continue;
+      }
+
       if (!line || line.startsWith('#')) {
         processedLines.push(line);
         continue;
@@ -991,11 +1028,12 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
     
     console.log(`✅ Perfil OVPN processado salvo em: ${targetOvpnPath}`);
     
-    return { 
-      success: true, 
+    return {
+      success: true,
       content: processedContent,
       profileDir: profileDir,
-      filesCopied: filesToCopy.size
+      filesCopied: filesToCopy.size,
+      azureConfig: azureConfig // ✅ CONFIGURAÇÕES AZURE EXTRAÍDAS
     };
     
   } catch (error) {
@@ -1855,6 +1893,33 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId, azureOvpnDir);
     if (!processResult.success) {
       return { success: false, error: processResult.error };
+    }
+
+    // ✅ SALVAR CONFIGURAÇÕES AZURE EXTRAÍDAS DO ARQUIVO .OVPN
+    if (processResult.azureConfig) {
+      const configPath = CONFIG_PATH;
+      const currentConfig = JSON.parse(await fsAsync.readFile(configPath, 'utf-8'));
+
+      // Atualizar apenas as configurações que foram encontradas no arquivo
+      if (processResult.azureConfig.client_id) {
+        currentConfig.client_id = processResult.azureConfig.client_id;
+        console.log(`💾 Client ID salvo: ${processResult.azureConfig.client_id}`);
+      }
+      if (processResult.azureConfig.tenant_id) {
+        currentConfig.tenant_id = processResult.azureConfig.tenant_id;
+        console.log(`💾 Tenant ID salvo: ${processResult.azureConfig.tenant_id}`);
+      }
+      if (processResult.azureConfig.scope) {
+        currentConfig.scope = processResult.azureConfig.scope;
+        console.log(`💾 Scope salvo: ${processResult.azureConfig.scope}`);
+      }
+      if (processResult.azureConfig.server_api) {
+        currentConfig.server_api = processResult.azureConfig.server_api;
+        console.log(`💾 Server API salvo: ${processResult.azureConfig.server_api}`);
+      }
+
+      await fsAsync.writeFile(configPath, JSON.stringify(currentConfig, null, 2));
+      console.log(`✅ Configurações Azure salvas no config.json`);
     }
 
     console.log(`✅ Perfil Azure salvo: ${profileId}`);

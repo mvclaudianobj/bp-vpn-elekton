@@ -1091,20 +1091,21 @@ async function loadAzureConfig() {
         if (result.success && result.config) {
             const config = result.config;
 
-            // Preencher os campos do formulário
-            document.getElementById('azureClientId').value = config.client_id || '';
-            document.getElementById('azureTenantId').value = config.tenant_id || '';
-            document.getElementById('azureScope').value = config.scope || '';
-            document.getElementById('azureServerApi').value = config.server_api || '';
+            // ✅ LOG DAS CONFIGURAÇÕES CARREGADAS (VÊM DO ARQUIVO .OVPN)
+            console.log('✅ Configurações do app Azure carregadas:', {
+                hasClientId: !!config.client_id,
+                hasTenantId: !!config.tenant_id,
+                hasScope: !!config.scope,
+                hasServerApi: !!config.server_api,
+                client_id: config.client_id ? '***configured***' : 'not set',
+                tenant_id: config.tenant_id ? '***configured***' : 'not set',
+                server_api: config.server_api ? '***configured***' : 'not set'
+            });
 
-            console.log('✅ Configurações do app Azure carregadas com sucesso');
+            showStatus('Configurações Azure carregadas automaticamente do arquivo .ovpn', 'success');
         } else {
-            console.log('ℹ️ Nenhuma configuração do app Azure encontrada, campos vazios');
-            // Limpar campos se não houver configuração
-            document.getElementById('azureClientId').value = '';
-            document.getElementById('azureTenantId').value = '';
-            document.getElementById('azureScope').value = '';
-            document.getElementById('azureServerApi').value = '';
+            console.log('ℹ️ Nenhuma configuração do app Azure encontrada');
+            showStatus('Configure as credenciais Azure no arquivo .ovpn usando comentários #AZURE:', 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao carregar configurações do app Azure:', error);
@@ -1113,34 +1114,9 @@ async function loadAzureConfig() {
 }
 
 async function saveAzureConfig() {
-    try {
-        const config = {
-            client_id: document.getElementById('azureClientId').value.trim(),
-            tenant_id: document.getElementById('azureTenantId').value.trim(),
-            scope: document.getElementById('azureScope').value.trim(),
-            server_api: document.getElementById('azureServerApi').value.trim()
-        };
-
-        // Validação básica
-        if (!config.client_id || !config.tenant_id) {
-            showStatus('Client ID e Tenant ID são obrigatórios', 'alert');
-            return;
-        }
-
-        console.log('💾 Salvando configurações Azure...', config);
-
-        const result = await window.electronAPI.saveAzureAppConfig(config);
-
-        if (result.success) {
-            showStatus('✅ Configurações Azure salvas com sucesso!', 'success');
-            console.log('✅ Configurações Azure salvas com sucesso');
-        } else {
-            showStatus(`❌ Erro ao salvar configurações: ${result.error}`, 'alert');
-        }
-    } catch (error) {
-        console.error('❌ Erro ao salvar configurações Azure:', error);
-        showStatus('Erro ao salvar configurações Azure', 'alert');
-    }
+    // ✅ CONFIGURAÇÕES AZURE SÃO SALVAS AUTOMATICAMENTE DO ARQUIVO .OVPN
+    showStatus('ℹ️ Configurações Azure são salvas automaticamente ao processar o arquivo .ovpn', 'info');
+    console.log('ℹ️ Configurações Azure são extraídas automaticamente dos comentários #AZURE: no arquivo .ovpn');
 }
 
 async function loadConfigModalData() {

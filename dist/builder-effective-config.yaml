@@ -4,6 +4,11 @@ directories:
 appId: com.bluepex.vpn
 productName: BluePex VPN
 copyright: Copyright © 2025 BluePex
+publish:
+  provider: github
+  owner: mvclaudianobj
+  repo: bp-vpn-electron
+  private: false
 files:
   - filter:
       - main.js

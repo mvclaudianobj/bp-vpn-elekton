@@ -948,36 +948,23 @@
           <h4>🌐 Configuração Azure AD</h4>
 
           <!-- Configurações do App Azure -->
-          <div class="mb-4">
-            <h5 style="color: #007BFF; margin-bottom: 1rem;">🔧 Configurações do Aplicativo Azure</h5>
+           <div class="mb-4">
+             <h5 style="color: #007BFF; margin-bottom: 1rem;">ℹ️ Configurações Azure</h5>
 
-            <div class="mb-3">
-              <label for="azureClientId" class="form-label">Client ID</label>
-              <input type="text" class="form-control" id="azureClientId" placeholder="Ex: 9048af0b-7b65-44c6-ae70-e8aac67229fb">
-              <small class="text-muted">ID do aplicativo registrado no Azure AD</small>
-            </div>
+             <div class="alert alert-info">
+               <strong>🔧 Configurações Automáticas:</strong> As configurações do Azure AD são extraídas automaticamente dos comentários especiais no arquivo .ovpn.
+               <br><br>
+               <strong>📝 Formato esperado no arquivo .ovpn:</strong>
+               <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0; font-size: 12px;">
+#AZURE:client_id=9048af0b-7b65-44c6-ae70-e8aac67229fb
+#AZURE:tenant_id=10a9f605-3852-43d4-82fa-c39fe4693c69
+#AZURE:scope=https://graph.microsoft.com/.default openid profile offline_access
+#AZURE:server_api=http://wsutm.bluepex.com:30001/publish</pre>
+             </div>
 
-            <div class="mb-3">
-              <label for="azureTenantId" class="form-label">Tenant ID</label>
-              <input type="text" class="form-control" id="azureTenantId" placeholder="Ex: 10a9f605-3852-43d4-82fa-c39fe4693c69">
-              <small class="text-muted">ID do tenant/diretório no Azure AD</small>
-            </div>
-
-            <div class="mb-3">
-              <label for="azureScope" class="form-label">Scope</label>
-              <input type="text" class="form-control" id="azureScope" placeholder="Ex: https://graph.microsoft.com/.default openid profile offline_access">
-              <small class="text-muted">Escopos de permissão para o aplicativo</small>
-            </div>
-
-            <div class="mb-3">
-              <label for="azureServerApi" class="form-label">URL da API do Servidor</label>
-              <input type="url" class="form-control" id="azureServerApi" placeholder="Ex: http://wsutm.bluepex.com:30001/publish">
-              <small class="text-muted">Endpoint para publicar o token JWT</small>
-            </div>
-
-            <div class="d-grid gap-2">
-              <button type="button" class="btn btn-primary" id="saveAzureConfig">
-                💾 Salvar Configurações Azure
+             <div class="d-grid gap-2">
+               <button type="button" class="btn btn-success" id="saveAzureConfig">
+                 💾 Salvar Perfil Azure
               </button>
             </div>
           </div>

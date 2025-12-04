@@ -34,11 +34,11 @@ O **BP VPN Electron** é uma aplicação desktop profissional para gerenciamento
 - ✅ Suporte GitHub Releases
 - ✅ Rollback em caso de falha
 
-#### **⚙️ Configuração Visual Azure AD**
-- ✅ Interface dedicada para configurar Client ID, Tenant ID, Scope
-- ✅ Validação em tempo real dos campos
-- ✅ Salvamento seguro no config.json
-- ✅ Feedback visual de sucesso/erro
+#### **⚙️ Configuração Automática Azure AD**
+- ✅ Configurações extraídas automaticamente do arquivo .ovpn
+- ✅ Tags especiais `#AZURE:` ignoradas pelo OpenVPN
+- ✅ Salvamento automático no config.json
+- ✅ Sem interface manual - tudo vem do arquivo
 
 #### **📊 Logging de Debug Detalhado**
 - ✅ Logs estruturados em JSON para todas as operações
@@ -248,8 +248,26 @@ npm run build:all
    - 🌐 **Azure AD**: Para autenticação corporativa
 
 3. **Configurar Perfil**
-   - Menu ⚙️ → Selecionar arquivo .ovpn
-   - Salvar perfil com nome descritivo
+    - Menu ⚙️ → Selecionar arquivo .ovpn
+    - Para Azure AD: adicionar configurações no arquivo .ovpn
+    - Salvar perfil com nome descritivo
+
+### 🔧 Configuração Azure AD no Arquivo .ovpn
+
+Para perfis Azure AD, adicione as seguintes linhas no arquivo .ovpn (elas serão ignoradas pelo OpenVPN):
+
+```ovpn
+#AZURE:client_id=9048af0b-7b65-44c6-ae70-e8aac67229fb
+#AZURE:tenant_id=10a9f605-3852-43d4-82fa-c39fe4693c69
+#AZURE:scope=https://graph.microsoft.com/.default openid profile offline_access
+#AZURE:server_api=http://wsutm.bluepex.com:30001/publish
+```
+
+**Parâmetros:**
+- `client_id`: ID do aplicativo registrado no Azure AD
+- `tenant_id`: ID do tenant/diretório no Azure AD
+- `scope`: Escopos de permissão (padrão: Graph API)
+- `server_api`: URL do servidor para publicar tokens JWT
 
 ### 🔑 Conexão VPN
 
