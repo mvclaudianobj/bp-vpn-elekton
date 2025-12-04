@@ -195,7 +195,7 @@ npm run logs -- --help
 
 ```bash
 # Clonar repositório
-git clone https://github.com/your-org/bp-vpn-electron.git
+git clone https://github.com/mvclaudianobj/bp-vpn-electron.git
 cd bp-vpn-electron
 
 # Instalar dependências
@@ -552,8 +552,8 @@ copies or substantial portions of the Software.
 ### 📞 Canais de Suporte
 
 - 📧 **Email**: contato@bluepex.com
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-org/bp-vpn-electron/issues)
-- 📖 **Wiki**: [Documentação Completa](https://github.com/your-org/bp-vpn-electron/wiki)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/mvclaudianobj/bp-vpn-electron/issues)
+- 📖 **Wiki**: [Documentação Completa](https://github.com/mvclaudianobj/bp-vpn-electron/wiki)
 - 💬 **Discord**: [Comunidade BP VPN](https://discord.gg/bp-vpn)
 
 ### 🔍 Antes de Reportar
@@ -706,7 +706,7 @@ dist/
   "build": {
     "publish": {
       "provider": "github",
-      "owner": "your-org",
+      "owner": "mvclaudianobj",
       "repo": "bp-vpn-electron",
       "private": false
     }
@@ -953,8 +953,8 @@ npm run test:coverage
 ### 📞 Suporte e Contato
 
 - 📧 **Email**: contato@bluepex.com
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-org/bp-vpn-electron/issues)
-- 📖 **Wiki**: [Documentação Técnica](https://github.com/your-org/bp-vpn-electron/wiki)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/mvclaudianobj/bp-vpn-electron/issues)
+- 📖 **Wiki**: [Documentação Técnica](https://github.com/mvclaudianobj/bp-vpn-electron/wiki)
 - 💬 **Discord**: [Comunidade BP VPN](https://discord.gg/bp-vpn)
 
 ---

@@ -46,7 +46,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "your-org",
+      "owner": "mvclaudianobj",
       "repo": "bp-vpn-electron",
       "private": false
     },

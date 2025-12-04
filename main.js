@@ -260,7 +260,7 @@ class AutoUpdaterManager {
     if (process.env.GITHUB_TOKEN) {
       autoUpdater.setFeedURL({
         provider: 'github',
-        owner: 'your-org', // Substitua pelo seu owner do GitHub
+        owner: 'mvclaudianobj', // Owner do repositório GitHub
         repo: 'bp-vpn-electron',
         private: true,
         token: process.env.GITHUB_TOKEN
@@ -268,7 +268,7 @@ class AutoUpdaterManager {
     } else {
       autoUpdater.setFeedURL({
         provider: 'github',
-        owner: 'your-org', // Substitua pelo seu owner do GitHub
+        owner: 'mvclaudianobj', // Owner do repositório GitHub
         repo: 'bp-vpn-electron'
       });
     }
