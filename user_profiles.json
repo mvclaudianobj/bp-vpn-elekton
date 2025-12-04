@@ -1,31 +1,21 @@
 [
   {
-    "id": "devutmvpnmiomolhyncc62e",
-    "name": "DevUTM VPN",
+    "id": "vpnfenixmirg1mja2xzu7e",
+    "name": "VPN fenix",
     "type": "user",
-    "ovpnFileName": "UTM-UDP4-1203",
-    "server": "200.247.39.210:1203",
-    "createdAt": "2025-12-02T13:42:59.556Z",
-    "updatedAt": "2025-12-02T13:42:59.557Z",
-    "username": "marcos.claudiano"
-  },
-  {
-    "id": "vpnfenix2fmiomubhvwgwocm",
-    "name": "VPN fenix 2FA",
-    "type": "user",
-    "ovpnFileName": "fenixsis-UDP4-1195",
-    "server": "192.168.3.1:1195",
-    "createdAt": "2025-12-02T13:47:26.529Z",
-    "updatedAt": "2025-12-02T13:47:26.529Z",
+    "ovpnFileName": "fenixsis-UDP4-1194",
+    "server": "168.0.227.139:1194",
+    "createdAt": "2025-12-04T13:00:28.637Z",
+    "updatedAt": "2025-12-04T13:00:28.637Z",
     "username": "marcos"
   },
   {
-    "id": "fahfdahfdamipzdj1aunvfnw",
-    "name": "fahfdahfdahfdah",
+    "id": "vpnlocal2fmirggyg59uso3x",
+    "name": "VPN local 2FA",
     "type": "user",
-    "ovpnFileName": "fenixsis-UDP4-1197",
-    "server": "192.168.3.1:1197",
-    "createdAt": "2025-12-03T12:26:04.330Z",
-    "updatedAt": "2025-12-03T12:26:04.330Z"
+    "ovpnFileName": "BluePexUTMdev-UDP4-1194",
+    "server": "10.10.107.1:1194",
+    "createdAt": "2025-12-04T13:12:23.918Z",
+    "updatedAt": "2025-12-04T13:12:23.918Z"
   }
 ]

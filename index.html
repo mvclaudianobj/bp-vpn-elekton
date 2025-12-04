@@ -121,6 +121,39 @@
       background: rgba(255, 255, 255, 0.1);
     }
 
+    /* Botão de Atualização */
+    .update-btn {
+      position: absolute;
+      top: 20px;
+      right: 70px;
+      background: transparent;
+      border: none;
+      color: #007BFF;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: 4px;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .update-btn:hover {
+      background: rgba(0, 123, 255, 0.1);
+      color: #007BFF;
+      transform: scale(1.05);
+    }
+
+    .update-btn.updating {
+      color: #ffc107;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
     /* Modal de Configurações */
     .config-modal {
       display: none;
@@ -668,12 +701,109 @@
     .twofa-info-badge strong {
       color: #ffc107;
     }
+
+    /* ============ ESTILOS PARA MODAL DE ATUALIZAÇÃO ============ */
+    .update-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 3000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .update-content {
+        background: #0A162E;
+        padding: 2rem;
+        border-radius: 15px;
+        max-width: 500px;
+        width: 90%;
+        border: 2px solid #28a745;
+        box-shadow: 0 0 20px rgba(40, 167, 69, 0.3);
+    }
+
+    .update-info {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: rgba(40, 167, 69, 0.1);
+        border-radius: 8px;
+        border-left: 4px solid #28a745;
+    }
+
+    .update-info p {
+        margin: 0.5rem 0;
+        color: white;
+    }
+
+    .update-notes {
+        margin-top: 1rem;
+        padding: 0.5rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+        max-height: 150px;
+        overflow-y: auto;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+    }
+
+    .update-progress {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: rgba(0, 123, 255, 0.1);
+        border-radius: 8px;
+        border-left: 4px solid #007BFF;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 20px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #007BFF, #28a745);
+        width: 0%;
+        transition: width 0.3s ease;
+        border-radius: 10px;
+    }
+
+    .progress-text {
+        text-align: center;
+        color: #007BFF;
+        font-size: 0.9rem;
+        font-weight: bold;
+    }
+
+    .update-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 1.5rem;
+    }
+
+    .update-actions .btn {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
   <div class="login-container">
     <!-- Menu Hamburguer -->
     <button class="menu-btn" id="menuBtn" title="Configurações">⚙️</button>
+
+    <!-- Botão de Atualização -->
+    <button class="update-btn" id="updateBtn" title="Verificar Atualizações" style="display: none;">
+      🔄
+    </button>
 
     <!-- Logotipo -->
     <img src="logo.png" alt="BluePex Logo" class="logo img-fluid">
@@ -816,6 +946,42 @@
         <!-- Configurações Azure -->
         <div class="config-section">
           <h4>🌐 Configuração Azure AD</h4>
+
+          <!-- Configurações do App Azure -->
+          <div class="mb-4">
+            <h5 style="color: #007BFF; margin-bottom: 1rem;">🔧 Configurações do Aplicativo Azure</h5>
+
+            <div class="mb-3">
+              <label for="azureClientId" class="form-label">Client ID</label>
+              <input type="text" class="form-control" id="azureClientId" placeholder="Ex: 9048af0b-7b65-44c6-ae70-e8aac67229fb">
+              <small class="text-muted">ID do aplicativo registrado no Azure AD</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="azureTenantId" class="form-label">Tenant ID</label>
+              <input type="text" class="form-control" id="azureTenantId" placeholder="Ex: 10a9f605-3852-43d4-82fa-c39fe4693c69">
+              <small class="text-muted">ID do tenant/diretório no Azure AD</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="azureScope" class="form-label">Scope</label>
+              <input type="text" class="form-control" id="azureScope" placeholder="Ex: https://graph.microsoft.com/.default openid profile offline_access">
+              <small class="text-muted">Escopos de permissão para o aplicativo</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="azureServerApi" class="form-label">URL da API do Servidor</label>
+              <input type="url" class="form-control" id="azureServerApi" placeholder="Ex: http://wsutm.bluepex.com:30001/publish">
+              <small class="text-muted">Endpoint para publicar o token JWT</small>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button type="button" class="btn btn-primary" id="saveAzureConfig">
+                💾 Salvar Configurações Azure
+              </button>
+            </div>
+          </div>
+
           <div class="mb-3">
             <label class="form-label">Arquivo de Configuração Azure</label>
             <div class="d-grid gap-2">
@@ -833,7 +999,7 @@
                     <label for="configSaveAzureProfile">💾 Salvar como novo perfil Azure</label>
                   </div>
                 </div>
-                <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)" 
+                <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)"
                        style="display: none; margin-top: 8px;" class="form-control form-control-sm">
               </div>
               <button type="button" class="btn btn-success" id="configSaveAzureProfileBtn" style="display: none;">
@@ -855,6 +1021,36 @@
       <!-- Ações LADO A LADO -->
       <div class="config-actions">
         <button class="btn btn-secondary flex-fill" id="configCloseBtn">❌ Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Atualização -->
+  <div class="update-modal" id="updateModal">
+    <div class="update-content">
+      <h3>🔄 Atualização Disponível</h3>
+
+      <div id="updateInfo" class="update-info">
+        <p><strong>Versão:</strong> <span id="updateVersion"></span></p>
+        <p><strong>Data de lançamento:</strong> <span id="updateDate"></span></p>
+        <div id="updateNotes" class="update-notes"></div>
+      </div>
+
+      <div id="updateProgress" class="update-progress" style="display: none;">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text">
+          <span id="progressPercent">0%</span> -
+          <span id="progressSpeed">0 KB/s</span> -
+          <span id="progressSize">0 MB / 0 MB</span>
+        </div>
+      </div>
+
+      <div class="update-actions">
+        <button class="btn btn-secondary" id="updateLaterBtn">Mais Tarde</button>
+        <button class="btn btn-primary" id="updateDownloadBtn">📥 Baixar Atualização</button>
+        <button class="btn btn-success" id="updateInstallBtn" style="display: none;">⚡ Instalar Agora</button>
       </div>
     </div>
   </div>

@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "vpnfenixmirg0y5i8348t5",
+    "name": "VPN fenix",
+    "type": "azure",
+    "ovpnFileName": "fenixsis-UDP4-1196",
+    "server": "168.0.227.139:1196",
+    "createdAt": "2025-12-04T12:59:57.041Z",
+    "updatedAt": "2025-12-04T12:59:57.042Z"
+  }
+]
