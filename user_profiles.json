@@ -1,32 +1,31 @@
 [
   {
-    "id": "devutmmij03xvgqspcxh",
-    "name": "DevUTM",
+    "id": "devutmvpnmiomolhyncc62e",
+    "name": "DevUTM VPN",
     "type": "user",
     "ovpnFileName": "UTM-UDP4-1203",
     "server": "200.247.39.210:1203",
-    "createdAt": "2025-11-28T15:12:13.402Z",
-    "updatedAt": "2025-11-28T15:12:13.402Z",
+    "createdAt": "2025-12-02T13:42:59.556Z",
+    "updatedAt": "2025-12-02T13:42:59.557Z",
     "username": "marcos.claudiano"
   },
   {
-    "id": "fenixlocalmij0ob8bpe1tqt",
-    "name": "Fenix local",
+    "id": "vpnfenix2fmiomubhvwgwocm",
+    "name": "VPN fenix 2FA",
     "type": "user",
     "ovpnFileName": "fenixsis-UDP4-1195",
     "server": "192.168.3.1:1195",
-    "createdAt": "2025-11-28T15:28:03.812Z",
-    "updatedAt": "2025-11-28T15:28:03.812Z",
+    "createdAt": "2025-12-02T13:47:26.529Z",
+    "updatedAt": "2025-12-02T13:47:26.529Z",
     "username": "marcos"
   },
   {
-    "id": "fenix2famij0ukm0ufgodz",
-    "name": "Fenix 2FA",
+    "id": "fahfdahfdamipzdj1aunvfnw",
+    "name": "fahfdahfdahfdah",
     "type": "user",
-    "ovpnFileName": "fenixsis-UDP4-1195",
-    "server": "192.168.3.1:1195",
-    "createdAt": "2025-11-28T15:32:55.907Z",
-    "updatedAt": "2025-11-28T15:32:55.907Z",
-    "username": "marcos"
+    "ovpnFileName": "fenixsis-UDP4-1197",
+    "server": "192.168.3.1:1197",
+    "createdAt": "2025-12-03T12:26:04.330Z",
+    "updatedAt": "2025-12-03T12:26:04.330Z"
   }
 ]

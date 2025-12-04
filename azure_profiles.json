@@ -1,11 +1,1 @@
-[
-  {
-    "id": "entraidlocmij0d9blp0dfoj",
-    "name": "EntraID local fenix",
-    "type": "azure",
-    "ovpnFileName": "fenixsis-UDP4-1197",
-    "server": "192.168.3.1:1197",
-    "createdAt": "2025-11-28T15:19:28.140Z",
-    "updatedAt": "2025-11-28T15:19:28.140Z"
-  }
-]
+[]

@@ -551,12 +551,19 @@ function setupElectronListeners() {
             if (btnCopiarCodigo) btnCopiarCodigo.style.display = 'block';
         });
         
-        window.electronAPI.onVPNDisconnected(() => {
-            console.log('🔌 VPN desconectada externamente');
-            showStatus('VPN desconectada externamente.', 'status');
-            vpnPid = null;
-            updateConnectionButtons();
-        });
+         window.electronAPI.onVPNDisconnected(() => {
+             console.log('🔌 VPN desconectada externamente');
+             showStatus('VPN desconectada externamente.', 'status');
+             vpnPid = null;
+             updateConnectionButtons();
+         });
+
+         window.electronAPI.onVPNConnected((event, data) => {
+             console.log('🔗 VPN conectada:', data);
+             vpnPid = data.pid;
+             updateConnectionButtons();
+             showStatus('VPN conectada com sucesso!', 'success');
+         });
         
         window.electronAPI.onVPNLog((event, log) => {
             console.log('📝 Log VPN recebido:', log);
@@ -568,7 +575,7 @@ function setupElectronListeners() {
         // ✅ CORREÇÃO: Listener para desafios VPN
         window.electronAPI.onVpnChallenge((event, challengeData) => {
             console.log('🔐 Recebido desafio VPN:', challengeData);
-            
+
             if (challengeData && challengeData.requiresInput) {
                 console.log('📢 Mostrando modal de desafio 2FA...');
                 showChallengeModal(challengeData.message);
@@ -871,29 +878,36 @@ async function selectOvpnFile(mode) {
 // Inicializar elementos 2FA - criar dinamicamente
 function initialize2FAElements() {
   console.log('🔧 Inicializando elementos 2FA...');
-  
+
   // Crie um container para info de 2FA (não input)
   twoFAContainer = document.createElement('div');
   twoFAContainer.className = 'twofa-section';
   twoFAContainer.style.display = 'none'; // Sempre escondido inicialmente
-  
+
   twoFALabel = document.createElement('div');
   twoFALabel.className = 'twofa-info-badge';
   twoFALabel.innerHTML = '<strong>⚠️ Este perfil requer 2FA</strong><br>Digite usuário e senha para iniciar. O token será solicitado durante a conexão.';
-  
+
   const helpText = document.createElement('small');
   helpText.className = 'twofa-help text-muted';
   helpText.textContent = 'Use o Google Authenticator para gerar o token quando solicitado.';
-  
+
   twoFAContainer.appendChild(twoFALabel);
   twoFAContainer.appendChild(helpText);
-  
+
   // Insira após o campo de senha
   const passwordField = document.getElementById('userPassword');
   if (passwordField && passwordField.parentNode) {
     passwordField.parentNode.insertAdjacentElement('afterend', twoFAContainer);
   }
-  
+
+  // Criar elemento de input para 2FA (embora não usado no fluxo atual, manter para consistência)
+  twoFAInput = document.createElement('input');
+  twoFAInput.type = 'password';
+  twoFAInput.className = 'form-control';
+  twoFAInput.placeholder = 'Digite o token 2FA';
+  twoFAInput.style.display = 'none'; // Escondido por padrão
+
   console.log('✅ Elementos 2FA inicializados');
 }
 

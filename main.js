@@ -1,3 +1,17 @@
+// ============ IMPORTS ============
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const fsAsync = require('fs').promises;
+const os = require('os');
+const { spawn, exec } = require('child_process');
+const axios = require('axios');
+const { PublicClientApplication } = require('@azure/msal-node');
+const { dialog } = require('electron');
+
+// Padronizar nome da aplicação para consistência de diretórios
+app.setName('bp-vpn-electron');
+
 // ============ CONFIGURAÇÃO DE DIRETÓRIOS ============
 
 // ✅ Usar diretório de dados do usuário (leitura/escrita permitida)
@@ -26,16 +40,6 @@ function ensureDirectories() {
   console.log(`📁 Diretório de perfis Azure: ${AZURE_PROFILES_DIR}`);
 }
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const fsAsync = require('fs').promises;
-const os = require('os');
-const { spawn, exec } = require('child_process');
-const axios = require('axios');
-const { PublicClientApplication } = require('@azure/msal-node');
-const { dialog } = require('electron');
-
 let mainWindow;
 let pca;
 let config;
@@ -53,8 +57,12 @@ function ensurePolicyFile() {
     
     // Criar diretório resources se não existir
     const resourcesDir = path.dirname(policyDest);
-    if (!fs.existsSync(resourcesDir)) {
-      fs.mkdirSync(resourcesDir, { recursive: true });
+    try {
+      if (!fs.existsSync(resourcesDir)) {
+        fs.mkdirSync(resourcesDir, { recursive: true });
+      }
+    } catch (err) {
+      console.warn('Erro ao criar diretório resources:', err.message);
     }
     
     // Copiar arquivo de política
@@ -92,6 +100,13 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    // Verificar se há display disponível
+    if (!process.env.DISPLAY) {
+      console.error('Erro: DISPLAY não definido. Execute em ambiente com interface gráfica.');
+      app.quit();
+      return;
+    }
+
     ensurePolicyFile();
     ensureDirectories(); // ✅ Criar diretórios
     
@@ -145,6 +160,14 @@ app.on('window-all-closed', () => {
 });
 
 // ============ FUNÇÕES AUXILIARES ============
+
+async function checkPkexecAvailable() {
+  return new Promise((resolve) => {
+    exec('which pkexec', (error) => {
+      resolve(!error);
+    });
+  });
+}
 
 async function fileExists(filePath) {
   try {
@@ -389,37 +412,55 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       console.log(`📁 Diretório do perfil: ${profileDir}`);
       console.log(`📄 Configuração: ${configPath}`);
 
-      // Criar arquivo de autenticação
-      authFilePath = path.join(os.tmpdir(), `openvpn_auth_${Date.now()}.txt`);
-      fs.writeFileSync(authFilePath, `${username}\n${password}\n`);
-     
-      if (process.platform !== 'win32') {
-        fs.chmodSync(authFilePath, 0o600);
-      }
-      
-      console.log(`🔐 Arquivo de autenticação criado: ${authFilePath}`);
+       // Criar arquivo de autenticação
+       authFilePath = path.join(os.tmpdir(), `openvpn_auth_${Date.now()}.txt`);
+       fs.writeFileSync(authFilePath, `${username}\n${password}\n`);
 
-      const openvpnArgs = [
-        '--config', configPath,
-        '--auth-user-pass', authFilePath,
-        '--auth-retry', 'interact'
-      ];
+       if (process.platform !== 'win32') {
+         fs.chmodSync(authFilePath, 0o600);
+       }
+
+       console.log(`🔐 Arquivo de autenticação criado: ${authFilePath}`);
+
+       // Criar fifo para stdin interativo
+
+       const openvpnArgs = [
+         '--config', configPath,
+         '--auth-user-pass', authFilePath,
+         '--auth-retry', 'interact'
+       ];
 
       console.log('🔐 Executando OpenVPN...');
      
       let openvpnCommand;
       let openvpnArgsFinal;
       
-      let spawnOptions = {
-        stdio: ['pipe', 'pipe', 'pipe']
-      };
+       let spawnOptions = {
+         stdio: ['pipe', 'pipe', 'pipe'],
+         env: { ...process.env, SYSTEMD_ASK_PASSWORD: '' }
+       };
 
-      if (process.platform === 'linux') {
-          // Usar pkexec para elevação gráfica no Linux (PolicyKit)
-          openvpnCommand = 'pkexec';
-          openvpnArgsFinal = ['openvpn', ...openvpnArgs];
-          console.log('🔐 Usando pkexec para elevação gráfica no Linux');
-      } else if (process.platform === 'win32') {
+       if (process.platform === 'linux') {
+           // Verificar se pkexec está disponível
+           const pkexecAvailable = await checkPkexecAvailable();
+
+           // Encontrar caminho do openvpn
+           const openvpnPath = await new Promise((resolve) => {
+             exec('which openvpn', (error, stdout) => {
+               resolve(error ? 'openvpn' : stdout.trim());
+             });
+           });
+
+           if (process.env.DISPLAY && pkexecAvailable) {
+             openvpnCommand = 'pkexec';
+             openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
+             console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
+           } else {
+             openvpnCommand = 'sudo';
+             openvpnArgsFinal = [openvpnPath, ...openvpnArgs];
+             console.log(`🔐 Usando sudo com ${openvpnPath} para elevação`);
+           }
+       } else if (process.platform === 'win32') {
         const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
         openvpnCommand = 'powershell.exe';
         openvpnArgsFinal = [
@@ -432,30 +473,39 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         throw new Error('Plataforma não suportada');
       }
      
-      vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
-      
-      let connectionEstablished = false;
-      let challengeDetected = false;
-      let authFailed = false;
+       vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
 
-      // Handler para resposta do desafio
-      challengeHandler = (event, response) => {
-        console.log('📤 Recebida resposta para desafio:', response);
-        if (vpnProcess && !vpnProcess.killed && challengeDetected) {
-          vpnProcess.stdin.write(response + '\n');
-          challengeDetected = false;
-          if (challengeTimeout) clearTimeout(challengeTimeout);
-          
-          // Resetar timeout da conexão após enviar o token
-          connectionTimeout = setTimeout(() => {
-            if (!connectionEstablished && vpnProcess && !vpnProcess.killed) {
-              const errorMsg = 'Timeout na autenticação após token 2FA';
-              console.error(`❌ ${errorMsg}`);
-              reject(new Error(errorMsg));
-            }
-          }, 30000);
-        }
-      };
+       let connectionEstablished = false;
+       let challengeDetected = false;
+       let authFailed = false;
+       let stdinReady = false;
+
+       // Abrir fifo para escrita
+       try {
+       } catch (error) {
+         console.error('Erro ao abrir FIFO:', error);
+         reject(new Error('Falha ao abrir FIFO'));
+         return;
+       }
+
+       // Handler para resposta do desafio
+       challengeHandler = (event, response) => {
+         console.log('📤 Recebida resposta para desafio:', response);
+         if (vpnProcess && !vpnProcess.killed && challengeDetected) {
+           vpnProcess.stdin.write(response + '\n');
+           challengeDetected = false;
+           if (challengeTimeout) clearTimeout(challengeTimeout);
+
+           // Resetar timeout da conexão após enviar o token
+           connectionTimeout = setTimeout(() => {
+             if (!connectionEstablished && vpnProcess && !vpnProcess.killed) {
+               const errorMsg = 'Timeout na autenticação após token 2FA';
+               console.error(`❌ ${errorMsg}`);
+               reject(new Error(errorMsg));
+             }
+           }, 30000);
+         }
+       };
 
       // Adicionar listener para resposta do desafio
       ipcMain.once('send-challenge-response', challengeHandler);
@@ -469,151 +519,132 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         }
       }, 60000);
 
-      vpnProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        console.log('OpenVPN stdout:', output);
-        mainWindow.webContents.send('vpn-log', output);
-       
-        if (output.includes('Initialization Sequence Completed')) {
-          connectionEstablished = true;
-          console.log(`✅ Conexão estabelecida com sucesso! PID: ${vpnProcess.pid}`);
-          ipcMain.removeAllListeners('send-challenge-response');
-          if (connectionTimeout) clearTimeout(connectionTimeout);
-          if (challengeTimeout) clearTimeout(challengeTimeout);
-         
-          if (authFilePath && fs.existsSync(authFilePath)) {
-            fs.unlinkSync(authFilePath);
-          }
-         
-          resolve({
-            pid: vpnProcess.pid,
-            success: true,
-            message: 'Conexão estabelecida com sucesso'
-          });
-        }
-     
-        if ((output.includes('AUTH_FAILED') || output.includes('auth-failure')) && !authFailed) {
-          console.error(`❌ Falha na autenticação`);
-          authFailed = true;
-          ipcMain.removeAllListeners('send-challenge-response');
-          if (connectionTimeout) clearTimeout(connectionTimeout);
-          if (challengeTimeout) clearTimeout(challengeTimeout);
-          reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
-        }
+       vpnProcess.stdout.on('data', (data) => {
+         const output = data.toString();
+         console.log('OpenVPN stdout:', output);
+         mainWindow.webContents.send('vpn-log', output);
 
-        // ✅ CORREÇÃO: Detectar desafio APÓS tentativa de autenticação inicial
-        if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
-          console.log('🔐 Static challenge detectado!');
-          challengeDetected = true;
-         
-          let challengeMessage = 'Enter Google Authenticator Token';
-          const challengeMatch = output.match(/CHALLENGE:\s*([^\n\r]+)/);
-          if (challengeMatch && challengeMatch[1]) {
-            challengeMessage = challengeMatch[1].trim();
+           // Marcar que stdin está pronto após primeira saída
+          if (!stdinReady) {
+            stdinReady = true;
+            console.log('🔄 OpenVPN stdin pronto para entrada');
           }
-         
-          // ✅ CORREÇÃO: Limpar timeout de conexão quando desafio é detectado
+
+         // ✅ CORREÇÃO: Detectar desafio APÓS tentativa de autenticação inicial
+         if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
+           console.log('🔐 Static challenge detectado!');
+           challengeDetected = true;
+
+           let challengeMessage = 'Enter Google Authenticator Token';
+           const challengeMatch = output.match(/CHALLENGE:\s*([^\n\r]+)/);
+           if (challengeMatch && challengeMatch[1]) {
+             challengeMessage = challengeMatch[1].trim();
+           }
+
+           // ✅ CORREÇÃO: Limpar timeout de conexão quando desafio é detectado
+           if (connectionTimeout) clearTimeout(connectionTimeout);
+
+           mainWindow.webContents.send('vpn-challenge', {
+             type: 'static-challenge',
+             message: challengeMessage,
+             requiresInput: true
+           });
+
+           // Timeout específico para o desafio
+           challengeTimeout = setTimeout(() => {
+             if (challengeDetected) {
+               console.error('❌ Timeout no desafio 2FA');
+               ipcMain.removeAllListeners('send-challenge-response');
+               reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+             }
+           }, 120000);
+         }
+       });
+
+       vpnProcess.stderr.on('data', (data) => {
+         const error = data.toString();
+         console.error('OpenVPN stderr:', error);
+         mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
+
+         if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
+           console.error(`❌ Falha na autenticação`);
+           authFailed = true;
+           ipcMain.removeAllListeners('send-challenge-response');
+           if (connectionTimeout) clearTimeout(connectionTimeout);
+           if (challengeTimeout) clearTimeout(challengeTimeout);
+           reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+         }
+
+         // ✅ CORREÇÃO: Detectar desafio também no stderr e verificar stdin pronto
+         if ((error.includes('CHALLENGE:') || error.includes('Enter Google Authenticator Token') || error.includes('challenge')) && !challengeDetected && !authFailed && stdinReady) {
+           console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
+           challengeDetected = true;
+
+           let challengeMessage = 'Enter Google Authenticator Token';
+           const challengeMatch = error.match(/CHALLENGE:\s*([^\n\r]+)/);
+           if (challengeMatch && challengeMatch[1]) {
+             challengeMessage = challengeMatch[1].trim();
+           }
+
+           if (connectionTimeout) clearTimeout(connectionTimeout);
+
+           mainWindow.webContents.send('vpn-challenge', {
+             type: 'static-challenge',
+             message: challengeMessage,
+             requiresInput: true
+           });
+
+           challengeTimeout = setTimeout(() => {
+             if (challengeDetected) {
+               console.error('❌ Timeout no desafio 2FA');
+               ipcMain.removeAllListeners('send-challenge-response');
+               reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+             }
+           }, 120000);
+         }
+       });
+
+        vpnProcess.on('close', (code) => {
+          console.log(`OpenVPN encerrado com código ${code}`);
+          vpnProcess = null;
+          ipcMain.removeAllListeners('send-challenge-response');
+          mainWindow.webContents.send('vpn-disconnected');
+
           if (connectionTimeout) clearTimeout(connectionTimeout);
-         
-          mainWindow.webContents.send('vpn-challenge', {
-            type: 'static-challenge',
-            message: challengeMessage,
-            requiresInput: true
-          });
-          
-          // Timeout específico para o desafio
-          challengeTimeout = setTimeout(() => {
-            if (challengeDetected) {
-              console.error('❌ Timeout no desafio 2FA');
-              ipcMain.removeAllListeners('send-challenge-response');
-              reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+          if (challengeTimeout) clearTimeout(challengeTimeout);
+
+          try {
+            if (authFilePath && fs.existsSync(authFilePath)) {
+              fs.unlinkSync(authFilePath);
+              console.log(`🧹 Arquivo de autenticação removido: ${authFilePath}`);
             }
-          }, 120000);
-        }
-      });
-
-      vpnProcess.stderr.on('data', (data) => {
-        const error = data.toString();
-        console.error('OpenVPN stderr:', error);
-        mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
-       
-        if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
-          console.error(`❌ Falha na autenticação`);
-          authFailed = true;
-          ipcMain.removeAllListeners('send-challenge-response');
-          if (connectionTimeout) clearTimeout(connectionTimeout);
-          if (challengeTimeout) clearTimeout(challengeTimeout);
-          reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
-        }
-
-        // ✅ CORREÇÃO: Detectar desafio também no stderr
-        if ((error.includes('CHALLENGE:') || error.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
-          console.log('🔐 Static challenge detectado no stderr!');
-          challengeDetected = true;
-         
-          let challengeMessage = 'Enter Google Authenticator Token';
-          const challengeMatch = error.match('/CHALLENGE:\s*([^\n\r]+)/');
-          if (challengeMatch && challengeMatch[1]) {
-            challengeMessage = challengeMatch[1].trim();
+          } catch (e) {
+            console.log('Erro ao limpar arquivos:', e.message);
           }
-         
-          if (connectionTimeout) clearTimeout(connectionTimeout);
-         
-          mainWindow.webContents.send('vpn-challenge', {
-            type: 'static-challenge',
-            message: challengeMessage,
-            requiresInput: true
-          });
-          
-          challengeTimeout = setTimeout(() => {
-            if (challengeDetected) {
-              console.error('❌ Timeout no desafio 2FA');
-              ipcMain.removeAllListeners('send-challenge-response');
-              reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
-            }
-          }, 120000);
-        }
-      });
 
-      vpnProcess.on('close', (code) => {
-        console.log(`OpenVPN encerrado com código ${code}`);
-        vpnProcess = null;
-        ipcMain.removeAllListeners('send-challenge-response');
-        mainWindow.webContents.send('vpn-disconnected');
-       
-        if (connectionTimeout) clearTimeout(connectionTimeout);
-        if (challengeTimeout) clearTimeout(challengeTimeout);
-       
-        try {
-          if (authFilePath && fs.existsSync(authFilePath)) {
-            fs.unlinkSync(authFilePath);
-            console.log(`🧹 Arquivo de autenticação removido: ${authFilePath}`);
-          }
-        } catch (e) {
-          console.log('Erro ao limpar arquivo de auth:', e.message);
-        }
-      });
 
-      vpnProcess.on('error', (error) => {
-        console.error('❌ Erro ao executar OpenVPN:', error);
-        ipcMain.removeAllListeners('send-challenge-response');
-        if (connectionTimeout) clearTimeout(connectionTimeout);
-        if (challengeTimeout) clearTimeout(challengeTimeout);
-       
-        try {
-          if (authFilePath && fs.existsSync(authFilePath)) {
-            fs.unlinkSync(authFilePath);
-          }
-        } catch (e) {
-          console.log('Erro ao limpar arquivo de auth:', e.message);
-        }
-       
-        if (error.code === 'ENOENT') {
-          reject(new Error('OpenVPN não encontrado. Certifique-se de que o OpenVPN está instalado.'));
-        } else {
-          reject(new Error(`Erro ao executar OpenVPN: ${error.message}`));
-        }
-      });
+       });
+
+       vpnProcess.on('error', (error) => {
+         console.error('❌ Erro ao executar OpenVPN:', error);
+         ipcMain.removeAllListeners('send-challenge-response');
+         if (connectionTimeout) clearTimeout(connectionTimeout);
+         if (challengeTimeout) clearTimeout(challengeTimeout);
+
+         try {
+           if (authFilePath && fs.existsSync(authFilePath)) {
+             fs.unlinkSync(authFilePath);
+           }
+         } catch (e) {
+           console.log('Erro ao limpar arquivos:', e.message);
+         }
+
+         if (error.code === 'ENOENT') {
+           reject(new Error('OpenVPN não encontrado. Certifique-se de que o OpenVPN está instalado.'));
+         } else {
+           reject(new Error(`Erro ao executar OpenVPN: ${error.message}`));
+         }
+       });
 
     } catch (error) {
       console.error(`❌ Erro na conexão:`, error);
@@ -1161,22 +1192,16 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
                   resolve({ success: true });
                 }
               });
-            } else {
-              console.log(`✅ Processo VPN ${pid} finalizado com sudo`);
-              if (vpnProcess && vpnProcess.pid === pid) {
-                vpnProcess.kill();
-                vpnProcess = null;
-              }
-              resolve({ success: true });
-            }
+        } else {
+          console.log(`✅ Processo VPN ${pid} finalizado com sudo`);
+          vpnProcess = null;
+          resolve({ success: true });
+        }
           });
         } else {
-          console.log(`✅ Processo VPN ${pid} finalizado com pkexec`);
-          if (vpnProcess && vpnProcess.pid === pid) {
-            vpnProcess.kill();
-            vpnProcess = null;
-          }
-          resolve({ success: true });
+      console.log(`✅ Processo VPN ${pid} finalizado com pkexec`);
+      vpnProcess = null;
+      resolve({ success: true });
         }
       });
     }
@@ -1186,24 +1211,32 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
 // ============ FUNÇÕES AUXILIARES ============
 
 ipcMain.handle('validate-openvpn-config', async () => {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (!fs.existsSync(config.openvpn_config)) {
       resolve({ valid: false, error: 'Arquivo de configuração OpenVPN não encontrado' });
       return;
     }
-    
-    const checkCommand = process.platform === 'win32' 
-      ? 'where openvpn' 
+
+    const checkCommand = process.platform === 'win32'
+      ? 'where openvpn'
       : 'which openvpn';
-    
-    exec(checkCommand, (error) => {
+
+    exec(checkCommand, async (error) => {
       if (error) {
-        resolve({ 
-          valid: false, 
-          error: 'OpenVPN não encontrado. Instale o OpenVPN primeiro.' 
+        resolve({
+          valid: false,
+          error: 'OpenVPN não encontrado. Instale o OpenVPN primeiro.'
         });
       } else {
-        resolve({ valid: true });
+        // Verificar também permissões de elevação
+        const pkexecAvailable = process.platform === 'linux' ? await checkPkexecAvailable() : true;
+        const policyExists = process.platform === 'linux' ? fs.existsSync('/usr/share/polkit-1/actions/com.bpvpn.pkexec.policy') : true;
+
+        resolve({
+          valid: true,
+          pkexecAvailable: pkexecAvailable,
+          policyExists: policyExists
+        });
       }
     });
   });

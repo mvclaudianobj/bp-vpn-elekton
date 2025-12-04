@@ -5,7 +5,7 @@ echo "🔧 Configurando BluePex VPN..."
 
 # Instalar política do PolicyKit
 POLICY_FILE="/usr/share/polkit-1/actions/com.bpvpn.pkexec.policy"
-POLICY_SOURCE_1="/opt/BluePex VPN/resources/app/build/com.bpvpn.pkexec.policy"
+POLICY_SOURCE_1="/opt/BluePex VPN/resources/app.asar/build/com.bpvpn.pkexec.policy"
 POLICY_SOURCE_2="/opt/BluePex VPN/resources/build/com.bpvpn.pkexec.policy"
 
 if [ -f "$POLICY_SOURCE_1" ]; then

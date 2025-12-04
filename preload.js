@@ -40,11 +40,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ✅ CORREÇÃO: Adicionar removeAllListeners para vpn-challenge
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 
-  // Event Listeners
-  onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
-  onVPNDisconnected: (callback) => ipcRenderer.on('vpn-disconnected', callback),
-  onVPNLog: (callback) => ipcRenderer.on('vpn-log', callback),
-  onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', callback),
+   // Event Listeners
+   onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
+   onVPNDisconnected: (callback) => ipcRenderer.on('vpn-disconnected', callback),
+   onVPNConnected: (callback) => ipcRenderer.on('vpn-connected', callback),
+   onVPNLog: (callback) => ipcRenderer.on('vpn-log', callback),
+   onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', callback),
 
   // Configurações padrão
   saveDefaultProfiles: (defaultProfiles) => ipcRenderer.invoke('save-default-profiles', defaultProfiles),
