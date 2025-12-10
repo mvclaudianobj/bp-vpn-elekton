@@ -1,0 +1,119 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Send log to main process
+ipcRenderer.invoke('send-renderer-log', {
+  category: 'PRELOAD',
+  action: 'INIT_START',
+  data: {
+    nodeEnv: process.env.NODE_ENV,
+    platform: process.platform,
+    contextBridge: typeof contextBridge,
+    ipcRenderer: typeof ipcRenderer,
+    window: typeof window
+  }
+});
+
+globalThis.electronAPI = {
+  // Autenticação Azure
+  loginAzure: () => ipcRenderer.invoke('login-azure'),
+  publishToken: (username, token) => ipcRenderer.invoke('publish-token', username, token),
+
+  // Conexões VPN
+  connectOpenVPN: () => ipcRenderer.invoke('connect-openvpn'),
+  disconnectOpenVPN: (pid) => ipcRenderer.invoke('disconnect-openvpn', pid),
+  connectOpenVPNUserPassProfile: (profileId, username, password) =>
+  ipcRenderer.invoke('connect-openvpn-userpass-profile', profileId, username, password),
+
+  // Gestão de Arquivos
+  selectOvpnFile: () => ipcRenderer.invoke('select-ovpn-file'),
+  validateOpenVPNConfig: () => ipcRenderer.invoke('validate-openvpn-config'),
+
+  // Perfis Usuário
+  loadUserProfiles: () => ipcRenderer.invoke('load-user-profiles'),
+  saveUserProfile: (profile) => ipcRenderer.invoke('save-user-profile', profile),
+  deleteUserProfile: (profileId) => ipcRenderer.invoke('delete-user-profile', profileId),
+  saveOvpnToProfile: (profileId, ovpnContent, ovpnFileName, originalOvpnPath) =>
+  ipcRenderer.invoke('save-ovpn-to-profile', profileId, ovpnContent, ovpnFileName, originalOvpnPath),
+
+  // Credenciais
+  saveUserCredentials: (profileId, username, password, rememberPassword) =>
+  ipcRenderer.invoke('save-user-credentials', profileId, username, password, rememberPassword),
+  loadUserCredentials: (profileId) => ipcRenderer.invoke('load-user-credentials', profileId),
+
+  // Perfis Azure
+  saveAzureConfig: (profileId, ovpnContent, ovpnFileName, originalOvpnPath) =>
+  ipcRenderer.invoke('save-azure-config', profileId, ovpnContent, ovpnFileName, originalOvpnPath),
+  loadAzureProfiles: () => ipcRenderer.invoke('load-azure-profiles'),
+  saveAzureProfile: (profile) => ipcRenderer.invoke('save-azure-profile', profile),
+  deleteAzureProfile: (profileId) => ipcRenderer.invoke('delete-azure-profile', profileId),
+
+  // Configurações
+  getCurrentConfig: () => ipcRenderer.invoke('get-current-config'),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
+  getAzureAppConfig: () => ipcRenderer.invoke('get-azure-app-config'),
+  saveAzureAppConfig: (config) => ipcRenderer.invoke('save-azure-app-config', config),
+
+  // Remove all listeners
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
+  // Configurações padrão
+  saveDefaultProfiles: (defaultProfiles) => ipcRenderer.invoke('save-default-profiles', defaultProfiles),
+  loadDefaultProfiles: () => ipcRenderer.invoke('load-default-profiles'),
+
+  // Estado da aplicação
+  saveAppState: (appState) => ipcRenderer.invoke('save-app-state', appState),
+  loadAppState: () => ipcRenderer.invoke('load-app-state'),
+
+  // Sistema de atualizações
+  checkForUpdates: (showDialog) => ipcRenderer.invoke('check-for-updates', showDialog),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
+
+  // Detecção de 2FA
+  detect2FARequirement: (profileId) => ipcRenderer.invoke('detect-2fa-requirement', profileId),
+
+  // Desafio de autenticação
+  sendChallengeResponse: (response) => ipcRenderer.invoke('send-challenge-response', response),
+  onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', (event, data) => {
+    ipcRenderer.invoke('send-renderer-log', {
+      category: 'PRELOAD',
+      action: 'VPN_CHALLENGE_RECEIVED',
+      data: data
+    });
+    callback(event, data);
+  }),
+  sendSystemdChallengeResponse: (response) => ipcRenderer.invoke('send-systemd-challenge-response', response),
+  sendSudoPassword: (password) => ipcRenderer.invoke('send-sudo-password', password),
+
+  // Eventos de atualização
+  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
+  onUpdateProgress: (callback) => ipcRenderer.on('update-progress', callback),
+  onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
+  onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+  onUpdateCheckComplete: (callback) => ipcRenderer.on('update-check-complete', callback),
+
+  // Sistema de logging do renderer
+  sendLog: (logData) => ipcRenderer.invoke('send-renderer-log', logData),
+
+  // Event Listeners
+  onVPNDisconnected: (callback) => ipcRenderer.on('vpn-disconnected', callback),
+  onVPNConnected: (callback) => ipcRenderer.on('vpn-connected', callback),
+  onVPNLog: (callback) => ipcRenderer.on('vpn-log', callback),
+
+  // Minimizar para tray
+  minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
+
+  // Azure device code
+  onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
+};
+
+// Send success log
+ipcRenderer.invoke('send-renderer-log', {
+  category: 'PRELOAD',
+  action: 'API_EXPOSED',
+  data: {
+    electronAPI: typeof globalThis.electronAPI,
+    functionsCount: Object.keys(globalThis.electronAPI || {}).length
+  }
+});
