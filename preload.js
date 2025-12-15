@@ -21,6 +21,7 @@ globalThis.electronAPI = {
   // Conexões VPN
   connectOpenVPN: () => ipcRenderer.invoke('connect-openvpn'),
   disconnectOpenVPN: (pid) => ipcRenderer.invoke('disconnect-openvpn', pid),
+  killVPNConnection: () => ipcRenderer.invoke('kill-vpn-connection'),
   connectOpenVPNUserPassProfile: (profileId, username, password) =>
   ipcRenderer.invoke('connect-openvpn-userpass-profile', profileId, username, password),
 

@@ -761,39 +761,45 @@ async function handleConnect() {
 }
 
 async function handleDisconnect() {
-    console.log(`🔌 [RENDERER] Botão desconectar clicado. VPN PID atual: ${vpnPid}`);
+  console.log(`🔌 [RENDERER] Botão desconectar clicado. VPN PID atual: ${vpnPid}`);
 
-    try {
-        if (vpnPid) {
-            console.log(`🔌 [RENDERER] Enviando solicitação de desconexão para PID: ${vpnPid}`);
-            const result = await window.electronAPI.disconnectOpenVPN(vpnPid);
-            console.log(`🔌 [RENDERER] Resultado da desconexão:`, result);
-            showStatus('VPN desconectada com sucesso!', 'status');
-            vpnPid = null;
-            // Limpar status após desconectar
-            setTimeout(() => {
-                if (statusEl) statusEl.style.display = 'none';
-            }, 3000);
-
-            // Destravar seleção de perfil
-            if (profileSelect) profileSelect.disabled = false;
-
-            // Mostrar elementos de conexão novamente
-            showConnectionElements();
-        } else {
-            console.log(`🔌 [RENDERER] Nenhum VPN PID encontrado`);
-            showStatus('Nenhuma conexão ativa encontrada.', 'status');
-        }
-
-        updateConnectionButtons();
-
-
-
-        saveApplicationState(); // SALVAR ESTADO APÓS DESCONEXÃO
-    } catch (err) {
-        console.error('❌ Erro na desconexão:', err);
-        showStatus(`Erro na desconexão: ${err.message}`, 'alert');
+  try {
+    btnDesconectar.disabled = true; // Desabilitar botão imediatamente
+    btnConectar.disabled = false;   // Habilitar botão conectar
+    
+    console.log(`🔌 [RENDERER] Chamando killVPNConnection()...`);
+    
+    // USAR APENAS A FUNÇÃO killVPNConnection() (MESMA DO FECHAR)
+    const result = await window.electronAPI.killVPNConnection();
+    
+    console.log(`🔌 [RENDERER] Resultado:`, result);
+    
+    if (result.success) {
+      showStatus('VPN desconectada com sucesso!', 'status');
+      vpnPid = null;
+      
+      // Destravar seleção de perfil
+      if (profileSelect) profileSelect.disabled = false;
+      
+      // Mostrar elementos de conexão novamente
+      showConnectionElements();
+      
+      // Limpar status após desconectar
+      setTimeout(() => {
+        if (statusEl) statusEl.style.display = 'none';
+      }, 3000);
+    } else {
+      throw new Error(result.error || 'Falha na desconexão');
     }
+
+    updateConnectionButtons();
+    saveApplicationState(); // SALVAR ESTADO APÓS DESCONEXÃO
+
+  } catch (err) {
+    console.error('❌ Erro na desconexão:', err);
+    showStatus(`Erro na desconexão: ${err.message}`, 'alert');
+    btnDesconectar.disabled = false; // Re-habilitar se falhar
+  }
 }
 
 // ============ CONFIGURAÇÕES ============
@@ -872,33 +878,69 @@ async function clearLogs() {
 function updateLogsModalContent() {
     if (logsModalContent) {
         try {
-            // Tentar ler o arquivo de log atual
-            const today = new Date().toISOString().split('T')[0];
-            const logFile = `/var/log/bluepexvpn/data_${today}.log`;
-
-            const fs = require('fs');
-            if (fs.existsSync(logFile)) {
-                const logs = fs.readFileSync(logFile, 'utf8');
-                let content = logs || '📋 Arquivo de log vazio.';
-            if (connectionLogsText) {
-              content += '\n--- Logs em Tempo Real ---\n' + connectionLogsText;
+            let content = '';
+            
+            // 1. Primeiro, mostrar logs em tempo real (sempre disponíveis)
+            if (connectionLogsText && connectionLogsText.trim() !== '') {
+                content += '📋 Logs em Tempo Real:\n' + connectionLogsText;
             }
-            logsModalContent.textContent = content;
-            } else {
-                logsModalContent.textContent = '📋 Arquivo de log não encontrado.';
-            }
-
-            // Configurar watcher se não existir
-            if (!logWatcher) {
-                logWatcher = fs.watchFile(logFile, { interval: 1000 }, (curr, prev) => {
-                    if (logsModal && logsModal.classList.contains('show')) {
-                        updateLogsModalContent();
+            
+            // 2. Tentar ler do arquivo de log (se disponível)
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const logFile = `/var/log/bluepexvpn/data_${today}.log`;
+                
+                const fs = require('fs');
+                const path = require('path');
+                
+                // Verificar se o diretório existe
+                const logDir = path.dirname(logFile);
+                if (fs.existsSync(logDir)) {
+                    if (fs.existsSync(logFile)) {
+                        const fileLogs = fs.readFileSync(logFile, 'utf8');
+                        if (fileLogs.trim() !== '') {
+                            if (content !== '') content += '\n\n--- Logs do Arquivo ---\n';
+                            content += fileLogs;
+                        }
+                    } else {
+                        if (content === '') {
+                            content = '📋 Arquivo de log diário ainda não foi criado.\n';
+                            content += 'Os logs aparecerão aqui quando você iniciar uma conexão VPN.';
+                        }
                     }
-                });
+                } else {
+                    if (content === '') {
+                        content = 'ℹ️ Diretório de logs não encontrado.\n';
+                        content += 'Os logs serão mostrados apenas em tempo real durante as conexões.';
+                    }
+                }
+                
+                // Configurar watcher se não existir
+                if (!logWatcher && fs.existsSync(logDir)) {
+                    logWatcher = fs.watchFile(logFile, { interval: 1000 }, (curr, prev) => {
+                        if (logsModal && logsModal.classList.contains('show')) {
+                            updateLogsModalContent();
+                        }
+                    });
+                }
+            } catch (fileError) {
+                // Não mostra erro se for apenas o arquivo não existir
+                if (fileError.code !== 'ENOENT') {
+                    console.warn('Aviso ao acessar arquivo de log:', fileError.message);
+                }
             }
+            
+            // 3. Se não houver nenhum conteúdo
+            if (content === '') {
+                content = '📋 Nenhum log disponível no momento.\n';
+                content += 'Conecte-se a uma VPN para ver os logs em tempo real.';
+            }
+            
+            logsModalContent.textContent = content;
+            
         } catch (error) {
-            console.error('Erro ao ler logs:', error);
-            logsModalContent.textContent = '📋 Erro ao carregar logs.';
+            console.error('Erro ao carregar logs:', error);
+            logsModalContent.textContent = '📋 Erro ao carregar logs. Verifique o console para mais detalhes.';
         }
     }
 
