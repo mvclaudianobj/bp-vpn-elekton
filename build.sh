@@ -120,14 +120,15 @@ case $choice in
                 SHA256_DEB=$(sha256sum "$DEB_FILE" | awk '{print $1}')
                 SIZE_DEB=$(stat -c%s "$DEB_FILE")
             fi
-            # Ajustar yml - por enquanto, focar em AppImage, mas adicionar sha256
+            # Ajustar yml
             if [ -f "$APPIMAGE_FILE" ]; then
                 sed -i "s/version: .*/version: $VERSION/" dist/latest-linux.yml
+                sed -i "s|BluePex-VPN-${VERSION}.AppImage|bluepex-vpn-${VERSION}.AppImage|g" dist/latest-linux.yml
                 # Adicionar sha256 se não existir
-                if ! grep -q "sha256:" dist/latest-linux.yml; then
-                    sed -i "/sha512: .*/a\    sha256: $SHA256_APPIMAGE" dist/latest-linux.yml
+                if ! grep -q "^sha256:" dist/latest-linux.yml; then
+                    sed -i "/^sha512: .*/a\sha256: $SHA256_APPIMAGE" dist/latest-linux.yml
                 else
-                    sed -i "s/sha256: .*/sha256: $SHA256_APPIMAGE/" dist/latest-linux.yml
+                    sed -i "s/^sha256: .*/sha256: $SHA256_APPIMAGE/" dist/latest-linux.yml
                 fi
                 echo -e "${GREEN}✅ Arquivos ajustados com SHA256${NC}"
             fi
