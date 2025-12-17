@@ -261,6 +261,16 @@ class AutoUpdaterManager {
   }
 
   setupEventHandlers() {
+    // TEMP: Forçar update para teste
+    setTimeout(() => {
+      logger.log('UPDATE', 'FORCED_TEST_UPDATE', { version: '0.0.3' });
+      autoUpdater.emit('update-available', {
+        version: '0.0.3',
+        releaseDate: new Date().toISOString(),
+        releaseNotes: 'Test update - versão forçada para debug'
+      });
+    }, 5000);
+
     autoUpdater.on('update-available', (info) => {
       logger.log('UPDATE', 'AVAILABLE', {
         version: info.version,

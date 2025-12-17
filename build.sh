@@ -10,6 +10,13 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Verificar se está rodando como root
+if [ "$EUID" -eq 0 ]; then
+    echo -e "${RED}❌ Não execute este script como root/sudo${NC}"
+    echo -e "${RED}   Execute como usuário normal: ./build.sh${NC}"
+    exit 1
+fi
+
 # Verificar se node_modules existe
 if [ ! -d "node_modules" ]; then
     echo -e "${BLUE}📦 Instalando dependências...${NC}"
