@@ -233,7 +233,7 @@ class AutoUpdaterManager {
 
   configureUpdater() {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
     autoUpdater.allowPrerelease = true;
 
@@ -262,16 +262,6 @@ class AutoUpdaterManager {
   }
 
   setupEventHandlers() {
-    // TEMP: Forçar update para teste
-    setTimeout(() => {
-      logger.log('UPDATE', 'FORCED_TEST_UPDATE', { version: '0.0.3' });
-      autoUpdater.emit('update-available', {
-        version: '0.0.3',
-        releaseDate: new Date().toISOString(),
-        releaseNotes: 'Test update - versão forçada para debug'
-      });
-    }, 5000);
-
     autoUpdater.on('update-available', (info) => {
       logger.log('UPDATE', 'AVAILABLE', {
         version: info.version,
@@ -378,7 +368,22 @@ class AutoUpdaterManager {
 
       await autoUpdater.checkForUpdates();
 
-      if (showDialog && !this.updateAvailable) {
+      if (showDialog && this.updateAvailable) {
+        logger.log('UPDATE', 'SHOWING_UPDATE_DIALOG', { version: this.updateInfo.version });
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Atualização disponível',
+          message: `Nova versão ${this.updateInfo.version} disponível. Deseja baixar?`,
+          buttons: ['Baixar', 'Cancelar']
+        }).then(result => {
+          if (result.response === 0) {
+            logger.log('UPDATE', 'DOWNLOAD_STARTED', { version: this.updateInfo.version });
+            autoUpdater.downloadUpdate();
+          } else {
+            logger.log('UPDATE', 'DOWNLOAD_CANCELLED', { version: this.updateInfo.version });
+          }
+        });
+      } else if (showDialog && !this.updateAvailable) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('update-check-complete', {
             available: false,
