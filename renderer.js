@@ -410,6 +410,13 @@ async function initializeApp() {
         console.log('🚀 Inicializando aplicação...');
         logToMain('RENDERER', 'INIT_START', {});
 
+        // Definir versão da aplicação
+        const version = await window.electronAPI.getVersion();
+        const updateVersionEl = document.getElementById('updateVersion');
+        if (updateVersionEl) {
+            updateVersionEl.textContent = version;
+        }
+
         // Aguardar APIs ficarem disponíveis
         if (!window.electronAPI) {
             console.log('🔄 Aguardando electronAPI...');
@@ -423,6 +430,17 @@ async function initializeApp() {
         if (window.electronAPI) {
             console.log('  loadUserProfiles:', !!window.electronAPI.loadUserProfiles);
             console.log('  loadAzureProfiles:', !!window.electronAPI.loadAzureProfiles);
+        }
+
+        // Definir versão da aplicação
+        try {
+            const version = await window.electronAPI.getVersion();
+            const updateVersionEl = document.getElementById('updateVersion');
+            if (updateVersionEl) {
+                updateVersionEl.textContent = version;
+            }
+        } catch (error) {
+            console.warn('Erro ao obter versão:', error);
         }
 
         // Inicializar elementos de atualização
@@ -439,6 +457,17 @@ async function initializeApp() {
 
         // Restaurar estado da aplicação
         await restoreApplicationState();
+
+        // Definir versão da aplicação
+        try {
+            const version = await window.electronAPI.getVersion();
+            const updateVersionEl = document.getElementById('updateVersion');
+            if (updateVersionEl) {
+                updateVersionEl.textContent = version;
+            }
+        } catch (error) {
+            console.warn('Erro ao obter versão:', error);
+        }
 
         console.log('✅ Aplicação inicializada com sucesso');
         logToMain('RENDERER', 'INIT_SUCCESS', {});
@@ -1356,9 +1385,13 @@ async function checkForUpdates() {
     }
 }
 
-function checkForUpdatesOnStartup() {
-    // Implementar verificação automática de atualizações
-    console.log('🔄 Verificação automática de atualizações - função placeholder');
+async function checkForUpdatesOnStartup() {
+    try {
+        console.log('🔄 Verificando atualizações automaticamente...');
+        await window.electronAPI.checkForUpdates(false);
+    } catch (error) {
+        console.warn('Erro na verificação automática de atualizações:', error);
+    }
 }
 
 function closeUpdateModal() {

@@ -235,7 +235,7 @@ class AutoUpdaterManager {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = true;
 
     if (process.env.GITHUB_TOKEN) {
       autoUpdater.setFeedURL({
@@ -1856,6 +1856,8 @@ ipcMain.handle('load-azure-profiles', async () => {
     return { success: false, error: error.message };
   }
 });
+
+ipcMain.handle('get-version', () => app.getVersion());
 
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = AZURE_PROFILES_PATH;
