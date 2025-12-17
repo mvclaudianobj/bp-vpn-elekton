@@ -249,7 +249,8 @@ class AutoUpdaterManager {
       autoUpdater.setFeedURL({
         provider: 'github',
         owner: 'mvclaudianobj',
-        repo: 'BluePexVPN'
+        repo: 'BluePexVPN',
+        includePrerelease: true
       });
     }
 
