@@ -665,6 +665,14 @@ if (!gotTheLock) {
   return;
 }
 
+// Disable hardware acceleration to avoid DISPLAY issues
+app.disableHardwareAcceleration();
+
+// Log environment info for DISPLAY verification
+console.log('DISPLAY env:', process.env.DISPLAY);
+console.log('Platform:', process.platform);
+console.log('Electron version:', process.versions.electron);
+
 app.whenReady().then(async () => {
   try {
     if (!process.env.DISPLAY) {
