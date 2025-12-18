@@ -196,15 +196,19 @@ async function checkActiveOpenVPN() {
 }
 
 // Instância global do logger
-const logger = new AppLogger();
+let logger;
+// Instância global do updater
+let updaterManager;
 
 // Capturar erros globais no main process
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
-  logger.log('SYSTEM', 'UNCAUGHT_EXCEPTION', {
-    message: error.message,
-    stack: error.stack
-  }, 'ERROR');
+  if (logger) {
+    logger.log('SYSTEM', 'UNCAUGHT_EXCEPTION', {
+      message: error.message,
+      stack: error.stack
+    });
+  }
   app.quit();
 });
 
@@ -410,7 +414,6 @@ class AutoUpdaterManager {
 }
 
 // Instância global do auto-updater
-const updaterManager = new AutoUpdaterManager();
 
 // Padronizar nome da aplicação para consistência de diretórios
 app.setName('bluepex-vpn');
@@ -513,6 +516,12 @@ function ensurePolicyFile() {
 }
 
 function createTray() {
+  // Tray funciona melhor no Linux, no Windows pode ter limitações
+  if (process.platform !== 'linux') {
+    console.log('Tray não suportado nesta plataforma, pulando...');
+    return;
+  }
+
   tray = new Tray(path.join(__dirname, 'icon.png'));
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -580,25 +589,31 @@ function createSplashWindow() {
   });
 }
 
-function createWindow() {
-  console.log('🏗️ Criando janela principal...');
-  mainWindow = new BrowserWindow({
-    width: 500,
-    height: 650,
-    frame: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+ function createWindow() {
+   try {
+     console.log('🏗️ Criando janela principal...');
+     console.log('📁 __dirname:', __dirname);
+     console.log('📄 Preload path:', path.join(__dirname, 'preload.js'));
+     mainWindow = new BrowserWindow({
+     width: 480,
+     height: 500,
+     frame: false,
+     webPreferences: {
+       nodeIntegration: true,
+       contextIsolation: false,
       preload: path.join(__dirname, 'preload.js')
-    },
-    title: 'BluePex VPN Connections',
-    autoHideMenuBar: false,
-    resizable: true,
-    center: true,
-    show: false,
-  });
+      },
+      title: 'BluePex VPN Connections',
+      icon: path.join(__dirname, 'icon.ico'), // Adicionar ícone
+     autoHideMenuBar: false,
+     resizable: true,
+     center: true,
+     show: false,
+    });
 
-  const menuTemplate = [
+    console.log('✅ Janela principal criada com sucesso');
+
+   const menuTemplate = [
     {
       label: 'Arquivo',
       submenu: [
@@ -621,9 +636,12 @@ function createWindow() {
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
 
+  console.log('📄 Carregando index.html...');
   mainWindow.loadFile('index.html');
+  console.log('✅ index.html carregado');
 
   mainWindow.once('ready-to-show', () => {
+    console.log('🎯 Janela principal pronta para mostrar');
     if (app.isPackaged) {
       setTimeout(() => {
         if (splashWindow) {
@@ -656,6 +674,13 @@ function createWindow() {
     
     mainWindow = null;
   });
+  } catch (error) {
+    console.error('❌ Erro ao criar janela principal:', error);
+    // Mostrar erro em dialog para debug no packaged
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Erro na Inicialização', `Erro ao criar janela principal:\n${error.message}\n\nStack: ${error.stack}`);
+    app.quit();
+  }
 }
 
 // Prevenir múltiplas instâncias
@@ -675,7 +700,13 @@ console.log('Electron version:', process.versions.electron);
 
 app.whenReady().then(async () => {
   try {
-    if (!process.env.DISPLAY) {
+    // Inicializar logger após app ready
+    logger = new AppLogger();
+
+    // Inicializar auto-updater
+    updaterManager = new AutoUpdaterManager();
+
+    if (process.platform === 'linux' && !process.env.DISPLAY) {
       console.error('Erro: DISPLAY não definido. Execute em ambiente com interface gráfica.');
       app.quit();
       return;
@@ -1449,42 +1480,52 @@ ipcMain.handle('send-sudo-password', async (event, password) => {
 // ============ GESTÃO DE PERFIS USUÁRIO ============
 
 ipcMain.handle('select-ovpn-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Selecionar arquivo de configuração OpenVPN',
-    filters: [
-      { name: 'Arquivos OpenVPN', extensions: ['ovpn', 'conf'] },
-      { name: 'Todos os arquivos', extensions: ['*'] }
-    ],
+  console.log('Handler select-ovpn-file chamado, mainWindow:', !!mainWindow);
+  if (mainWindow) {
+    console.log('mainWindow.isVisible():', mainWindow.isVisible());
+  }
+  console.log('Chamando dialog.showOpenDialog');
+  const result = await dialog.showOpenDialog({
+    title: 'Selecionar arquivo OVPN',
     properties: ['openFile']
   });
+  console.log('Dialog result:', result);
 
-  if (!result.canceled && result.filePaths.length > 0) {
-    const filePath = result.filePaths[0];
-    try {
-      const content = await fsAsync.readFile(filePath, 'utf-8');
-      const fileName = path.basename(filePath, '.ovpn');
-      
-      return {
-        success: true,
-        filePath: filePath,
-        fileName: fileName,
-        content: content
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Erro ao ler arquivo: ${error.message}`
-      };
-    }
+  if (result.canceled) {
+    console.log('Dialog cancelado');
+    return { success: false, error: 'Seleção cancelada' };
   }
-  
-  return { success: false, error: 'Nenhum arquivo selecionado' };
+
+  if (!result.filePaths || result.filePaths.length === 0) {
+    console.log('Nenhum arquivo selecionado');
+    return { success: false, error: 'Nenhum arquivo selecionado' };
+  }
+
+  const filePath = result.filePaths[0];
+  console.log('Arquivo selecionado:', filePath);
+
+  try {
+    const content = await fsAsync.readFile(filePath, 'utf-8');
+    const fileName = path.basename(filePath, '.ovpn');
+
+    console.log('Arquivo lido com sucesso, tamanho:', content.length);
+    return {
+      success: true,
+      filePath: filePath,
+      fileName: fileName,
+      content: content
+    };
+  } catch (error) {
+    console.error('Erro ao ler arquivo:', error);
+    return { success: false, error: `Erro ao ler arquivo: ${error.message}` };
+  }
 });
 
 ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovpnFileName, originalOvpnPath) => {
   const profilesPath = USER_PROFILES_PATH;
 
   try {
+    console.log('Handler save-ovpn-to-profile chamado:', { profileId, ovpnFileName, originalOvpnPath, profilesPath });
     logger.log('PROFILE', 'SAVE_START', {
       profileId,
       ovpnFileName,
@@ -2191,7 +2232,7 @@ ipcMain.handle('get-azure-app-config', async () => {
       success: true,
       config: azureConfig
     };
-  } catch (error) {
+   } catch (error) {
     logger.logSystemError('AZURE_GET_CONFIG_FAILED', error);
     return {
       success: false,
@@ -2199,6 +2240,32 @@ ipcMain.handle('get-azure-app-config', async () => {
     };
   }
 });
+
+ipcMain.handle('get-app-logs', async () => {
+  try {
+    if (!logger || !logger.logDir) {
+      return { success: false, error: 'Logger not initialized' };
+    }
+    const today = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logger.logDir, `data_${today}.log`);
+    if (fs.existsSync(logFile)) {
+      const logs = fs.readFileSync(logFile, 'utf8');
+      return { success: true, logs };
+    } else {
+      return { success: true, logs: 'Nenhum log encontrado para hoje.' };
+    }
+  } catch (error) {
+    console.error('Erro no handler save-ovpn-to-profile:', error);
+    if (logger && logger.logSystemError) {
+      logger.logSystemError('SAVE_OVPN_PROFILE_FAILED', error);
+    }
+    // Mostrar erro em dialog para debug
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Erro ao Salvar Perfil', `Erro: ${error.message}\n\nDetalhes: ${error.stack}`);
+    return { success: false, error: error.message };
+  }
+});
+
 
 ipcMain.handle('save-azure-app-config', async (event, newConfig) => {
   try {

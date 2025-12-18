@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BluePex VPN Connections</title>
+   <title>BluePex VPN Connections - DEBUG MODE</title>
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -26,9 +26,22 @@
        display: flex;
        align-items: flex-start;
        justify-content: center;
-       padding: 0.5rem 0.5rem 0.2rem 0.5rem;
+       padding: 3rem 0.5rem 0.2rem 0.5rem; /* Extra top padding for debug banner */
      }
-    .login-container {
+     .debug-banner {
+       background: #ff6b35;
+       color: white;
+       text-align: center;
+       padding: 0.5rem;
+       font-weight: bold;
+       position: fixed;
+       top: 0;
+       left: 0;
+       right: 0;
+       z-index: 10000;
+     }
+
+     .login-container {
        width: 460px;
        min-height: 350px;
        height: auto;
@@ -1065,8 +1078,9 @@
     }
   </style>
 </head>
-<body>
-  <div class="app-wrapper">
+   <body>
+   <div class="debug-banner">🔧 DEBUG MODE - Electron APIs Simulated</div>
+   <div class="app-wrapper">
     <div class="login-container">
     <div class="dropdown">
       <button class="btn btn-secondary dropdown-toggle menu-btn" type="button" id="menuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -1074,7 +1088,7 @@
       </button>
       <ul class="dropdown-menu" aria-labelledby="menuDropdown">
         <li><a class="dropdown-item" href="#" id="menuBtn">⚙️ Configurações</a></li>
-        <li><a class="dropdown-item" href="#" id="connLogsBtn">📋 Logs da Conexão</a></li>
+        <li><a class="dropdown-item" href="#" id="logsBtn">📋 Logs da Conexão</a></li>
         <li><a class="dropdown-item" href="#" id="appLogsBtn">📊 Logs da Aplicação</a></li>
         <li><a class="dropdown-item" href="#" id="updateBtn">🔄 Atualizações</a></li>
         <li><a class="dropdown-item" href="#" id="minimizeBtn">📱 Minimizar para Tray</a></li>
@@ -1324,14 +1338,14 @@
   </div>
 
   <!-- Modal de Logs -->
-  <div class="logs-modal" id="connLogsModal">
+  <div class="logs-modal" id="logsModal">
     <div class="modal-content">
       <div class="modal-header">
         <h3>📋 Logs de Conexão</h3>
          <button class="btn-close" id="closeLogsModalBtn" >❌</button>
       </div>
       <div class="modal-body">
-        <div class="logs-content" id="connLogsModalContent"></div>
+        <div class="logs-content" id="logsModalContent"></div>
       </div>
     </div>
    </div>
@@ -1422,8 +1436,9 @@
       <strong>BluePex® Cybersecurity © Copyright 2025</strong>
     </div>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="renderer.js"></script>
+   <!-- Bootstrap JS -->
+   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+   <script src="debug.js"></script>
+   <script src="renderer.js"></script>
 </body>
 </html>

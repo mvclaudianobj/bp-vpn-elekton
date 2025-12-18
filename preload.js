@@ -105,11 +105,14 @@ globalThis.electronAPI = {
   // Minimizar para tray
   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
 
-  // Obter versão da aplicação
-  getVersion: () => ipcRenderer.invoke('get-version'),
+   // Obter versão da aplicação
+   getVersion: () => ipcRenderer.invoke('get-version'),
 
-  // Azure device code
-  onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
+   // Logs da aplicação
+   getAppLogs: () => ipcRenderer.invoke('get-app-logs'),
+
+   // Azure device code
+   onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
 };
 
 // Send success log

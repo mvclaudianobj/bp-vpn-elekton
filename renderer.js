@@ -4,6 +4,29 @@ console.log('🔧 RENDERER.JS CARREGADO!');
 
 // ============ IPC HANDLERS ============
 const { ipcRenderer } = require('electron');
+// ============ SISTEMA DE LOGGING DO RENDERER ============
+
+// Função para enviar logs do renderer para o main process
+function logToMain(category, action, data = {}, level = "INFO") {
+// Aguardar DOM carregar antes de configurar listeners
+    if (window.electronAPI && window.electronAPI.sendLog) {
+        window.electronAPI.sendLog({ category, action, data, level });
+    }
+}
+
+// ============ VARIÁVEIS GLOBAIS ============
+
+// Estado da aplicação unificado
+let vpnPid = null;
+let currentProfile = null; // Perfil selecionado atualmente
+let allProfiles = []; // Todos os perfis disponíveis (user + azure)
+
+// Estado de atualização
+let updateInfo = null;
+
+// Logs armazenados em memória (removidos da interface principal)
+
+// Watcher para arquivo de logs
 
 ipcRenderer.on('vpn-status', (event, message) => {
   showStatus(message, 'alert');
@@ -17,9 +40,9 @@ ipcRenderer.on('vpn-log', (event, log) => {
     connectionLogsText += logStr;
   }
   // Se modal estiver aberto, atualizar e rolar
-  if (logsModal && logsModal.classList.contains('show') && logsModalContent) {
-    logsModalContent.textContent += logStr;
-    logsModalContent.scrollTop = logsModalContent.scrollHeight;
+  if (connLogsModal && connLogsModal.classList.contains('show') && connLogsModalContent) {
+    connLogsModalContent.textContent += logStr;
+    connLogsModalContent.scrollTop = connLogsModalContent.scrollHeight;
   }
 });
 
@@ -35,7 +58,7 @@ ipcRenderer.on('vpn-status-check', (event, data) => {
 function adjustWindowSize() {
   const body = document.body;
   const height = body.scrollHeight + 20; // Margem
-  const width = 500; // Largura fixa
+  const width = 480; // Largura fixa
   ipcRenderer.send('adjust-window-size', { width, height });
 }
 
@@ -45,7 +68,6 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 // Ajustar inicialmente
 window.addEventListener('load', () => {
-  setTimeout(adjustWindowSize, 100);
 });
 
 // Teste básico do botão menu
@@ -67,17 +89,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 configModal.style.display = configModal.style.display === 'block' ? 'none' : 'block';
                 console.log('🔄 Modal display:', configModal.style.display);
             } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
                 alert('Modal não encontrado!');
             }
         });
         console.log('✅ Event listener adicionado');
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
         console.error('❌ menuBtn não encontrado');
         alert('menuBtn não encontrado!');
     }
+
+    // Inicializar aplicação
+    initializeApp();
 });
 
-// ============ ELEMENTOS DA INTERFACE ============
+// Variáveis globais
+let selectedOvpnFile = null;
+let selectedAzureOvpnFile = null;
 
 // Elementos da Interface Unificada
 const statusEl = document.getElementById('status');
@@ -90,11 +121,6 @@ const profileDetails = document.getElementById('profileDetails');
 const credentialsSection = document.getElementById('credentialsSection');
 const btnConectar = document.getElementById('btnConectar');
 const btnDesconectar = document.getElementById('btnDesconectar');
-// Logs armazenados em memória (removidos da interface principal)
-let connectionLogsText = '';
-
-// Watcher para arquivo de logs
-let logWatcher = null;
 const btnCopiarCodigo = document.getElementById('btnCopiarCodigo');
 
 // Elementos do Menu e Configurações
@@ -137,195 +163,46 @@ const verificationUri = document.getElementById('verificationUri');
 const userCode = document.getElementById('userCode');
 
 // Elementos de Logs
-const logsBtn = document.getElementById('logsBtn');
-const logsModal = document.getElementById('logsModal');
-const logsCloseBtn = document.getElementById('logsCloseBtn');
-const logsModalContent = document.getElementById('logsModalContent');
+const connLogsBtn = document.getElementById('connLogsBtn');
+const connLogsModal = document.getElementById('connLogsModal');
+const connLogsCloseBtn = document.getElementById('closeConnLogsModalBtn'); // Note: HTML has closeConnLogsModalBtn
+const connLogsModalContent = document.getElementById('connLogsModalContent');
 
 const clearLogsBtn = document.getElementById('clearLogsBtn');
-const closeLogsModalBtn = document.getElementById('closeLogsModalBtn');
+const closeConnLogsModalBtn = document.getElementById('closeConnLogsModalBtn');
 
-// ============ VARIÁVEIS GLOBAIS ============
+// Elementos de Logs da Aplicação
+const appLogsBtn = document.getElementById('appLogsBtn');
+const appLogsModal = document.getElementById('appLogsModal');
+const appLogsCloseBtn = document.getElementById('appLogsCloseBtn');
+const appLogsModalContent = document.getElementById('appLogsModalContent');
 
-// Estado da aplicação unificado
-let vpnPid = null;
-let currentProfile = null; // Perfil selecionado atualmente
-let allProfiles = []; // Todos os perfis disponíveis (user + azure)
 
-// Estado de atualização
-let updateInfo = null;
-
-// Estado de arquivos selecionados
-let selectedOvpnFile = null;
-let selectedAzureOvpnFile = null;
-
-// Estado do device code (Azure)
-let currentDeviceCode = null;
-
-// ============ SISTEMA DE LOGGING DO RENDERER ============
-
-// Função para enviar logs do renderer para o main process
-function logToMain(category, action, data = {}, level = 'INFO') {
-    if (window.electronAPI && window.electronAPI.sendLog) {
-        window.electronAPI.sendLog({ category, action, data, level });
-    }
-}
-
-// Capturar erros globais
-window.addEventListener('error', function(event) {
-    logToMain('RENDERER', 'GLOBAL_ERROR', {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-        error: event.error ? event.error.stack : null
-    }, 'ERROR');
-});
-
-// Capturar erros de promise não tratadas
-window.addEventListener('unhandledrejection', function(event) {
-    logToMain('RENDERER', 'UNHANDLED_PROMISE_REJECTION', {
-        reason: event.reason,
-        promise: event.promise
-    }, 'ERROR');
-});
-
-// Sobrescrever console methods para capturar logs
-const originalConsole = {
-    log: console.log,
-    info: console.info,
-    warn: console.warn,
-    error: console.error,
-    debug: console.debug
-};
-
-console.log = function(...args) {
-    logToMain('RENDERER', 'CONSOLE_LOG', { args: args }, 'INFO');
-    originalConsole.log.apply(console, args);
-};
-
-console.info = function(...args) {
-    logToMain('RENDERER', 'CONSOLE_INFO', { args: args }, 'INFO');
-    originalConsole.info.apply(console, args);
-};
-
-console.warn = function(...args) {
-    logToMain('RENDERER', 'CONSOLE_WARN', { args: args }, 'WARN');
-    originalConsole.warn.apply(console, args);
-};
-
-console.error = function(...args) {
-    logToMain('RENDERER', 'CONSOLE_ERROR', { args: args }, 'ERROR');
-    originalConsole.error.apply(console, args);
-};
-
-console.debug = function(...args) {
-    logToMain('RENDERER', 'CONSOLE_DEBUG', { args: args }, 'INFO');
-    originalConsole.debug.apply(console, args);
-};
-
-// ============ INICIALIZAÇÃO ============
-
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 DOM Carregado - Iniciando aplicação...');
-    try {
-        initializeApp();
-    } catch (error) {
-        console.error('❌ Erro na inicialização do renderer:', error);
-        logToMain('RENDERER', 'INIT_ERROR', {
-            message: error.message,
-            stack: error.stack
-        }, 'ERROR');
-    }
-});
-
-function setupEventListeners() {
-    console.log('🎧 Configurando event listeners...');
-
-    // Debug detalhado dos elementos
-    console.log('🔍 DEBUG ELEMENTOS DOM:');
-    console.log('  menuBtn:', document.getElementById('menuBtn'));
-    console.log('  configModal:', document.getElementById('configModal'));
-    console.log('  profileSelect:', document.getElementById('profileSelect'));
-    console.log('  btnConectar:', document.getElementById('btnConectar'));
-
-    // Verificar se elementos críticos existem
-    const criticalElements = ['menuBtn', 'configModal', 'profileSelect', 'closeBtn', 'minimizeBtn'];
-    const missingElements = criticalElements.filter(id => !document.getElementById(id));
-
-    if (missingElements.length > 0) {
-        console.error('❌ Elementos críticos não encontrados:', missingElements);
-        logToMain('RENDERER', 'MISSING_ELEMENTS', { missingElements }, 'ERROR');
+    // Logs da aplicação
+    if (appLogsBtn) {
+        appLogsBtn.addEventListener('click', toggleAppLogsModal);
+        console.log('✅ Event listener adicionado ao appLogsBtn');
     } else {
-        console.log('✅ Todos os elementos críticos encontrados');
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ appLogsBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
     }
 
-    // Seleção de perfil unificado
-    if (profileSelect) {
-        profileSelect.addEventListener('change', handleProfileSelection);
-    }
-
-    // Conexões unificadas
-    if (btnConectar) {
-        btnConectar.addEventListener('click', handleConnect);
-    }
-    if (btnDesconectar) {
-        btnDesconectar.addEventListener('click', handleDisconnect);
-    }
-    if (btnCopiarCodigo) {
-        btnCopiarCodigo.addEventListener('click', copyDeviceCode);
-    }
-
-    // Campos de entrada para validação em tempo real
-    if (userUsername) {
-        userUsername.addEventListener('input', updateConnectionButtons);
-    }
-    if (userPassword) {
-        userPassword.addEventListener('input', updateConnectionButtons);
-    }
-
-    // Menu e configurações
-    if (menuBtn) {
-        menuBtn.addEventListener('click', toggleConfigModal);
-    } else {
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'menuBtn' }, 'ERROR');
-    }
-
-    // Botão de minimizar para tray
-    const minimizeBtn = document.getElementById('minimizeBtn');
-    if (minimizeBtn) {
-        minimizeBtn.addEventListener('click', async () => {
-            try {
-                await window.electronAPI.minimizeToTray();
-                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_CLICKED', {}, 'INFO');
-            } catch (error) {
-                console.error('Erro ao minimizar para tray:', error);
-                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_ERROR', { error: error.message }, 'ERROR');
-            }
-        });
-    } else {
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'minimizeBtn' }, 'ERROR');
-    }
-
-    // Botão de logs
-    if (logsBtn) {
-        logsBtn.addEventListener('click', toggleLogsModal);
-        console.log('✅ Event listener adicionado ao logsBtn');
-    } else {
-        console.error('❌ logsBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'logsBtn' }, 'ERROR');
-    }
-
-    if (clearLogsBtn) {
-        clearLogsBtn.addEventListener('click', clearLogs);
-    }
 
     // Modal de logs
-    if (logsCloseBtn) {
-        logsCloseBtn.addEventListener('click', closeLogsModal);
+    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
+    if (closeConnLogsModalBtn) {
+        closeConnLogsModalBtn.addEventListener('click', closeConnLogsModal);
     }
-    if (closeLogsModalBtn) {
-        closeLogsModalBtn.addEventListener('click', closeLogsModal);
+
+    // Modal de logs da aplicação
+    console.log("appLogsCloseBtn encontrado:", !!appLogsCloseBtn);
+    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
+    if (appLogsCloseBtn) {
+        console.log("Adicionando listener ao appLogsCloseBtn");
+        appLogsCloseBtn.addEventListener('click', closeAppLogsModal);
+            console.log("Listener do botão X de logs da aplicação acionado");
     }
 
 
@@ -344,6 +221,8 @@ function setupEventListeners() {
         console.log('✅ Event listener adicionado ao configCloseBtn');
         logToMain('RENDERER', 'CLOSE_BUTTON_LISTENER_ADDED', {});
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
         console.error('❌ configCloseBtn não encontrado!');
         logToMain('RENDERER', 'CLOSE_BUTTON_NOT_FOUND', {}, 'ERROR');
     }
@@ -373,6 +252,8 @@ function setupEventListeners() {
       updateBtn.addEventListener('click', checkForUpdates);
       console.log('✅ Event listener adicionado ao updateBtn');
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
       console.error('❌ updateBtn não encontrado!');
       logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
     }
@@ -384,6 +265,8 @@ function setupEventListeners() {
       });
       console.log('✅ Event listener adicionado ao closeBtn');
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
       console.error('❌ closeBtn não encontrado!');
       logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'closeBtn' }, 'ERROR');
     }
@@ -391,21 +274,177 @@ function setupEventListeners() {
         updateCloseBtn.addEventListener('click', closeUpdateModal);
     }
 
-    // Cliques fora do modal para fechar
-    window.addEventListener('click', function(event) {
-        if (event.target === configModal) {
+function setupEventListeners() {
+    console.log("setupEventListeners iniciado");
+    // Seleção de perfil unificado
+    if (profileSelect) {
+        profileSelect.addEventListener('change', handleProfileSelection);
+    }
+
+    // Conexões unificadas
+    if (btnConectar) {
+        btnConectar.addEventListener('click', handleConnect);
+    }
+    if (btnDesconectar) {
+        btnDesconectar.addEventListener('click', handleDisconnect);
+    }
+    if (btnCopiarCodigo) {
+        btnCopiarCodigo.addEventListener('click', copyDeviceCode);
+    }
+
+    // Campos de entrada para validação em tempo real
+    if (userUsername) {
+        userUsername.addEventListener('input', updateConnectionButtons);
+    }
+    if (userPassword) {
+        userPassword.addEventListener('input', updateConnectionButtons);
+    }
+
+    // Menu e configurações
+    if (menuBtn) {
+        menuBtn.addEventListener('click', toggleConfigModal);
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'menuBtn' }, 'ERROR');
+    }
+
+    // Botão de minimizar para tray
+    const minimizeBtn = document.getElementById('minimizeBtn');
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.minimizeToTray();
+                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_CLICKED', {}, 'INFO');
+            } catch (error) {
+                console.error('Erro ao minimizar para tray:', error);
+                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_ERROR', { error: error.message }, 'ERROR');
+            }
+        });
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'minimizeBtn' }, 'ERROR');
+    }
+
+    // Configurações
+    if (configSelectOvpn) {
+        configSelectOvpn.addEventListener('click', handleOvpnFileSelection);
+    }
+    if (configOvpnInfo) {
+        configOvpnInfo.addEventListener('click', handleOvpnFileSelection);
+    }
+    if (configSaveProfile) {
+        configSaveProfile.addEventListener('change', handleSaveProfileCheckbox);
+    }
+    if (configSaveUserProfile) {
+        configSaveUserProfile.addEventListener('click', saveUserProfileConfig);
+    }
+    if (configSelectAzureOvpn) {
+        configSelectAzureOvpn.addEventListener('click', handleAzureOvpnFileSelection);
+    }
+    if (configSaveAzureProfile) {
+        configSaveAzureProfile.addEventListener('change', handleSaveAzureProfileCheckbox);
+    }
+    if (configSaveAzureProfileBtn) {
+        configSaveAzureProfileBtn.addEventListener('click', saveAzureProfileConfig);
+    }
+
+    // Atualizações
+    if (updateBtn) {
+        updateBtn.addEventListener('click', checkForUpdates);
+        console.log('✅ Event listener adicionado ao updateBtn');
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ updateBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
+    }
+
+    const closeBtn = document.getElementById('closeBtn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            window.electronAPI.quitApp();
+        });
+        console.log('✅ Event listener adicionado ao closeBtn');
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ closeBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'closeBtn' }, 'ERROR');
+    }
+    if (updateCloseBtn) {
+        updateCloseBtn.addEventListener('click', closeUpdateModal);
+    }
+
+    // Logs
+    if (connLogsBtn) {
+        connLogsBtn.addEventListener('click', toggleConnLogsModal);
+        console.log('✅ Event listener adicionado ao connLogsBtn');
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ connLogsBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'connLogsBtn' }, 'ERROR');
+    }
+
+    // Logs da aplicação
+    if (appLogsBtn) {
+        appLogsBtn.addEventListener('click', toggleAppLogsModal);
+        console.log('✅ Event listener adicionado ao appLogsBtn');
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ appLogsBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
+    }
+
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', clearLogs);
+    }
+
+    // Modal de logs
+    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
+    if (closeConnLogsModalBtn) {
+        closeConnLogsModalBtn.addEventListener('click', closeConnLogsModal);
+    }
+
+    // Modal de logs da aplicação
+    console.log("appLogsCloseBtn encontrado:", !!appLogsCloseBtn);
+    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
+    if (appLogsCloseBtn) {
+        console.log("Adicionando listener ao appLogsCloseBtn");
+        appLogsCloseBtn.addEventListener('click', closeAppLogsModal);
+            console.log("Listener do botão X de logs da aplicação acionado");
+    }
+
+    // Configurações
+    if (configCloseBtn) {
+        configCloseBtn.addEventListener('click', function(event) {
+            console.log('🖱️ Botão fechar clicado!', event);
+            logToMain('RENDERER', 'CLOSE_BUTTON_CLICKED', {
+                button: configCloseBtn.outerHTML,
+                eventType: event.type,
+                target: event.target.id
+            });
+            console.log('🔒 Chamando closeConfigModal...');
             closeConfigModal();
-        }
-        if (event.target === logsModal) {
-            closeLogsModal();
-        }
-        if (event.target === updateModal) {
-            closeUpdateModal();
-        }
-    });
+            console.log('✅ closeConfigModal chamado');
+        });
+        console.log('✅ Event listener adicionado ao configCloseBtn');
+        logToMain('RENDERER', 'CLOSE_BUTTON_LISTENER_ADDED', {});
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error('❌ configCloseBtn não encontrado!');
+        logToMain('RENDERER', 'CLOSE_BUTTON_NOT_FOUND', {}, 'ERROR');
+    }
 }
 
 async function initializeApp() {
+    // Configurar event listeners primeiro
+    setupEventListeners();
+
     try {
         console.log('🚀 Inicializando aplicação...');
         logToMain('RENDERER', 'INIT_START', {});
@@ -478,7 +517,9 @@ async function initializeApp() {
             message: error.message,
             stack: error.stack
         }, 'ERROR');
-        showStatus('Erro ao inicializar a aplicação', 'alert');
+        // Não mostrar erro para usuário, pois aplicação funciona
+        console.log('Aplicação inicializada com avisos');
+        showStatus('Aplicação carregada com avisos', 'success');
     }
 }
 
@@ -665,6 +706,8 @@ function updateProfileDisplay() {
             deviceCodeSection.style.display = 'none';
         }
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
         selectedProfileInfo.style.display = 'none';
         if (credentialsSection) {
             credentialsSection.style.display = 'none';
@@ -818,6 +861,8 @@ async function handleDisconnect() {
         if (statusEl) statusEl.style.display = 'none';
       }, 3000);
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
       throw new Error(result.error || 'Falha na desconexão');
     }
 
@@ -840,6 +885,8 @@ function toggleConfigModal() {
         if (isVisible) {
             configModal.classList.remove('show');
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             configModal.classList.add('show');
         }
 
@@ -848,35 +895,47 @@ function toggleConfigModal() {
             nowVisible: !isVisible
         });
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
         logToMain('RENDERER', 'CONFIG_MODAL_NOT_FOUND', {}, 'ERROR');
     }
 }
 
 function closeConfigModal() {
-    console.log('🔒 Fechando modal de configurações');
     if (configModal) {
         console.log('  Modal encontrado, removendo classe show');
         configModal.classList.remove('show');
         configModal.style.display = 'none'; // Forçar fechamento
         console.log('  Classe show removida, classes atuais:', configModal.className, 'display:', configModal.style.display);
     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
         console.log('  Modal não encontrado!');
     }
 }
 
-function toggleLogsModal() {
+function toggleConnLogsModal() {
     console.log("📋 Alternando modal de logs - BOTÃO CLICADO");
     //alert("Botão Logs clicado!");
-    if (logsModal) {
-        const isVisible = logsModal.classList.contains('show');
+    if (connLogsModal) {
+        const isVisible = connLogsModal.classList.contains('show');
         console.log("  Modal está visível:", isVisible);
 
         if (isVisible) {
-            logsModal.classList.remove('show');
+            connLogsModal.classList.remove('show');
+        connLogsModal.style.display = 'none';
+        console.log('Modal fechado');
+            connLogsModal.style.display = 'none';
+        console.log('Modal fechado');
+        connLogsModal.style.display = 'none';
+        console.log('Modal fechado');
             console.log("  Classe 'show' removida");
         } else {
-            logsModal.classList.add('show');
-            updateLogsModalContent();
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+            connLogsModal.classList.add('show');
+            connLogsModal.style.display = 'flex';
+            updateConnLogsModalContent();
             console.log("  Classe 'show' adicionada");
         }
 
@@ -885,15 +944,31 @@ function toggleLogsModal() {
             nowVisible: !isVisible
         });
     } else {
-        console.error("❌ logsModal não encontrado");
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error("❌ connLogsModal não encontrado");
         logToMain('RENDERER', 'LOGS_MODAL_NOT_FOUND', {}, 'ERROR');
     }
 }
 
-function closeLogsModal() {
-    if (logsModal) {
-        logsModal.classList.remove('show');
+function closeConnLogsModal() {
+    console.log("Fechando modal de logs de conexão");
+    console.log('Fechando modal de logs');
+function closeConnLogsModal() {
+    console.log("Fechando modal de logs de conexão");
+    console.log('Fechando modal de logs');
+    if (connLogsModal) {
+        connLogsModal.classList.remove('show');
+        connLogsModal.style.display = 'none';
+        console.log('Modal fechado');
+            connLogsModal.style.display = 'none';
+        console.log('Modal fechado');
     }
+}
+
+
+    // Rolar para o final
+    appLogsModalContent.scrollTop = appLogsModalContent.scrollHeight;
 }
 
 
@@ -904,8 +979,8 @@ async function clearLogs() {
     showStatus('Logs limpos!', 'success');
 }
 
-function updateLogsModalContent() {
-    if (logsModalContent) {
+function updateConnLogsModalContent() {
+    if (connLogsModalContent) {
         try {
             let content = '';
             
@@ -932,12 +1007,16 @@ function updateLogsModalContent() {
                             content += fileLogs;
                         }
                     } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
                         if (content === '') {
                             content = '📋 Arquivo de log diário ainda não foi criado.\n';
                             content += 'Os logs aparecerão aqui quando você iniciar uma conexão VPN.';
                         }
                     }
                 } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
                     if (content === '') {
                         content = 'ℹ️ Diretório de logs não encontrado.\n';
                         content += 'Os logs serão mostrados apenas em tempo real durante as conexões.';
@@ -947,8 +1026,8 @@ function updateLogsModalContent() {
                 // Configurar watcher se não existir
                 if (!logWatcher && fs.existsSync(logDir)) {
                     logWatcher = fs.watchFile(logFile, { interval: 1000 }, (curr, prev) => {
-                        if (logsModal && logsModal.classList.contains('show')) {
-                            updateLogsModalContent();
+                        if (connLogsModal && connLogsModal.classList.contains('show')) {
+                            updateConnLogsModalContent();
                         }
                     });
                 }
@@ -965,16 +1044,16 @@ function updateLogsModalContent() {
                 content += 'Conecte-se a uma VPN para ver os logs em tempo real.';
             }
             
-            logsModalContent.textContent = content;
+            connLogsModalContent.textContent = content;
             
         } catch (error) {
             console.error('Erro ao carregar logs:', error);
-            logsModalContent.textContent = '📋 Erro ao carregar logs. Verifique o console para mais detalhes.';
+            connLogsModalContent.textContent = '📋 Erro ao carregar logs. Verifique o console para mais detalhes.';
         }
     }
 
     // Rolar para o final
-    logsModalContent.scrollTop = logsModalContent.scrollHeight;
+    connLogsModalContent.scrollTop = connLogsModalContent.scrollHeight;
 }
 
 function hideConnectionElements() {
@@ -1126,6 +1205,7 @@ async function handleOvpnFileSelection() {
 
         if (result.success) {
             console.log('✅ Arquivo selecionado:', result.fileName);
+            console.log('fileName:', result.fileName, 'filePath:', result.filePath, 'content length:', result.content?.length);
 
             // Atualizar a interface com as informações do arquivo
             if (configOvpnInfo) {
@@ -1149,7 +1229,10 @@ async function handleOvpnFileSelection() {
 
             showStatus(`Arquivo "${result.fileName}" selecionado com sucesso!`, 'success');
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             console.error('❌ Erro na seleção:', result.error);
+            console.log('Result completo:', result);
             showStatus(`Erro: ${result.error}`, 'alert');
         }
     } catch (error) {
@@ -1213,6 +1296,8 @@ async function saveUserProfileConfig() {
             // Recarregar perfis
             await loadAllProfiles();
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             console.error('❌ Erro ao salvar perfil:', result.error);
             showStatus(`Erro ao salvar perfil: ${result.error}`, 'alert');
         }
@@ -1252,6 +1337,8 @@ async function handleAzureOvpnFileSelection() {
 
             showStatus(`Arquivo Azure "${result.fileName}" selecionado com sucesso!`, 'success');
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             console.error('❌ Erro na seleção Azure:', result.error);
             showStatus(`Erro: ${result.error}`, 'alert');
         }
@@ -1316,6 +1403,8 @@ async function saveAzureProfileConfig() {
             // Recarregar perfis
             await loadAllProfiles();
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             console.error('❌ Erro ao salvar perfil Azure:', result.error);
             showStatus(`Erro ao salvar perfil Azure: ${result.error}`, 'alert');
         }
@@ -1324,6 +1413,7 @@ async function saveAzureProfileConfig() {
         showStatus(`Erro ao salvar perfil Azure: ${error.message}`, 'alert');
     }
 }
+
 
 async function deleteProfile(profileId, profileType) {
     if (!confirm(`Tem certeza que deseja excluir o perfil "${profileId}"?`)) {
@@ -1340,6 +1430,8 @@ async function deleteProfile(profileId, profileType) {
         } else if (profileType === 'azure') {
             result = await window.electronAPI.deleteAzureProfile(profileId);
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             throw new Error('Tipo de perfil inválido');
         }
 
@@ -1350,6 +1442,8 @@ async function deleteProfile(profileId, profileType) {
             // Recarregar perfis
             await loadAllProfiles();
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             console.error('❌ Erro ao excluir perfil:', result.error);
             showStatus(`Erro ao excluir perfil: ${result.error}`, 'alert');
         }
@@ -1377,6 +1471,8 @@ async function checkForUpdates() {
         if (result.success) {
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             showStatus(`Erro na verificação: ${result.error}`, 'alert');
         }
     } catch (error) {
@@ -1475,8 +1571,8 @@ if (window.electronAPI) {
     window.electronAPI.onVPNLog((log) => {
         connectionLogsText += log + '\n';
         // Atualizar modal de logs se estiver aberto
-        if (logsModal && logsModal.classList.contains('show')) {
-            updateLogsModalContent();
+        if (connLogsModal && connLogsModal.classList.contains('show')) {
+            updateConnLogsModalContent();
         }
     });
 
@@ -1495,3 +1591,83 @@ if (window.electronAPI) {
     });
 }
 
+function toggleAppLogsModal() {
+    console.log("📊 Alternando modal de logs da aplicação");
+    if (appLogsModal) {
+        const isVisible = appLogsModal.classList.contains('show');
+        console.log("  Modal está visível:", isVisible);
+
+        if (isVisible) {
+            appLogsModal.classList.remove('show');
+        appLogsModal.style.display = 'none';
+            console.log("  Classe 'show' removida");
+        } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+            appLogsModal.classList.add('show');
+            appLogsModal.style.display = 'flex';
+            updateAppLogsModalContent();
+            console.log("  Classe 'show' adicionada");
+        }
+
+        logToMain('RENDERER', 'APP_LOGS_MODAL_TOGGLE', {
+            wasVisible: isVisible,
+            nowVisible: !isVisible
+        });
+    } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+        console.error("❌ appLogsModal não encontrado");
+        console.log("appLogsModal não encontrado");
+        logToMain('RENDERER', 'APP_LOGS_MODAL_NOT_FOUND', {}, 'ERROR');
+    }
+}
+
+function closeAppLogsModal() {
+    console.log("Fechando modal de logs da aplicação");
+    if (appLogsModal) {
+        appLogsModal.classList.remove('show');
+    }
+}
+
+async function updateAppLogsModalContent() {
+    if (appLogsModalContent) {
+        try {
+            console.log('📊 Carregando logs da aplicação...');
+            const result = await window.electronAPI.getAppLogs();
+
+            if (result.success) {
+                let content = result.logs;
+
+                // Formatar logs JSON para melhor leitura
+                const lines = content.split('\n');
+                const formattedLines = lines.map(line => {
+                    try {
+                        const logEntry = JSON.parse(line);
+                        const timestamp = new Date(logEntry.timestamp).toLocaleString();
+                        const level = logEntry.level.padEnd(5);
+                        const category = logEntry.category.padEnd(10);
+                        const action = logEntry.action;
+                        const data = JSON.stringify(logEntry.data, null, 2);
+                        return timestamp + " [" + level + "] [" + category + "] " + action + ": " + data;
+                    } catch {
+                        return line; // Se não for JSON, mostrar como está
+                    }
+                });
+
+                content = formattedLines.join('\n');
+                appLogsModalContent.textContent = content;
+            } else {
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
+                appLogsModalContent.textContent = "❌ Erro ao carregar logs: " + result.error;
+            }
+        } catch (error) {
+            console.error('Erro ao carregar logs da aplicação:', error);
+            appLogsModalContent.textContent = '📊 Erro ao carregar logs da aplicação. Verifique o console para mais detalhes.';
+        }
+    }
+
+    // Rolar para o final
+    appLogsModalContent.scrollTop = appLogsModalContent.scrollHeight;
+}

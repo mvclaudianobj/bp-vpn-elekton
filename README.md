@@ -2,9 +2,9 @@
 
 > Cliente VPN OpenVPN profissional com autenticação Azure AD, suporte a 2FA, sistema de logging avançado e atualizações automáticas
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/your-repo/bluepex-vpn)
+[![Version](https://img.shields.io/badge/version-0.0.4-blue.svg)](https://github.com/your-repo/bluepex-vpn)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Electron](https://img.shields.io/badge/Electron-31.0.0-47848F.svg)](https://electronjs.org/)
+[![Electron](https://img.shields.io/badge/Electron-39.2.6-47848F.svg)](https://electronjs.org/)
 [![Auto Update](https://img.shields.io/badge/Auto_Update-✅-green.svg)](https://electronjs.org/docs/tutorial/updates)
 [![Logging](https://img.shields.io/badge/Logging-Advanced-orange.svg)](https://github.com/winstonjs/winston)
 [![Azure AD](https://img.shields.io/badge/Azure_AD-✅-blue.svg)](https://azure.microsoft.com/)
