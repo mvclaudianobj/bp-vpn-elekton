@@ -162,49 +162,9 @@ const deviceCodeSection = document.getElementById('deviceCodeSection');
 const verificationUri = document.getElementById('verificationUri');
 const userCode = document.getElementById('userCode');
 
-// Elementos de Logs
-const connLogsBtn = document.getElementById('connLogsBtn');
-const connLogsModal = document.getElementById('connLogsModal');
-const connLogsCloseBtn = document.getElementById('closeConnLogsModalBtn'); // Note: HTML has closeConnLogsModalBtn
-const connLogsModalContent = document.getElementById('connLogsModalContent');
-
-const clearLogsBtn = document.getElementById('clearLogsBtn');
-const closeConnLogsModalBtn = document.getElementById('closeConnLogsModalBtn');
-
-// Elementos de Logs da Aplicação
-const appLogsBtn = document.getElementById('appLogsBtn');
-const appLogsModal = document.getElementById('appLogsModal');
-const appLogsCloseBtn = document.getElementById('appLogsCloseBtn');
-const appLogsModalContent = document.getElementById('appLogsModalContent');
-
-
-    // Logs da aplicação
-    if (appLogsBtn) {
-        appLogsBtn.addEventListener('click', toggleAppLogsModal);
-        console.log('✅ Event listener adicionado ao appLogsBtn');
-    } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        console.error('❌ appLogsBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
-    }
-
-
-    // Modal de logs
-    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
-    if (closeConnLogsModalBtn) {
-        closeConnLogsModalBtn.addEventListener('click', closeConnLogsModal);
-    }
-
-    // Modal de logs da aplicação
-    console.log("appLogsCloseBtn encontrado:", !!appLogsCloseBtn);
-    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
-    if (appLogsCloseBtn) {
-        console.log("Adicionando listener ao appLogsCloseBtn");
-        appLogsCloseBtn.addEventListener('click', closeAppLogsModal);
-            console.log("Listener do botão X de logs da aplicação acionado");
-    }
-
+// Elementos de Logs (serão definidos dentro das funções para garantir que o DOM esteja pronto)
+let connLogsBtn, connLogsModal, connLogsModalContent, closeLogsModalBtn, clearLogsBtn;
+let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
 
     if (configCloseBtn) {
         configCloseBtn.addEventListener('click', function(event) {
@@ -382,10 +342,19 @@ function setupEventListeners() {
         connLogsBtn.addEventListener('click', toggleConnLogsModal);
         console.log('✅ Event listener adicionado ao connLogsBtn');
     } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        console.error('❌ connLogsBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'connLogsBtn' }, 'ERROR');
+        console.log("❌ connLogsBtn não encontrado!");
+        console.log("Verificando se dropdown está carregado...");
+        // Tentar novamente após um pequeno delay
+        setTimeout(() => {
+            connLogsBtn = document.getElementById('connLogsBtn');
+            if (connLogsBtn) {
+                console.log('✅ connLogsBtn encontrado no retry');
+                connLogsBtn.addEventListener('click', toggleConnLogsModal);
+            } else {
+                console.error('❌ connLogsBtn ainda não encontrado após retry!');
+                logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'connLogsBtn' }, 'ERROR');
+            }
+        }, 1000);
     }
 
     // Logs da aplicação
@@ -393,29 +362,31 @@ function setupEventListeners() {
         appLogsBtn.addEventListener('click', toggleAppLogsModal);
         console.log('✅ Event listener adicionado ao appLogsBtn');
     } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        console.error('❌ appLogsBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
-    }
-
-    if (clearLogsBtn) {
-        clearLogsBtn.addEventListener('click', clearLogs);
+        console.log("❌ appLogsBtn não encontrado!");
+        console.log("Verificando se dropdown está carregado...");
+        // Tentar novamente após um pequeno delay
+        setTimeout(() => {
+            appLogsBtn = document.getElementById('appLogsBtn');
+            if (appLogsBtn) {
+                console.log('✅ appLogsBtn encontrado no retry');
+                appLogsBtn.addEventListener('click', toggleAppLogsModal);
+            } else {
+                console.error('❌ appLogsBtn ainda não encontrado após retry!');
+                logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
+            }
+        }, 1000);
     }
 
     // Modal de logs
     console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
-    if (closeConnLogsModalBtn) {
-        closeConnLogsModalBtn.addEventListener('click', closeConnLogsModal);
+    if (closeLogsModalBtn) {
+        closeLogsModalBtn.addEventListener('click', closeConnLogsModal);
     }
 
     // Modal de logs da aplicação
     console.log("appLogsCloseBtn encontrado:", !!appLogsCloseBtn);
-    console.log("closeLogsModalBtn encontrado:", !!closeLogsModalBtn);
     if (appLogsCloseBtn) {
-        console.log("Adicionando listener ao appLogsCloseBtn");
         appLogsCloseBtn.addEventListener('click', closeAppLogsModal);
-            console.log("Listener do botão X de logs da aplicação acionado");
     }
 
     // Configurações
@@ -442,7 +413,37 @@ function setupEventListeners() {
 }
 
 async function initializeApp() {
-    // Configurar event listeners primeiro
+    // Aguardar Bootstrap carregar completamente
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Definir elementos após DOM estar pronto
+    connLogsBtn = document.getElementById('connLogsBtn');
+    connLogsModal = document.getElementById('connLogsModal');
+    connLogsModalContent = document.getElementById('connLogsModalContent');
+    closeLogsModalBtn = document.getElementById('closeLogsModalBtn');
+    clearLogsBtn = document.getElementById('clearLogsBtn');
+    appLogsBtn = document.getElementById('appLogsBtn');
+    appLogsModal = document.getElementById('appLogsModal');
+    appLogsCloseBtn = document.getElementById('appLogsCloseBtn');
+    appLogsModalContent = document.getElementById('appLogsModalContent');
+
+    // Definir todos os elementos
+    connLogsModal = document.getElementById('connLogsModal');
+    connLogsModalContent = document.getElementById('connLogsModalContent');
+    closeLogsModalBtn = document.getElementById('closeLogsModalBtn');
+    clearLogsBtn = document.getElementById('clearLogsBtn');
+    appLogsModal = document.getElementById('appLogsModal');
+    appLogsCloseBtn = document.getElementById('appLogsCloseBtn');
+    appLogsModalContent = document.getElementById('appLogsModalContent');
+
+    console.log('🔍 Elementos encontrados:', {
+        connLogsBtn: !!connLogsBtn,
+        appLogsBtn: !!appLogsBtn,
+        closeLogsModalBtn: !!closeLogsModalBtn,
+        appLogsCloseBtn: !!appLogsCloseBtn
+    });
+
+    // Configurar event listeners
     setupEventListeners();
 
     try {
@@ -953,25 +954,12 @@ function toggleConnLogsModal() {
 
 function closeConnLogsModal() {
     console.log("Fechando modal de logs de conexão");
-    console.log('Fechando modal de logs');
-function closeConnLogsModal() {
-    console.log("Fechando modal de logs de conexão");
-    console.log('Fechando modal de logs');
     if (connLogsModal) {
         connLogsModal.classList.remove('show');
         connLogsModal.style.display = 'none';
         console.log('Modal fechado');
-            connLogsModal.style.display = 'none';
-        console.log('Modal fechado');
     }
 }
-
-
-    // Rolar para o final
-    appLogsModalContent.scrollTop = appLogsModalContent.scrollHeight;
-}
-
-
 
 async function clearLogs() {
     connectionLogsText = '';
@@ -1627,6 +1615,7 @@ function closeAppLogsModal() {
     console.log("Fechando modal de logs da aplicação");
     if (appLogsModal) {
         appLogsModal.classList.remove('show');
+        appLogsModal.style.display = 'none';
     }
 }
 
