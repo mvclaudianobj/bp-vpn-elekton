@@ -23,6 +23,7 @@ let allProfiles = []; // Todos os perfis disponíveis (user + azure)
 
 // Estado de atualização
 let updateInfo = null;
+let updateDownloaded = false;
 
 // Logs armazenados em memória (removidos da interface principal)
 
@@ -156,6 +157,13 @@ const configSaveAzureProfileBtn = document.getElementById('configSaveAzureProfil
 const updateBtn = document.getElementById('updateBtn');
 const updateModal = document.getElementById('updateModal');
 const updateCloseBtn = document.getElementById('updateCloseBtn');
+const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+const updateInstallBtn = document.getElementById('updateInstallBtn');
+const updateLaterBtn = document.getElementById('updateLaterBtn');
+const progressFill = document.getElementById('progressFill');
+const progressPercent = document.getElementById('progressPercent');
+const progressSpeed = document.getElementById('progressSpeed');
+const progressSize = document.getElementById('progressSize');
 
 // Elementos de Device Code (Azure)
 const deviceCodeSection = document.getElementById('deviceCodeSection');
@@ -254,8 +262,22 @@ const appLogsModalContent = document.getElementById('appLogsModalContent');
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
-      console.error('❌ updateBtn não encontrado!');
-      logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
+        console.error('❌ updateBtn não encontrado!');
+        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
+    }
+
+    // Botões do modal de atualização
+    if (updateDownloadBtn) {
+        updateDownloadBtn.addEventListener('click', downloadUpdate);
+        console.log('✅ Event listener adicionado ao updateDownloadBtn');
+    }
+    if (updateInstallBtn) {
+        updateInstallBtn.addEventListener('click', installUpdate);
+        console.log('✅ Event listener adicionado ao updateInstallBtn');
+    }
+    if (updateLaterBtn) {
+        updateLaterBtn.addEventListener('click', closeUpdateModal);
+        console.log('✅ Event listener adicionado ao updateLaterBtn');
     }
 
     const closeBtn = document.getElementById('closeBtn');
@@ -1496,6 +1518,119 @@ function closeUpdateModal() {
     }
 }
 
+async function downloadUpdate() {
+    try {
+        showStatus('Iniciando download da atualização...', 'status');
+
+        if (updateDownloadBtn) {
+            updateDownloadBtn.disabled = true;
+            updateDownloadBtn.textContent = '📥 Baixando...';
+        }
+
+        const result = await window.electronAPI.downloadUpdate();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Falha no download');
+        }
+
+    } catch (error) {
+        console.error('❌ Erro no download:', error);
+        showStatus(`Erro no download: ${error.message}`, 'alert');
+
+        // Reabilitar botão em caso de erro
+        if (updateDownloadBtn) {
+            updateDownloadBtn.disabled = false;
+            updateDownloadBtn.textContent = '📥 Baixar Atualização';
+        }
+    }
+}
+
+async function installUpdate() {
+    try {
+        showStatus('Instalando atualização...', 'status');
+
+        if (updateInstallBtn) {
+            updateInstallBtn.disabled = true;
+            updateInstallBtn.textContent = '⚡ Instalando...';
+        }
+
+        const result = await window.electronAPI.installUpdate();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Falha na instalação');
+        }
+
+        // A aplicação será reiniciada automaticamente
+
+    } catch (error) {
+        console.error('❌ Erro na instalação:', error);
+        showStatus(`Erro na instalação: ${error.message}`, 'alert');
+
+        // Reabilitar botão em caso de erro
+        if (updateInstallBtn) {
+            updateInstallBtn.disabled = false;
+            updateInstallBtn.textContent = '⚡ Instalar Agora';
+        }
+    }
+}
+
+function updateProgressBar(progress) {
+    if (progressFill) {
+        progressFill.style.width = `${progress.percent}%`;
+    }
+
+    if (progressPercent) {
+        progressPercent.textContent = `${progress.percent}%`;
+    }
+
+    if (progressSpeed) {
+        progressSpeed.textContent = `${progress.speed} KB/s`;
+    }
+
+    if (progressSize) {
+        progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
+    }
+}
+
+function openUpdateModal(info) {
+    if (updateModal) {
+        // Preencher informações da atualização
+        const updateVersionEl = document.getElementById('updateVersion');
+        const updateNotesEl = document.getElementById('updateNotes');
+
+        if (updateVersionEl) {
+            updateVersionEl.textContent = info.version;
+        }
+
+        if (updateNotesEl) {
+            updateNotesEl.textContent = info.releaseNotes || 'Novas funcionalidades e correções de bugs.';
+        }
+
+        // Resetar barra de progresso
+        if (progressFill) progressFill.style.width = '0%';
+        if (progressPercent) progressPercent.textContent = '0%';
+        if (progressSpeed) progressSpeed.textContent = '0 KB/s';
+        if (progressSize) progressSize.textContent = '0 MB / 0 MB';
+
+        // Mostrar modal
+        updateModal.style.display = 'flex';
+
+        // Resetar estado dos botões
+        if (updateDownloadBtn) {
+            updateDownloadBtn.style.display = 'inline-block';
+            updateDownloadBtn.disabled = false;
+            updateDownloadBtn.textContent = '📥 Baixar Atualização';
+        }
+
+        if (updateInstallBtn) {
+            updateInstallBtn.style.display = 'none';
+            updateInstallBtn.disabled = false;
+        }
+
+        updateDownloaded = false;
+    }
+}
+
 // ============ EVENT LISTENERS IPC ============
 
 // Configurar listeners de eventos IPC
@@ -1586,8 +1721,29 @@ if (window.electronAPI) {
     // Eventos de atualização
     window.electronAPI.onUpdateAvailable((info) => {
         updateInfo = info;
-        if (updateBtn) updateBtn.style.display = 'block';
+        if (updateBtn) {
+            updateBtn.style.display = 'block';
+            updateBtn.textContent = `📥 Baixar ${info.version}`;
+        }
         showStatus('Atualização disponível!', 'success');
+
+        // Abrir modal de atualização automaticamente
+        openUpdateModal(info);
+    });
+
+    // Evento: Progresso do download
+    window.electronAPI.onUpdateProgress((progress) => {
+        updateProgressBar(progress);
+    });
+
+    // Evento: Download concluído
+    window.electronAPI.onUpdateDownloaded((info) => {
+        updateDownloaded = true;
+        showStatus('Download concluído! Pronto para instalar.', 'success');
+
+        // Atualizar interface para mostrar botão de instalar
+        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
+        if (updateInstallBtn) updateInstallBtn.style.display = 'inline-block';
     });
 }
 
