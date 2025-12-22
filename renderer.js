@@ -1574,7 +1574,10 @@ if (window.electronAPI) {
     // Eventos de atualização
     window.electronAPI.onUpdateAvailable((info) => {
         updateInfo = info;
-        if (updateBtn) updateBtn.style.display = 'block';
+        if (updateBtn) {
+            updateBtn.style.display = 'block';
+            updateBtn.textContent = `📥 Baixar ${info.version}`;
+        }
         showStatus('Atualização disponível!', 'success');
     });
 }

@@ -237,7 +237,7 @@ class AutoUpdaterManager {
 
   configureUpdater() {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
     autoUpdater.allowPrerelease = true;
 
@@ -267,6 +267,9 @@ class AutoUpdaterManager {
 
   setupEventHandlers() {
     autoUpdater.on('update-available', (info) => {
+      console.log('🎉 UPDATE_AVAILABLE EVENT RECEIVED!');
+      console.log('📦 Update info:', { version: info.version, current: app.getVersion() });
+
       logger.log('UPDATE', 'AVAILABLE', {
         version: info.version,
         releaseDate: info.releaseDate,
