@@ -676,15 +676,24 @@ function createSplashWindow() {
 
   mainWindow.on('closed', () => {
     if (tray) tray.destroy();
-    
-    // Usar a MESMA função killVPNConnection() que o botão desconectar usa
+
+    // Desconectar VPN de forma mais simples ao fechar (sem pkexec/sudo)
     console.log("🔌 Fechando janela - desconectando VPN...");
-    killVPNConnection().then(() => {
-      console.log("✅ VPN desconectada ao fechar janela");
-    }).catch(err => {
-      console.error("❌ Erro ao desconectar VPN ao fechar:", err);
-    });
-    
+    if (vpnProcess && !vpnProcess.killed) {
+      console.log("🔌 Matando processo VPN específico...");
+      vpnProcess.kill('SIGTERM');
+
+      // Aguardar um pouco e forçar se necessário
+      setTimeout(() => {
+        if (vpnProcess && !vpnProcess.killed) {
+          vpnProcess.kill('SIGKILL');
+        }
+      }, 2000);
+    }
+
+    // Não usar killVPNConnection() com pkexec ao fechar a aplicação
+    console.log("✅ Processo de limpeza ao fechar concluído");
+
     mainWindow = null;
   });
   } catch (error) {

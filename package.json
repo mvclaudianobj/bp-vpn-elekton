@@ -114,7 +114,8 @@
       "desktop": {
         "Name": "BluePex VPN",
         "Comment": "BluePex VPN Client with Azure AD authentication",
-        "Categories": "Network;Security;"
+        "Categories": "Network;Security;",
+        "Icon": "icon"
       }
     },
     "deb": {
