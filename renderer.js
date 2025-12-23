@@ -1580,33 +1580,6 @@ if (window.electronAPI) {
         }
         showStatus('Atualização disponível!', 'success');
     });
-
-    // TEMP: Simular atualização disponível para teste (remover depois)
-    setTimeout(() => {
-        console.log('🎭 SIMULANDO atualização disponível para teste...');
-        const mockUpdateInfo = {
-            version: '0.0.6',
-            releaseDate: new Date().toISOString(),
-            releaseNotes: 'Versão de teste para validar sistema de atualização'
-        };
-
-        // Simular o evento
-        if (updateBtn) {
-            updateBtn.style.display = 'block';
-            updateBtn.textContent = `📥 Baixar ${mockUpdateInfo.version}`;
-            console.log('✅ Update button simulated to:', updateBtn.textContent);
-        }
-
-        updateInfo = mockUpdateInfo;
-        showStatus('Atualização disponível!', 'success');
-
-        // Abrir modal
-        if (updateModal) {
-            updateModal.style.display = 'flex';
-        }
-
-        console.log('🎭 Simulação concluída - deve aparecer "📥 Baixar 0.0.6" no menu');
-    }, 3000); // 3 segundos após carregamento
 }
 
 function toggleAppLogsModal() {
