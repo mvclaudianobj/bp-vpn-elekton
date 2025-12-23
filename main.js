@@ -249,6 +249,7 @@ class AutoUpdaterManager {
         private: true,
         token: process.env.GITHUB_TOKEN
       });
+      console.log('🔗 Feed URL configurado (private):', 'mvclaudianobj/BluePexVPN');
     } else {
       autoUpdater.setFeedURL({
         provider: 'github',
@@ -256,6 +257,7 @@ class AutoUpdaterManager {
         repo: 'BluePexVPN',
         includePrerelease: true
       });
+      console.log('🔗 Feed URL configurado (public):', 'mvclaudianobj/BluePexVPN');
     }
 
     logger.log('UPDATE', 'CONFIGURED', {
@@ -286,6 +288,9 @@ class AutoUpdaterManager {
     });
 
     autoUpdater.on('update-not-available', (info) => {
+      console.log('❌ UPDATE_NOT_AVAILABLE EVENT RECEIVED!');
+      console.log('📋 Current version:', app.getVersion());
+
       logger.log('UPDATE', 'NOT_AVAILABLE', {
         currentVersion: app.getVersion(),
         checkedAt: new Date().toISOString()
@@ -325,6 +330,9 @@ class AutoUpdaterManager {
     });
 
     autoUpdater.on('error', (error) => {
+      console.log('💥 AUTO_UPDATER ERROR:', error.message);
+      console.log('📋 Error details:', error);
+
       logger.logSystemError('AUTO_UPDATER', error, {
         currentVersion: app.getVersion(),
         platform: process.platform
@@ -373,7 +381,9 @@ class AutoUpdaterManager {
         currentVersion: app.getVersion()
       });
 
+      console.log('🔍 Iniciando checkForUpdates()...');
       await autoUpdater.checkForUpdates();
+      console.log('✅ checkForUpdates() concluído, aguardando eventos...');
 
       if (showDialog && this.updateAvailable) {
         logger.log('UPDATE', 'SHOWING_UPDATE_DIALOG', { version: this.updateInfo.version });
