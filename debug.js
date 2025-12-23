@@ -227,7 +227,7 @@ window.electronAPI = {
   // Obter versão da aplicação
   getVersion: async () => {
     console.log('Mock: getVersion called');
-    return '0.0.5-debug';
+    return '0.0.6-debug';
   },
 
   // Logs da aplicação
