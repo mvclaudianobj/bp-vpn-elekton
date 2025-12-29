@@ -87,12 +87,17 @@ globalThis.electronAPI = {
   sendSystemdChallengeResponse: (response) => ipcRenderer.invoke('send-systemd-challenge-response', response),
   sendSudoPassword: (password) => ipcRenderer.invoke('send-sudo-password', password),
 
-  // Eventos de atualização
-  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
-  onUpdateProgress: (callback) => ipcRenderer.on('update-progress', callback),
-  onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
-  onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
-  onUpdateCheckComplete: (callback) => ipcRenderer.on('update-check-complete', callback),
+   // Eventos de atualização
+   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
+   onUpdateProgress: (callback) => ipcRenderer.on('update-progress', callback),
+   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
+   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+   onUpdateCheckComplete: (callback) => ipcRenderer.on('update-check-complete', callback),
+   onUpdateDownloadStarted: (callback) => ipcRenderer.on('update-download-started', callback),
+   downloadUpdate: () => ipcRenderer.invoke('download-update'),
+   installUpdate: () => ipcRenderer.invoke('install-update'),
+   startUpdateDownload: () => ipcRenderer.invoke('start-update-download'),
+   quitAndInstallUpdate: () => ipcRenderer.invoke('quit-and-install-update'),
 
   // Sistema de logging do renderer
   sendLog: (logData) => ipcRenderer.invoke('send-renderer-log', logData),
