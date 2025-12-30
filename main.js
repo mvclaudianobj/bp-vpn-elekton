@@ -270,10 +270,12 @@ class AutoUpdaterManager {
   setupEventHandlers() {
     autoUpdater.on('update-available', (info) => {
       console.log('🎉 UPDATE_AVAILABLE EVENT RECEIVED!');
-      console.log('📦 Update info:', { version: info.version, current: app.getVersion() });
+      console.log('📦 Update info:', JSON.stringify(info, null, 2));
+      console.log('📦 Version fields:', { version: info.version, releaseName: info.releaseName, tag: info.tag });
 
       logger.log('UPDATE', 'AVAILABLE', {
         version: info.version,
+        releaseName: info.releaseName,
         releaseDate: info.releaseDate,
         releaseNotes: info.releaseNotes,
         currentVersion: app.getVersion()
@@ -386,20 +388,11 @@ class AutoUpdaterManager {
       console.log('✅ checkForUpdates() concluído, aguardando eventos...');
 
       if (showDialog && this.updateAvailable) {
-        logger.log('UPDATE', 'SHOWING_UPDATE_DIALOG', { version: this.updateInfo.version });
-        dialog.showMessageBox(mainWindow, {
-          type: 'info',
-          title: 'Atualização disponível',
-          message: `Nova versão ${this.updateInfo.version} disponível. Deseja baixar?`,
-          buttons: ['Baixar', 'Cancelar']
-        }).then(result => {
-          if (result.response === 0) {
-            logger.log('UPDATE', 'DOWNLOAD_STARTED', { version: this.updateInfo.version });
-            autoUpdater.downloadUpdate();
-          } else {
-            logger.log('UPDATE', 'DOWNLOAD_CANCELLED', { version: this.updateInfo.version });
-          }
-        });
+        logger.log('UPDATE', 'NOTIFYING_UPDATE_AVAILABLE', { version: this.updateInfo.version });
+        // Notificar renderer para abrir modal
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-available', { info: this.updateInfo, showDialog: showDialog });
+        }
       } else if (showDialog && !this.updateAvailable) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('update-check-complete', {
@@ -2351,8 +2344,12 @@ ipcMain.handle('check-for-updates', async (event, showDialog = true) => {
 
 ipcMain.handle('download-update', async () => {
   try {
-    await updaterManager.downloadUpdate();
-    return { success: true };
+    if (updaterManager.updateAvailable) {
+      autoUpdater.downloadUpdate();
+      return { success: true };
+    } else {
+      return { success: false, error: 'Nenhuma atualização disponível' };
+    }
   } catch (error) {
     logger.logSystemError('DOWNLOAD_UPDATE_FAILED', error);
     return { success: false, error: error.message };
@@ -2361,7 +2358,7 @@ ipcMain.handle('download-update', async () => {
 
 ipcMain.handle('install-update', async () => {
   try {
-    await updaterManager.installUpdate();
+    autoUpdater.quitAndInstall();
     return { success: true };
   } catch (error) {
     logger.logSystemError('INSTALL_UPDATE_FAILED', error);

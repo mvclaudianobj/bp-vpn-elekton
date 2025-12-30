@@ -156,13 +156,11 @@ const configSaveAzureProfileBtn = document.getElementById('configSaveAzureProfil
 const updateBtn = document.getElementById('updateBtn');
 const updateModal = document.getElementById('updateModal');
 const updateCloseBtn = document.getElementById('updateCloseBtn');
-const updateDownloadBtn = document.getElementById('updateDownloadBtn');
-const updateInstallBtn = document.getElementById('updateInstallBtn');
-const updateLaterBtn = document.getElementById('updateLaterBtn');
-const progressFill = document.getElementById('progressFill');
-const progressPercent = document.getElementById('progressPercent');
-const progressSpeed = document.getElementById('progressSpeed');
-const progressSize = document.getElementById('progressSize');
+
+// Garantir que o modal esteja escondido inicialmente
+if (updateModal) {
+    updateModal.style.display = 'none';
+}
 
 // Elementos de Device Code (Azure)
 const deviceCodeSection = document.getElementById('deviceCodeSection');
@@ -319,27 +317,23 @@ function setupEventListeners() {
 
     // Atualizações
     if (updateBtn) {
-        updateBtn.addEventListener('click', checkForUpdates);
+        updateBtn.addEventListener('click', async () => {
+            if (updateInfo) {
+                // Se há atualização disponível, abre o modal
+                if (updateModal) {
+                    updateModal.style.display = 'flex';
+                }
+            } else {
+                // Senão, verifica por atualizações
+                await window.electronAPI.checkForUpdates(true);
+            }
+        });
         console.log('✅ Event listener adicionado ao updateBtn');
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
         console.error('❌ updateBtn não encontrado!');
         logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
-    }
-
-    // Botões do modal de atualização
-    if (updateDownloadBtn) {
-        updateDownloadBtn.addEventListener('click', downloadUpdate);
-        console.log('✅ Event listener adicionado ao updateDownloadBtn');
-    }
-    if (updateInstallBtn) {
-        updateInstallBtn.addEventListener('click', installUpdate);
-        console.log('✅ Event listener adicionado ao updateInstallBtn');
-    }
-    if (updateLaterBtn) {
-        updateLaterBtn.addEventListener('click', closeUpdateModal);
-        console.log('✅ Event listener adicionado ao updateLaterBtn');
     }
 
     const closeBtn = document.getElementById('closeBtn');
@@ -356,6 +350,44 @@ function setupEventListeners() {
     }
     if (updateCloseBtn) {
         updateCloseBtn.addEventListener('click', closeUpdateModal);
+    }
+
+    const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+    if (updateDownloadBtn) {
+        updateDownloadBtn.addEventListener('click', async () => {
+            try {
+                const result = await window.electronAPI.downloadUpdate();
+                if (result.success) {
+                    showStatus('Download da atualização iniciado!', 'success');
+                } else {
+                    showStatus(`Erro no download: ${result.error}`, 'alert');
+                }
+            } catch (error) {
+                showStatus('Erro ao iniciar download da atualização', 'alert');
+            }
+        });
+    }
+
+    const updateLaterBtn = document.getElementById('updateLaterBtn');
+    if (updateLaterBtn) {
+        updateLaterBtn.addEventListener('click', closeUpdateModal);
+    }
+
+    const updateInstallBtn = document.getElementById('updateInstallBtn');
+    if (updateInstallBtn) {
+        updateInstallBtn.addEventListener('click', async () => {
+            try {
+                showStatus('Aplicando atualização...', 'success');
+                const result = await window.electronAPI.installUpdate();
+                if (result.success) {
+                    // quitAndInstall will restart the app
+                } else {
+                    showStatus(`Erro na instalação: ${result.error}`, 'alert');
+                }
+            } catch (error) {
+                showStatus('Erro ao instalar atualização', 'alert');
+            }
+        });
     }
 
     // Logs
@@ -1472,17 +1504,16 @@ function initializeUpdateElements() {
 async function checkForUpdates() {
     try {
         console.log('🔄 BOTÃO DE ATUALIZAÇÃO CLICADO - Verificando atualizações...');
-        console.log('📋 Versão atual do app:', await window.electronAPI.getVersion());
+        //alert("Botão Atualização clicado!");
         showStatus('Verificando atualizações...', 'status');
 
         const result = await window.electronAPI.checkForUpdates(true);
-        console.log('📊 Resultado da verificação:', result);
 
         if (result.success) {
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         } else {
-            console.log("closeLogsModalBtn não encontrado");
-            console.log("connLogsModal não encontrado");
+        console.log("closeLogsModalBtn não encontrado");
+        console.log("connLogsModal não encontrado");
             showStatus(`Erro na verificação: ${result.error}`, 'alert');
         }
     } catch (error) {
@@ -1503,90 +1534,6 @@ async function checkForUpdatesOnStartup() {
 function closeUpdateModal() {
     if (updateModal) {
         updateModal.style.display = 'none';
-    }
-}
-
-function updateProgressBar(progress) {
-    console.log('📊 Updating progress bar:', progress);
-
-    if (progressFill) {
-        progressFill.style.width = `${progress.percent}%`;
-        console.log('✅ Progress fill updated to:', progress.percent + '%');
-    } else {
-        console.log('❌ progressFill element not found');
-    }
-
-    if (progressPercent) {
-        progressPercent.textContent = `${progress.percent}%`;
-    }
-
-    if (progressSpeed) {
-        progressSpeed.textContent = `${progress.speed} KB/s`;
-    }
-
-    if (progressSize) {
-        progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
-    }
-}
-
-async function downloadUpdate() {
-    try {
-        console.log('🚀 Starting download...');
-        showStatus('Iniciando download da atualização...', 'status');
-
-        if (updateDownloadBtn) {
-            updateDownloadBtn.disabled = true;
-            updateDownloadBtn.textContent = '📥 Baixando...';
-        }
-
-        const result = await window.electronAPI.downloadUpdate();
-        console.log('📦 Download result:', result);
-
-        if (!result.success) {
-            throw new Error(result.error || 'Falha no download');
-        }
-
-    } catch (error) {
-        console.error('❌ Download error:', error);
-        showStatus(`Erro no download: ${error.message}`, 'alert');
-
-        // Reabilitar botão em caso de erro
-        if (updateDownloadBtn) {
-            updateDownloadBtn.disabled = false;
-            updateDownloadBtn.textContent = '📥 Baixar Atualização';
-        }
-    }
-}
-
-async function installUpdate() {
-    try {
-        console.log('⚡ Starting installation...');
-        showStatus('Instalando atualização...', 'status');
-
-        if (updateInstallBtn) {
-            updateInstallBtn.disabled = true;
-            updateInstallBtn.textContent = '⚡ Instalando...';
-        }
-
-        const result = await window.electronAPI.installUpdate();
-        console.log('🔄 Install result:', result);
-
-        if (!result.success) {
-            throw new Error(result.error || 'Falha na instalação');
-        }
-
-        // A aplicação será reiniciada automaticamente
-        showStatus('Atualização instalada! Reiniciando...', 'success');
-
-    } catch (error) {
-        console.error('❌ Install error:', error);
-        showStatus(`Erro na instalação: ${error.message}`, 'alert');
-
-        // Reabilitar botão em caso de erro
-        if (updateInstallBtn) {
-            updateInstallBtn.disabled = false;
-            updateInstallBtn.textContent = '⚡ Instalar Agora';
-        }
     }
 }
 
@@ -1677,48 +1624,117 @@ if (window.electronAPI) {
         showStatus(`Desafio 2FA: ${data.message}`, 'alert');
     });
 
-    // Eventos de atualização
-    window.electronAPI.onUpdateAvailable((info) => {
-        console.log('🎯 RENDERER: update-available RECEIVED!');
-        console.log('📦 Update info received:', JSON.stringify(info, null, 2));
+    // Função para extrair versão do update info (centralizada como app.getVersion())
+    async function getUpdateVersion(info) {
+        console.log('🔍 getUpdateVersion called with info:', info);
+        let version = info.version || info.releaseName || info.tag;
+        console.log('📋 Raw version from info:', version);
+        if (typeof version === 'string' && version.startsWith('v')) {
+            version = version.substring(1);
+        }
+        if (!version) {
+            // Fallback: incrementar versão atual (assumindo patch)
+            const currentVersion = await window.electronAPI.getVersion();
+            const parts = currentVersion.split('.');
+            parts[2] = (parseInt(parts[2]) + 1).toString();
+            version = parts.join('.');
+            console.log('📦 Fallback version (incremented):', version);
+        }
+        console.log('📦 Final version:', version);
+        return version;
+    }
 
+    // Eventos de atualização
+    window.electronAPI.onUpdateAvailable(async (event) => {
+        const info = event.info || event;
+        const showDialog = event.showDialog;
+        console.log('🎉 Update available event received:', JSON.stringify(event, null, 2));
+        if (!info) {
+            console.error('❌ Info is null or undefined');
+            return;
+        }
+        logToMain('RENDERER', 'UPDATE_AVAILABLE', { info: info, showDialog: showDialog });
         updateInfo = info;
+        const version = await getUpdateVersion(info);
+        console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
-            updateBtn.textContent = `📥 Baixar ${info.version}`;
-            console.log('✅ Update button updated to:', updateBtn.textContent);
-        } else {
-            console.log('❌ updateBtn not found in DOM');
+            updateBtn.textContent = `📥 Baixar ${version}`;
+        }
+        // Atualizar modal com nova versão
+        const updateVersionEl = document.getElementById('updateVersion');
+        if (updateVersionEl) {
+            updateVersionEl.textContent = version;
+        }
+        const updateDateEl = document.getElementById('updateDate');
+        console.log('📅 Release date from info:', info.releaseDate);
+        if (updateDateEl && info.releaseDate) {
+            updateDateEl.textContent = new Date(info.releaseDate).toLocaleDateString('pt-BR');
+        } else if (updateDateEl) {
+            // Fallback: usar data atual
+            updateDateEl.textContent = new Date().toLocaleDateString('pt-BR');
+            console.log('📅 Using fallback date (current):', updateDateEl.textContent);
+        }
+        const updateNotesEl = document.getElementById('updateNotes');
+        if (updateNotesEl && info.releaseNotes) {
+            updateNotesEl.innerHTML = `<p><strong>Notas de lançamento:</strong></p><pre>${info.releaseNotes}</pre>`;
+        }
+        if (showDialog) {
+            // Abrir modal apenas quando chamado manualmente
+            if (updateModal) {
+                updateModal.style.display = 'flex';
+            }
         }
         showStatus('Atualização disponível!', 'success');
+    });
 
-        // Abrir modal de atualização automaticamente
+    window.electronAPI.onUpdateDownloaded((info) => {
+        console.log('✅ Update downloaded:', info);
+        logToMain('RENDERER', 'UPDATE_DOWNLOADED', { info: info });
+        const updateInstallBtn = document.getElementById('updateInstallBtn');
+        if (updateInstallBtn) {
+            updateInstallBtn.style.display = 'block';
+            updateInstallBtn.textContent = '⚡ Aplicar Atualização';
+        }
+        const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+        if (updateDownloadBtn) {
+            updateDownloadBtn.style.display = 'none';
+        }
+        const updateProgress = document.getElementById('updateProgress');
+        if (updateProgress) {
+            updateProgress.style.display = 'none';
+        }
+        showStatus('Atualização baixada com sucesso! Clique em "Aplicar Atualização" para instalar.', 'success');
+    });
+
+    window.electronAPI.onUpdateDownloadStarted(() => {
+        console.log('🚀 Update download started, opening modal');
         if (updateModal) {
             updateModal.style.display = 'flex';
         }
     });
 
-    // Evento: Progresso do download
     window.electronAPI.onUpdateProgress((progress) => {
-        console.log('📊 Download progress:', progress);
-        updateProgressBar(progress);
-    });
-
-    // Evento: Download concluído
-    window.electronAPI.onUpdateDownloaded((info) => {
-        console.log('✅ Download completed:', info);
-        updateDownloaded = true;
-        showStatus('Download concluído! Pronto para instalar.', 'success');
-
-        // Atualizar interface para mostrar botão de instalar
-        if (updateDownloadBtn) {
-            updateDownloadBtn.style.display = 'none';
-            updateDownloadBtn.disabled = true;
-            updateDownloadBtn.textContent = '✅ Download Concluído';
+        console.log('📊 Update progress:', progress);
+        const updateProgress = document.getElementById('updateProgress');
+        if (updateProgress) {
+            updateProgress.style.display = 'block';
         }
-        if (updateInstallBtn) {
-            updateInstallBtn.style.display = 'inline-block';
-            updateInstallBtn.disabled = false;
+        const progressFill = document.getElementById('progressFill');
+        if (progressFill) {
+            progressFill.style.width = `${progress.percent}%`;
+        }
+        const progressPercent = document.getElementById('progressPercent');
+        if (progressPercent) {
+            progressPercent.textContent = `${progress.percent}%`;
+        }
+        const progressSpeed = document.getElementById('progressSpeed');
+        if (progressSpeed) {
+            progressSpeed.textContent = `${progress.speed} KB/s`;
+        }
+        const progressSize = document.getElementById('progressSize');
+        if (progressSize) {
+            progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
         }
     });
 }
