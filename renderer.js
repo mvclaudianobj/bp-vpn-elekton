@@ -1625,16 +1625,27 @@ if (window.electronAPI) {
     });
 
     // Função para extrair versão do update info (centralizada como app.getVersion())
-    function getUpdateVersion(info) {
-        let version = info.version || info.releaseName || info.tag || 'desconhecida';
+    async function getUpdateVersion(info) {
+        console.log('🔍 getUpdateVersion called with info:', info);
+        let version = info.version || info.releaseName || info.tag;
+        console.log('📋 Raw version from info:', version);
         if (typeof version === 'string' && version.startsWith('v')) {
             version = version.substring(1);
         }
+        if (!version) {
+            // Fallback: incrementar versão atual (assumindo patch)
+            const currentVersion = await window.electronAPI.getVersion();
+            const parts = currentVersion.split('.');
+            parts[2] = (parseInt(parts[2]) + 1).toString();
+            version = parts.join('.');
+            console.log('📦 Fallback version (incremented):', version);
+        }
+        console.log('📦 Final version:', version);
         return version;
     }
 
     // Eventos de atualização
-    window.electronAPI.onUpdateAvailable((event) => {
+    window.electronAPI.onUpdateAvailable(async (event) => {
         const info = event.info || event;
         const showDialog = event.showDialog;
         console.log('🎉 Update available event received:', JSON.stringify(event, null, 2));
@@ -1644,7 +1655,7 @@ if (window.electronAPI) {
         }
         logToMain('RENDERER', 'UPDATE_AVAILABLE', { info: info, showDialog: showDialog });
         updateInfo = info;
-        const version = getUpdateVersion(info);
+        const version = await getUpdateVersion(info);
         console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
@@ -1656,8 +1667,13 @@ if (window.electronAPI) {
             updateVersionEl.textContent = version;
         }
         const updateDateEl = document.getElementById('updateDate');
+        console.log('📅 Release date from info:', info.releaseDate);
         if (updateDateEl && info.releaseDate) {
             updateDateEl.textContent = new Date(info.releaseDate).toLocaleDateString('pt-BR');
+        } else if (updateDateEl) {
+            // Fallback: usar data atual
+            updateDateEl.textContent = new Date().toLocaleDateString('pt-BR');
+            console.log('📅 Using fallback date (current):', updateDateEl.textContent);
         }
         const updateNotesEl = document.getElementById('updateNotes');
         if (updateNotesEl && info.releaseNotes) {
