@@ -1938,6 +1938,7 @@ ipcMain.handle('load-azure-profiles', async () => {
 });
 
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('get-platform', () => process.platform);
 
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = AZURE_PROFILES_PATH;

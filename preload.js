@@ -109,6 +109,7 @@ globalThis.electronAPI = {
 
   // Minimizar para tray
   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
+  getPlatform: () => ipcRenderer.invoke('get-platform'),
 
    // Obter versão da aplicação
    getVersion: () => ipcRenderer.invoke('get-version'),

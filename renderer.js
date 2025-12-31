@@ -496,6 +496,21 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
+    // Ocultar opção de minimizar para tray no Windows
+    try {
+        const platform = await window.electronAPI.getPlatform();
+        console.log('🖥️ Plataforma detectada:', platform);
+        if (platform === 'win32') {
+            const minimizeBtn = document.getElementById('minimizeBtn');
+            if (minimizeBtn) {
+                minimizeBtn.style.display = 'none';
+                console.log('✅ Opção "Minimizar para Tray" ocultada no Windows');
+            }
+        }
+    } catch (error) {
+        console.error('❌ Erro ao detectar plataforma:', error);
+    }
+
     // Configurar event listeners
     setupEventListeners();
 
