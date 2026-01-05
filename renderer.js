@@ -168,7 +168,7 @@ const verificationUri = document.getElementById('verificationUri');
 const userCode = document.getElementById('userCode');
 
 // Elementos de Logs (serão definidos dentro das funções para garantir que o DOM esteja pronto)
-let connLogsBtn, connLogsModal, connLogsModalContent, closeLogsModalBtn, clearLogsBtn;
+let logsBtn, connLogsModal, connLogsModalContent, closeLogsModalBtn, clearLogsBtn;
 let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
 
     if (configCloseBtn) {
@@ -390,7 +390,13 @@ function setupEventListeners() {
         });
     }
 
-    // Nota: Configuração de logs foi removida do layout atual
+    // Logs da conexão
+    if (logsBtn) {
+        logsBtn.addEventListener('click', toggleConnLogsModal);
+        console.log('✅ Event listener adicionado ao logsBtn');
+    } else {
+        console.log("❌ logsBtn não encontrado!");
+    }
 
     // Logs da aplicação
     if (appLogsBtn) {
@@ -406,7 +412,7 @@ function setupEventListeners() {
                 console.log('✅ appLogsBtn encontrado no retry');
                 appLogsBtn.addEventListener('click', toggleAppLogsModal);
             } else {
-                console.log('ℹ️ connLogsBtn ainda não encontrado (removido do layout)');
+                console.log('ℹ️ logsBtn ainda não encontrado (removido do layout)');
             }
         }, 1000);
     }
@@ -451,7 +457,7 @@ async function initializeApp() {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Definir elementos após DOM estar pronto
-    connLogsBtn = document.getElementById('connLogsBtn');
+    logsBtn = document.getElementById('logsBtn');
     connLogsModal = document.getElementById('connLogsModal');
     connLogsModalContent = document.getElementById('connLogsModalContent');
     closeLogsModalBtn = document.getElementById('closeLogsModalBtn');
@@ -471,13 +477,26 @@ async function initializeApp() {
     appLogsModalContent = document.getElementById('appLogsModalContent');
 
     console.log('🔍 Elementos encontrados:', {
-        connLogsBtn: !!connLogsBtn,
+        logsBtn: !!logsBtn,
         appLogsBtn: !!appLogsBtn,
         closeLogsModalBtn: !!closeLogsModalBtn,
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Nota: Opção de minimizar para tray foi removida do layout atual
+    // Minimizar para tray (só no Linux)
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.minimizeToTray();
+                console.log('✅ Minimizado para tray');
+            } catch (error) {
+                console.error('❌ Erro ao minimizar para tray:', error);
+            }
+        });
+        console.log('✅ Event listener adicionado ao minimizeBtn');
+    } else {
+        console.log('ℹ️ minimizeBtn não encontrado');
+    }
 
     // Configurar event listeners
     setupEventListeners();
