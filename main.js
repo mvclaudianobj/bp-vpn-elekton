@@ -183,6 +183,10 @@ class AppLogger {
   logAuthFailure(authType, provider, error, details = {}) {
     this.log('AUTH', 'FAILURE', { authType, provider, error: error.message, ...details }, 'ERROR');
   }
+
+  logAuthSuccess(authType, provider, details = {}) {
+    this.log('AUTH', 'SUCCESS', { authType, provider, ...details });
+  }
 }
 
 // Verificar processos OpenVPN ativos
