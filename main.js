@@ -2118,8 +2118,8 @@ async function killVPNConnection() {
       }
       
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (!vpnProcess.killed) {
+
+      if (vpnProcess && !vpnProcess.killed) {
         console.log(`🔌 Forçando SIGKILL em ${vpnProcess.pid}`);
         try {
           vpnProcess.kill('SIGKILL');
