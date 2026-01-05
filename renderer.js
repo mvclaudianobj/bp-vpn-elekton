@@ -219,8 +219,7 @@ let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
-      console.error('❌ updateBtn não encontrado!');
-      logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
+        console.log('ℹ️ minimizeBtn não encontrado (removido do layout)');
     }
 
     const closeBtn = document.getElementById('closeBtn');
@@ -232,8 +231,7 @@ let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
-      console.error('❌ closeBtn não encontrado!');
-      logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'closeBtn' }, 'ERROR');
+        console.log('ℹ️ menuBtn não encontrado');
     }
     if (updateCloseBtn) {
         updateCloseBtn.addEventListener('click', closeUpdateModal);
@@ -332,8 +330,7 @@ function setupEventListeners() {
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
-        console.error('❌ updateBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'updateBtn' }, 'ERROR');
+        console.log('ℹ️ updateBtn não encontrado');
     }
 
     const closeBtn = document.getElementById('closeBtn');
@@ -345,8 +342,7 @@ function setupEventListeners() {
     } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
-        console.error('❌ closeBtn não encontrado!');
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'closeBtn' }, 'ERROR');
+        console.log('ℹ️ closeBtn não encontrado');
     }
     if (updateCloseBtn) {
         updateCloseBtn.addEventListener('click', closeUpdateModal);
@@ -394,25 +390,7 @@ function setupEventListeners() {
         });
     }
 
-    // Logs
-    if (connLogsBtn) {
-        connLogsBtn.addEventListener('click', toggleConnLogsModal);
-        console.log('✅ Event listener adicionado ao connLogsBtn');
-    } else {
-        console.log("❌ connLogsBtn não encontrado!");
-        console.log("Verificando se dropdown está carregado...");
-        // Tentar novamente após um pequeno delay
-        setTimeout(() => {
-            connLogsBtn = document.getElementById('connLogsBtn');
-            if (connLogsBtn) {
-                console.log('✅ connLogsBtn encontrado no retry');
-                connLogsBtn.addEventListener('click', toggleConnLogsModal);
-            } else {
-                console.error('❌ connLogsBtn ainda não encontrado após retry!');
-                logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'connLogsBtn' }, 'ERROR');
-            }
-        }, 1000);
-    }
+    // Nota: Configuração de logs foi removida do layout atual
 
     // Logs da aplicação
     if (appLogsBtn) {
@@ -428,8 +406,7 @@ function setupEventListeners() {
                 console.log('✅ appLogsBtn encontrado no retry');
                 appLogsBtn.addEventListener('click', toggleAppLogsModal);
             } else {
-                console.error('❌ appLogsBtn ainda não encontrado após retry!');
-                logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'appLogsBtn' }, 'ERROR');
+                console.log('ℹ️ connLogsBtn ainda não encontrado (removido do layout)');
             }
         }, 1000);
     }
@@ -500,20 +477,7 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Ocultar opção de minimizar para tray no Windows
-    try {
-        const platform = await window.electronAPI.getPlatform();
-        console.log('🖥️ Plataforma detectada:', platform);
-        if (platform === 'win32') {
-            const minimizeBtn = document.getElementById('minimizeBtn');
-            if (minimizeBtn) {
-                minimizeBtn.style.display = 'none';
-                console.log('✅ Opção "Minimizar para Tray" ocultada no Windows');
-            }
-        }
-    } catch (error) {
-        console.error('❌ Erro ao detectar plataforma:', error);
-    }
+    // Nota: Opção de minimizar para tray foi removida do layout atual
 
     // Configurar event listeners
     setupEventListeners();
