@@ -187,6 +187,10 @@ class AppLogger {
   logAuthSuccess(authType, provider, details = {}) {
     this.log('AUTH', 'SUCCESS', { authType, provider, ...details });
   }
+
+  logAzureTokenPublish(username, success, details = {}) {
+    this.log('AZURE', success ? 'TOKEN_PUBLISH_SUCCESS' : 'TOKEN_PUBLISH_FAILURE', { username, ...details }, success ? 'INFO' : 'ERROR');
+  }
 }
 
 // Verificar processos OpenVPN ativos
