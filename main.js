@@ -179,6 +179,10 @@ class AppLogger {
   logSystemError(component, error, details = {}) {
     this.log('SYSTEM', 'ERROR', { component, error: error.message, ...details }, 'ERROR');
   }
+
+  logAuthFailure(authType, provider, error, details = {}) {
+    this.log('AUTH', 'FAILURE', { authType, provider, error: error.message, ...details }, 'ERROR');
+  }
 }
 
 // Verificar processos OpenVPN ativos
