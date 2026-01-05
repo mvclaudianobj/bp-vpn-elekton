@@ -1,1410 +1,1425 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BluePex VPN Connections</title>
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body {
-      background: #0A162E;
-      color: white;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.9rem;
-    }
-     .app-wrapper {
-       background: rgba(0, 0, 0, 0.8);
-       min-height: 100vh;
-       width: 100%;
-       display: flex;
-       align-items: flex-start;
-       justify-content: center;
-       padding: 0.5rem 0.5rem 0.2rem 0.5rem;
-     }
-    .login-container {
-       width: 460px;
-       min-height: 350px;
-       height: auto;
-       margin: 0;
-       padding: 1.5rem 2rem 2rem 2rem;
-       background-color: #0A162E;
-       border-radius: 15px;
-       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-       color: white;
-       position: relative;
-       border: 1px solid rgba(0, 123, 255, 0.2);
-     }
-    .logo {
-      display: block;
-      margin: 0 auto 1.5rem;
-      max-width: 200px;
-      height: auto;
-    }
-    .form-check-label {
-      font-weight: bold;
-      font-size: 0.9rem;
-    }
-    .status {
-      margin-top: 1rem;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 0.85rem;
-      background-color: rgba(255, 255, 255, 0.1);
-      color: white;
-      text-align: center;
-      max-width: 390px;
-      margin-left: 0;
-    }
-    .status.alert {
-      background-color: rgba(220, 53, 69, 0.2);
-      border: 1px solid #dc3545;
-    }
-    .status.success {
-      background-color: rgba(40, 167, 69, 0.2);
-      border: 1px solid #28a745;
-    }
-    .btn {
-      font-weight: bold;
-      border-radius: 5px;
-      font-size: 0.9rem;
-    }
-    h2 {
-      text-align: center;
-      color: #007BFF;
-      margin-bottom: 1.5rem;
-      font-size: 1.4rem;
-    }
-    h3 {
-      font-size: 1.3rem;
-    }
-    h4 {
-      font-size: 1.1rem;
-    }
-    .btn-success {
-      background-color: #007BFF;
-      border-color: #007BFF;
-    }
-    .btn-success:hover {
-      background-color: #0056b3;
-      border-color: #0056b3;
-    }
-    .btn-danger {
-      background-color: #DC3545;
-      border-color: #DC3545;
-    }
-    .btn-danger:hover {
-      background-color: #c82333;
-      border-color: #bd2130;
-    }
-    .form-control {
-      background-color: #1A2B4F;
-      border-color: #007BFF;
-      color: white;
-      font-size: 0.9rem;
-      max-width: 390px;
-      margin: 0;
-    }
-    .form-control:focus {
-      border-color: #007BFF;
-      box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
-    }
-    .form-select {
-      background-color: #1A2B4F;
-      border-color: #007BFF;
-      color: white;
-      font-size: 0.9rem;
-      max-width: 390px;
-      margin: 0 auto 0 0;
-    }
-
-    .form-select:disabled {
-      background-color: #007BFF;
-      color: white;
-      opacity: 1;
-    }
-
-    .form-select.connected {
-      background-color: #007BFF;
-      border-color: #007BFF;
-      color: white;
-      font-weight: bold;
-    }
-    /* Botões lado a lado */
-    .d-flex.gap-2 {
-      display: flex;
-      gap: 15px;
-      justify-content: space-between;
-    }
-
-    .d-flex.gap-2 .btn {
-      flex: 1;
-      max-width: 350px;
-      padding: 37px;
-      font-size: 0.9rem;
-      width: 350px;
-    }
-
-    #btnConectar {
-      border: none;
-      box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
-      max-width: 400px;
-      width: 185px;
-    }
-
-    #btnDesconectar {
-      border: none;
-      box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
-      width: 200px;
-    }
-
-    /* Menu dropdown no topo direito */
-    .dropdown {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      z-index: 1000;
-    }
-
-    .dropdown-toggle {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      font-size: 0.9rem;
-      padding: 5px 10px;
-      border-radius: 4px;
-      transition: background 0.3s ease;
-    }
-
-    .dropdown-toggle:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-
-    .dropdown-menu {
-      background: #0A162E;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .dropdown-item {
-      color: white;
-      font-size: 0.9rem;
-    }
-
-    .dropdown-item:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-    }
-
-    .menu-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
-    /* Botão de Atualização */
-    .update-btn {
-      position: fixed;
-      top: 20px;
-      right: 140px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.3s ease;
-      z-index: 1000;
-    }
-
-    .update-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
-    .update-btn.updating {
-      animation: spin 1s linear infinite;
-    }
-
-    /* Botão de Logs */
-    .logs-btn {
-      position: fixed;
-      top: 20px;
-      right: 80px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.3s ease;
-      z-index: 1000;
-    }
-
-    .logs-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
-    .menu-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    /* Botão de Atualização */
-    .update-btn {
-      position: fixed;
-      top: 20px;
-      right: 140px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.3s ease;
-      z-index: 1000;
-    }
-
-    .update-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
-    .update-btn.updating {
-      animation: spin 1s linear infinite;
-    }
-
-    .logs-btn {
-      position: fixed;
-      top: 20px;
-      right: 80px;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.3s ease;
-      z-index: 1000;
-    }
-
-    .logs-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: scale(1.1);
-    }
-
-    .update-btn.updating {
-      color: #ffc107;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-
-    /* Modal de Configurações */
-    .config-modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 2000;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .config-modal.show {
-      display: flex;
-    }
-
-    /* Modal de Logs */
-    .logs-modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 3000;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .logs-modal.show {
-      display: flex;
-    }
-
-    .logs-modal .modal-content {
-      background: #0A162E;
-      padding: 0;
-      border-radius: 15px;
-      max-width: 800px;
-      width: 95%;
-      max-height: 80vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .logs-modal .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1.5rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .logs-modal .modal-header h3 {
-      margin: 0;
-      color: #007BFF;
-    }
-
-    .logs-modal .btn-close {
-      background: none;
-      border: none;
-      color: white;
-      font-size: 18px;
-      cursor: pointer;
-      padding: 5px;
-    }
-
-    .logs-modal .modal-body {
-      flex: 1;
-      padding: 1.5rem;
-    }
-
-    .logs-modal .logs-content {
-      background: #000;
-      color: #00FF00;
-      font-family: 'Courier New', monospace;
-      font-size: 12px;
-      padding: 1rem;
-      border-radius: 5px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      max-height: 350px;
-      overflow-y: auto;
-    }
-
-    .logs-modal .modal-footer {
-      border-top: 1px solid #444;
-      padding: 10px;
-      text-align: center;
-      position: relative;
-    }
-
-    .logs-modal .close-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: none;
-      border: none;
-      color: white;
-      font-size: 1.2rem;
-      cursor: pointer;
-    }
-
-    /* Device Code Section */
-    .device-code-section {
-      margin-top: 1rem;
-    }
-
-    .user-code {
-      font-size: 1.2em;
-      font-weight: bold;
-      background: #e9ecef;
-      padding: 0.5rem;
-      border-radius: 0.25rem;
-      color: #495057;
-    }
-
-    .config-content {
-      background: #0A162E;
-      padding: 2rem;
-      border-radius: 15px;
-      max-width: 900px;
-      width: 95%;
-      max-height: 85vh;
-      overflow-y: auto;
-      border: 2px solid #007BFF;
-      margin: auto;
-    }
-
-    .config-sections-container {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      margin-bottom: 20px;
-    }
-
-    .config-section {
-      flex: 1;
-      margin-bottom: 1rem;
-      padding: 1.5rem;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 10px;
-      border-left: 4px solid #007BFF;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .config-section h4 {
-      color: #007BFF;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid #007BFF;
-      padding-bottom: 0.5rem;
-      font-size: 1rem;
-    }
-
-    /* Estilos para modo usuário */
-    .profiles-list {
-      max-height: 200px;
-      overflow-y: auto;
-      border: 1px solid #444;
-      border-radius: 4px;
-      padding: 8px;
-      margin-bottom: 10px;
-      background-color: #1A2B4F;
-    }
-
-    .profile-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px;
-      margin-bottom: 6px;
-      background: #2a2a2a;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      transition: all 0.3s ease;
-      border: 1px solid #444;
-    }
-
-    .profile-item:hover {
-      background: #333;
-      border-color: #007BFF;
-    }
-
-    .profile-item.active {
-      border-left: 4px solid #4CAF50;
-      background: linear-gradient(135deg, #2d3a4f 0%, #1A2B4F 100%);
-      border-color: #4CAF50;
-    }
-
-    .profile-info {
-      flex: 1;
-    }
-
-    .profile-name {
-      font-weight: bold;
-      color: white;
-      margin-bottom: 3px;
-      font-size: 0.85rem;
-    }
-
-    .profile-username {
-      color: #aaa;
-      font-size: 0.75rem;
-      margin-bottom: 2px;
-    }
-
-    .profile-server {
-      color: #17a2b8;
-      font-size: 0.75rem;
-      margin-bottom: 2px;
-    }
-
-    .profile-ovpn {
-      color: #28a745;
-      font-size: 0.75rem;
-    }
-
-    .profile-warning {
-      color: #ffc107;
-      font-size: 0.75rem;
-    }
-
-    .profile-actions {
-      display: flex;
-      gap: 5px;
-    }
-
-    .profile-connect, .profile-load, .profile-delete {
-      background: #555;
-      border: none;
-      color: white;
-      padding: 5px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.75rem;
-      transition: background 0.3s ease;
-    }
-
-    .profile-connect {
-      background: #007BFF;
-    }
-
-    .profile-connect:hover { 
-      background: #0056b3; 
-    }
-
-    .profile-load:hover { 
-      background: #2196F3; 
-    }
-
-    .profile-delete:hover { 
-      background: #f44336; 
-    }
-
-    .connection-logs {
-      display: none;
-      max-height: 120px;
-      overflow-y: auto;
-      background: #1a1a1a;
-      border: 1px solid #444;
-      border-radius: 4px;
-      padding: 8px;
-      font-family: 'Courier New', monospace;
-      font-size: 0.75rem;
-      color: #00ff00;
-      margin-top: 10px;
-    }
-
-    .log-line {
-      margin-bottom: 2px;
-      line-height: 1.3;
-    }
-
-    .profile-options {
-      margin: 12px 0;
-      padding: 10px;
-      background: #2a2a2a;
-      border-radius: 6px;
-      border-left: 3px solid #007BFF;
-    }
-
-    .user-profiles-section h4,
-    .logs-section h4 {
-      color: #007BFF;
-      font-size: 0.95rem;
-      margin-bottom: 8px;
-      font-weight: 600;
-    }
-
-    .form-section {
-      margin-bottom: 1.2rem;
-    }
-
-    /* MODE SELECTOR LADO A LADO */
-    .mode-selector {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 25px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .mode-checkboxes {
-      display: flex;
-      gap: 30px;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .mode-checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 15px 20px;
-      border-radius: 10px;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      border: 1px solid transparent;
-      min-width: 200px;
-      justify-content: center;
-      font-size: 0.95rem;
-    }
-
-    .mode-checkbox-item:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    .mode-checkbox-item.active {
-      background: rgba(0, 123, 255, 0.2);
-      border: 1px solid #007BFF;
-      box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
-    }
-
-    .mode-checkbox-item .form-check-input {
-      margin: 0;
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-    }
-
-    .mode-checkbox-item .form-check-label {
-      cursor: pointer;
-      font-weight: 600;
-      margin: 0;
-      white-space: nowrap;
-      font-size: 0.95rem;
-    }
-
-    .form-check-input:checked {
-      background-color: #007BFF;
-      border-color: #007BFF;
-    }
-
-    .btn-outline-info {
-      border-color: #17a2b8;
-      color: #17a2b8;
-    }
-
-    .btn-outline-info:hover {
-      background-color: #17a2b8;
-      border-color: #17a2b8;
-      color: white;
-    }
-
-    .ovpn-file-info {
-      background: rgba(23, 162, 184, 0.1);
-      border: 1px solid #17a2b8;
-      border-radius: 4px;
-      padding: 8px;
-      margin-top: 8px;
-      font-size: 0.8rem;
-    }
-
-    .text-info {
-      color: #17a2b8 !important;
-    }
-
-    .text-warning {
-      color: #ffc107 !important;
-    }
-
-    .text-muted {
-      color: #6c757d !important;
-      font-size: 0.8rem;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 15px;
-      color: #6c757d;
-      font-style: italic;
-      font-size: 0.9rem;
-    }
-
-    .current-config {
-      background: rgba(40, 167, 69, 0.1);
-      border: 1px solid #28a745;
-      border-radius: 6px;
-      padding: 10px;
-      margin: 8px 0;
-      font-size: 0.85rem;
-    }
-
-    .config-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 15px;
-    }
-
-    .active-profile-badge {
-      background: #28a745;
-      color: white;
-      padding: 2px 6px;
-      border-radius: 12px;
-      font-size: 0.65rem;
-      margin-left: 6px;
-    }
-
-    /* Scrollbar personalizado */
-    .profiles-list::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .profiles-list::-webkit-scrollbar-track {
-      background: #1A2B4F;
-    }
-
-    .profiles-list::-webkit-scrollbar-thumb {
-      background: #007BFF;
-      border-radius: 3px;
-    }
-
-    .profiles-list::-webkit-scrollbar-thumb:hover {
-      background: #0056b3;
-    }
-
-    .profile-credentials {
-      color: #28a745;
-      font-size: 0.75rem;
-      margin-bottom: 2px;
-    }
-
-    .checkbox-group {
-      display: flex;
-      gap: 15px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.85rem;
-    }
-
-    .checkbox-item .form-check-input {
-      margin-top: 0;
-    }
-
-    /* Formulários com layout mais horizontal */
-    .form-section .row {
-      display: flex;
-      gap: 15px;
-      margin-bottom: 12px;
-    }
-
-    .form-section .row .col {
-      flex: 1;
-    }
-
-    /* Botões mais largos */
-    .d-grid.gap-2 {
-      display: flex;
-      gap: 15px;
-    }
-
-    .d-grid.gap-2 .btn {
-      flex: 1;
-      padding: 10px;
-      font-size: 0.9rem;
-    }
-
-    /* Responsividade */
-    @media (max-width: 768px) {
-      .login-container {
-        max-width: 95%;
-        margin: 1rem auto;
-        padding: 1.5rem;
-      }
-      
-      .config-sections-container {
-        flex-direction: column;
-      }
-      
-      .config-section {
-        min-height: auto;
-      }
-    }
-
-    @media (max-width: 576px) {
-      .mode-checkboxes {
-        flex-direction: column;
-        gap: 10px;
-      }
-      
-      .mode-checkbox-item {
-        min-width: 100%;
-        justify-content: flex-start;
-        padding: 12px 15px;
-      }
-      
-      .d-grid.gap-2 {
-        flex-direction: column;
-      }
-      
-      .config-content {
-        padding: 1rem;
-      }
-      
-      .checkbox-group {
-        flex-direction: column;
-        gap: 10px;
-        align-items: flex-start;
-      }
-    }
-
-    @media (max-width: 400px) {
-      .mode-checkbox-item {
-        padding: 10px 12px;
-      }
-      
-      .mode-checkbox-item .form-check-label {
-        font-size: 0.9rem;
-      }
-    }
-
-    /* ============ ESTILOS PARA MODAL DE DESAFIO 2FA ============ */
-    .challenge-modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        z-index: 3000;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .challenge-content {
-        background: #0A162E;
-        padding: 2rem;
-        border-radius: 15px;
-        max-width: 400px;
-        width: 90%;
-        border: 2px solid #ffc107;
-        box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
-    }
-
-    .challenge-header {
-        color: #ffc107;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        font-size: 1.2rem;
-    }
-
-    .challenge-message {
-        background: rgba(255, 193, 7, 0.1);
-        border: 1px solid #ffc107;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-        font-size: 0.9rem;
-        color: #ffc107;
-        font-family: 'Courier New', monospace;
-        text-align: center;
-    }
-
-    .challenge-input {
-        font-size: 1.2rem;
-        text-align: center;
-        letter-spacing: 2px;
-        font-weight: bold;
-        background: #1A2B4F;
-        border: 2px solid #ffc107;
-        color: white;
-        padding: 12px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-    }
-
-    .challenge-input:focus {
-        border-color: #ffc107;
-        box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.25);
-        outline: none;
-    }
-
-    .challenge-actions {
-        display: flex;
-        gap: 10px;
-    }
-
-    .challenge-actions .btn {
-        flex: 1;
-        padding: 10px;
-    }
-
-    .challenge-timer {
-        text-align: center;
-        color: #ffc107;
-        font-size: 0.8rem;
-        margin-top: 10px;
-    }
-    
-    .twofa-section {
-      margin: 15px 0;
-      padding: 15px;
-      background: rgba(255, 193, 7, 0.05);
-      border: 1px solid rgba(255, 193, 7, 0.3);
-      border-radius: 8px;
-      transition: all 0.3s ease;
-    }
-
-    .twofa-section.active {
-      background: rgba(255, 193, 7, 0.1);
-      border-color: #ffc107;
-      box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
-    }
-
-    .twofa-help {
-      color: #ffc107 !important;
-      font-size: 0.8rem;
-      margin-top: 5px;
-    }
-
-    .twofa-info-badge {
-      background: rgba(255, 193, 7, 0.1);
-      border: 1px solid #ffc107;
-      border-radius: 6px;
-      padding: 10px;
-      margin-top: 10px;
-      font-size: 0.8rem;
-      color: #ffc107;
-    }
-
-    .twofa-info-badge strong {
-      color: #ffc107;
-    }
-
-    /* ============ ESTILOS PARA MODAL DE ATUALIZAÇÃO ============ */
-    .update-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        z-index: 3000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .update-content {
-        background: #0A162E;
-        padding: 2rem;
-        border-radius: 15px;
-        max-width: 500px;
-        width: 90%;
-        border: 2px solid #28a745;
-        box-shadow: 0 0 20px rgba(40, 167, 69, 0.3);
-    }
-
-    .update-info {
-        margin: 1.5rem 0;
-        padding: 1rem;
-        background: rgba(40, 167, 69, 0.1);
-        border-radius: 8px;
-        border-left: 4px solid #28a745;
-    }
-
-    .update-info p {
-        margin: 0.5rem 0;
-        color: white;
-    }
-
-    .update-notes {
-        margin-top: 1rem;
-        padding: 0.5rem;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 4px;
-        max-height: 150px;
-        overflow-y: auto;
-        font-size: 0.9rem;
-        white-space: pre-wrap;
-    }
-
-    .update-progress {
-        margin: 1.5rem 0;
-        padding: 1rem;
-        background: rgba(0, 123, 255, 0.1);
-        border-radius: 8px;
-        border-left: 4px solid #007BFF;
-    }
-
-    .progress-bar {
-        width: 100%;
-        height: 20px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 10px;
-        overflow: hidden;
-        margin-bottom: 0.5rem;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #007BFF, #28a745);
-        width: 0%;
-        transition: width 0.3s ease;
-        border-radius: 10px;
-    }
-
-    .progress-text {
-        text-align: center;
-        color: #007BFF;
-        font-size: 0.9rem;
-        font-weight: bold;
-    }
-
-    .update-actions {
-        display: flex;
-        gap: 10px;
-        justify-content: flex-end;
-        margin-top: 1.5rem;
-    }
-
-    .update-actions .btn {
-        padding: 8px 16px;
-        font-size: 0.9rem;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BluePex VPN Connections</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #0A162E;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+        .app-wrapper {
+            background: #04243e;
+            min-height: 100vh;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-container {
+            width: 520px;
+            min-height: 350px;
+            height: auto;
+            margin: 0;
+            padding: 1.4rem 3.5rem 3.5rem 3.5rem;
+            background-color: #061c2e;
+            border-radius: 15px;
+            box-shadow: 0 8px 9px rgba(0, 0, 0, 0.3);
+            color: white;
+            position: relative;
+            border: 1px solid rgb(13 32 48);
+        }
+        .logo {
+            display: block;
+            margin: 1.5rem auto 1.5rem;
+            max-width: 200px;
+            height: auto;
+        }
+        .mg-top-icon {
+            margin-top: -5px;
+        }
+        .weight-600 {
+            font-weight: 600;
+        }
+        .font-095{
+            font-size: .95em!important;
+        }
+        .form-check-label {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        .status {
+            margin-top: 1rem;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            text-align: center;
+            max-width: 390px;
+            margin-left: 0;
+        }
+        .status.alert {
+            background-color: rgba(220, 53, 69, 0.2);
+            border: 1px solid #dc3545;
+        }
+        .status.success {
+            background-color: rgba(40, 167, 69, 0.2);
+            border: 1px solid #28a745;
+            font-weight: 600;
+        }
+        .btn {
+            font-weight: bold;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        h2 {
+            text-align: center;
+            color: #007BFF;
+            margin-bottom: 1.5rem;
+            font-size: 1.4rem;
+        }
+        h3 {
+            font-size: 1.3rem;
+        }
+        h4 {
+            font-size: 1.1rem;
+        }
+        .btn-success {
+            background-color: #157e4c;
+            border-color: #157e4c;
+        }
+        .btn-success:hover {
+            background-color: #0da15b;
+            border-color: #0da15b;
+        }
+        .btn-danger {
+            background-color: #DC3545;
+            border-color: #DC3545;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+            border-color: #bd2130;
+        }
+        .form-control {
+            background-color: #4e5971;
+            border-color: #061c2e;
+            color: white;
+            font-size: 0.9rem;
+            max-width: 390px;
+            margin: 0;
+        }
+        .form-control:focus {
+            border-color: #007BFF;
+            box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+        }
+        .form-select {
+            background-color: #4e5971;
+            border-color: #061c2e;
+            color: white;
+            font-size: 0.9rem;
+            max-width: 390px;
+            margin: 0 auto 0 0;
+        }
+        .form-label {
+            font-weight: 600;
+        }
+        .form-select:disabled {
+            background-color: #042b4a;
+            color: white;
+            opacity: 1;
+        }
+
+        .form-select.connected {
+            background-color: #007BFF;
+            border-color: #007BFF;
+            color: white;
+            font-weight: bold;
+        }
+        /* Botões lado a lado */
+        .d-flex.gap-2 {
+            display: flex;
+            gap: 15px;
+            justify-content: space-between;
+        }
+
+        .d-flex.gap-2 .btn {
+            flex: 1;
+            max-width: 350px;
+            padding: 37px;
+            font-size: 0.9rem;
+            width: 350px;
+        }
+
+        #btnConectar {
+            border: none;
+            max-width: 400px;
+            width: 185px;
+        }
+
+        #btnDesconectar {
+            border: none;
+            width: 200px;
+        }
+
+        #btnDesconectar:disabled, #btnConectar:disabled {
+            opacity: 0.2;
+        }
+
+        .profile-info-header, .profile-details {
+            border-left: 2px solid #007dc5;
+            padding-left: 6px;
+        }
+
+        .config-header {
+            display: flex;
+            align-items: center;
+        }
+
+        .close-modal {
+            margin-left: auto;
+            padding: 0px 0px;
+            width: auto;
+            min-width: unset;
+            color: #fff;
+            font-size: 1.4em;
+        }
+
+        /* Menu dropdown no topo direito */
+        .dropdown {
+            position: absolute;
+            top: 3.3rem;
+            right: 4.2rem;
+            z-index: 1000;
+        }
+
+        .dropdown-toggle {
+            background-color: #3881ab;
+            border: 1px solid #3881ab;
+            color: white;
+            font-size: 0.9rem;
+            padding: 5px 10px;
+            border-radius: 4px;
+            transition: background 0.3s ease;
+        }
+
+        .dropdown-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .dropdown-menu {
+            background-color: #007dc5;
+            order: 1px solid #007dc5;
+        }
+
+        .dropdown-item {
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .dropdown-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .menu-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        /* Botão de Atualização */
+        .update-btn {
+            position: fixed;
+            top: 20px;
+            right: 140px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .update-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .update-btn.updating {
+            animation: spin 1s linear infinite;
+        }
+
+        /* Botão de Logs */
+        .logs-btn {
+            position: fixed;
+            top: 20px;
+            right: 80px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .logs-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .menu-btn:hover {
+            background-color: #296283;
+            border: 1px solid #296283;
+        }
+
+        /* Botão de Atualização */
+        .update-btn {
+            position: fixed;
+            top: 20px;
+            right: 140px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .update-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .update-btn.updating {
+            animation: spin 1s linear infinite;
+        }
+
+        .logs-btn {
+            position: fixed;
+            top: 20px;
+            right: 80px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .logs-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .update-btn.updating {
+            color: #ffc107;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Modal de Configurações */
+        .config-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .config-modal.show {
+            display: flex;
+        }
+
+        /* Modal de Logs */
+        .logs-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 3000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logs-modal.show {
+            display: flex;
+        }
+
+        .logs-modal .modal-content {
+            background: #061c2e;
+            padding: 0;
+            border-radius: 15px;
+            max-width: 800px;
+            width: 95%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logs-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+        }
+
+        .logs-modal .modal-header h3 {
+            margin: 0;
+        }
+
+        .logs-modal .btn-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .logs-modal .modal-body {
+            flex: 1;
+            padding: 1rem;
+        }
+
+        .logs-modal .logs-content {
+            background: rgba(255, 255, 255, 0.05);
+            color: #00FF00;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 1rem;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .logs-modal .modal-footer {
+            border-top: 1px solid #444;
+            padding: 10px;
+            text-align: center;
+            position: relative;
+        }
+
+        .logs-modal .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        /* Device Code Section */
+        .device-code-section {
+            margin-top: 1rem;
+        }
+
+        .user-code {
+            font-size: 1.2em;
+            font-weight: bold;
+            background: #e9ecef;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            color: #495057;
+        }
+
+        .config-content {
+            background: #061c2e;
+            padding: 1rem;
+            border-radius: 15px;
+            max-width: 760px;
+            width: 95%;
+            max-height: 85vh;
+            overflow-y: auto;
+            border: 1px solid rgb(13 32 48);
+            margin: 4rem auto;
+        }
+
+        .config-sections-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .config-section {
+            flex: 1;
+            margin-bottom: 0rem;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-section h4 {
+            color: #64c6ff;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #315068;
+            padding-bottom: 0.5rem;
+            font-size: 1rem;
+            text-transform: uppercase;
+        }
+
+        /* Estilos para modo usuário */
+        .profiles-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .profile-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            margin-bottom: 6px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            transition: all 0.3s ease;
+            border: 1px solid #444;
+        }
+
+        .profile-item:hover {
+            background: #3e805f;
+            border-color: #3e805f;
+        }
+
+        .profile-item.active {
+            border-left: 4px solid #4CAF50;
+            background: linear-gradient(135deg, #2d3a4f 0%, #1A2B4F 100%);
+            border-color: #4CAF50;
+        }
+
+        .profile-info {
+            flex: 1;
+        }
+
+        .profile-name {
+            font-weight: bold;
+            color: white;
+            margin-bottom: 3px;
+            font-size: 0.85rem;
+        }
+
+        .profile-username {
+            color: #aaa;
+            font-size: 0.75rem;
+            margin-bottom: 2px;
+        }
+
+        .profile-server {
+            color: #17a2b8;
+            font-size: 0.75rem;
+            margin-bottom: 2px;
+        }
+
+        .profile-ovpn {
+            color: #28a745;
+            font-size: 0.75rem;
+        }
+
+        .profile-warning {
+            color: #ffc107;
+            font-size: 0.75rem;
+        }
+
+        .profile-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .profile-connect, .profile-load, .profile-delete {
+            background: #555;
+            border: none;
+            color: white;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: background 0.3s ease;
+        }
+
+        .profile-connect {
+            background: #007BFF;
+        }
+
+        .profile-connect:hover { 
+            background: #0056b3; 
+        }
+
+        .profile-load:hover { 
+            background: #2196F3; 
+        }
+
+        .profile-delete:hover { 
+            background: #f44336; 
+        }
+
+        .connection-logs {
+            display: none;
+            max-height: 120px;
+            overflow-y: auto;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #00ff00;
+            margin-top: 10px;
+        }
+
+        .log-line {
+            margin-bottom: 2px;
+            line-height: 1.3;
+        }
+
+        .profile-options {
+            margin: 0px 0;
+        }
+
+        .user-profiles-section h4,
+        .logs-section h4 {
+            color: #64c6ff;
+            font-size: 0.95rem;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .form-section {
+        margin-bottom: 1.2rem;
+        }
+
+        /* MODE SELECTOR LADO A LADO */
+        .mode-selector {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .mode-checkboxes {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .mode-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 1px solid transparent;
+            min-width: 200px;
+            justify-content: center;
+            font-size: 0.95rem;
+        }
+
+        .mode-checkbox-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .mode-checkbox-item.active {
+            background: rgba(0, 123, 255, 0.2);
+            border: 1px solid #007BFF;
+            box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
+        }
+
+        .mode-checkbox-item .form-check-input {
+            margin: 0;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .mode-checkbox-item .form-check-label {
+            cursor: pointer;
+            font-weight: 600;
+            margin: 0;
+            white-space: nowrap;
+            font-size: 0.95rem;
+        }
+
+        .form-check-input:checked {
+            background-color: #007BFF;
+            border-color: #007BFF;
+        }
+
+        .btn-outline-info {
+            border-color: #17a2b8;
+            color: #17a2b8;
+        }
+
+        .btn-outline-info:hover {
+            background-color: #17a2b8;
+            border-color: #17a2b8;
+            color: white;
+        }
+
+        .ovpn-file-info {
+            background: rgba(23, 162, 184, 0.1);
+            border: 1px solid #17a2b8;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 0.8rem;
+        }
+
+        .text-info {
+            color: #17a2b8 !important;
+        }
+
+        .text-warning {
+            color: #ffc107 !important;
+        }
+
+        .text-muted {
+            color: #6c757d !important;
+            font-size: 0.8rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 15px;
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
+        .current-config {
+            background: rgba(40, 167, 69, 0.1);
+            border: 1px solid #28a745;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 8px 0;
+            font-size: 0.85rem;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .active-profile-badge {
+            background: #28a745;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            margin-left: 6px;
+        }
+
+        /* Scrollbar personalizado */
+        .profiles-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .profiles-list::-webkit-scrollbar-track {
+            background: #1A2B4F;
+        }
+
+        .profiles-list::-webkit-scrollbar-thumb {
+            background: #007BFF;
+            border-radius: 3px;
+        }
+
+        .profiles-list::-webkit-scrollbar-thumb:hover {
+            background: #0056b3;
+        }
+
+        .profile-credentials {
+            color: #28a745;
+            font-size: 0.75rem;
+            margin-bottom: 2px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+        }
+
+        .checkbox-item .form-check-input {
+            margin-top: 0;
+        }
+
+        /* Formulários com layout mais horizontal */
+        .form-section .row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 12px;
+        }
+
+        .form-section .row .col {
+            flex: 1;
+        }
+
+        /* Botões mais largos */
+        .d-grid.gap-2 {
+            display: flex;
+            gap: 15px;
+        }
+
+        .d-grid.gap-2 .btn {
+            flex: 1;
+            padding: 10px;
+            font-size: 0.9rem;
+        }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+        .login-container {
+            max-width: 95%;
+            margin: 1rem auto;
+            padding: 1.5rem;
+        }
+        
+        .config-sections-container {
+            flex-direction: column;
+        }
+        
+        .config-section {
+            min-height: auto;
+        }
+        }
+
+        @media (max-width: 576px) {
+        .mode-checkboxes {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .mode-checkbox-item {
+            min-width: 100%;
+            justify-content: flex-start;
+            padding: 12px 15px;
+        }
+        
+        .d-grid.gap-2 {
+            flex-direction: column;
+        }
+        
+        .config-content {
+            padding: 1rem;
+        }
+        
+        .checkbox-group {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        }
+
+        @media (max-width: 400px) {
+        .mode-checkbox-item {
+            padding: 10px 12px;
+        }
+        
+        .mode-checkbox-item .form-check-label {
+            font-size: 0.9rem;
+        }
+        }
+
+        /* ============ ESTILOS PARA MODAL DE DESAFIO 2FA ============ */
+        .challenge-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 3000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .challenge-content {
+            background: #0A162E;
+            padding: 2rem;
+            border-radius: 15px;
+            max-width: 400px;
+            width: 90%;
+            border: 2px solid #ffc107;
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+        }
+
+        .challenge-header {
+            color: #ffc107;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        .challenge-message {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #ffc107;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+        }
+
+        .challenge-input {
+            font-size: 1.2rem;
+            text-align: center;
+            letter-spacing: 2px;
+            font-weight: bold;
+            background: #1A2B4F;
+            border: 2px solid #ffc107;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .challenge-input:focus {
+            border-color: #ffc107;
+            box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.25);
+            outline: none;
+        }
+
+        .challenge-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .challenge-actions .btn {
+            flex: 1;
+            padding: 10px;
+        }
+
+        .challenge-timer {
+            text-align: center;
+            color: #ffc107;
+            font-size: 0.8rem;
+            margin-top: 10px;
+        }
+        
+        .twofa-section {
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(255, 193, 7, 0.05);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .twofa-section.active {
+            background: rgba(255, 193, 7, 0.1);
+            border-color: #ffc107;
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
+        }
+
+        .twofa-help {
+            color: #ffc107 !important;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .twofa-info-badge {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #ffc107;
+        }
+
+        .twofa-info-badge strong {
+            color: #ffc107;
+        }
+
+        /* ============ ESTILOS PARA MODAL DE ATUALIZAÇÃO ============ */
+        .update-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .update-content {
+            background: #0A162E;
+            padding: 2rem;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            border: 2px solid #28a745;
+            box-shadow: 0 0 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .update-info {
+            margin: 1.5rem 0;
+            padding: 1rem;
+            background: rgba(40, 167, 69, 0.1);
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+        }
+
+        .update-info p {
+            margin: 0.5rem 0;
+            color: white;
+        }
+
+        .update-notes {
+            margin-top: 1rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+        }
+
+        .update-progress {
+            margin: 1.5rem 0;
+            padding: 1rem;
+            background: rgba(0, 123, 255, 0.1);
+            border-radius: 8px;
+            border-left: 4px solid #007BFF;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007BFF, #28a745);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #007BFF;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .update-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+
+        .update-actions .btn {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+        }
   </style>
 </head>
 <body>
-  <div class="app-wrapper">
-    <div class="login-container">
-    <div class="dropdown">
-      <button class="btn btn-secondary dropdown-toggle menu-btn" type="button" id="menuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-        ☰
-      </button>
-      <ul class="dropdown-menu" aria-labelledby="menuDropdown">
-        <li><a class="dropdown-item" href="#" id="menuBtn">⚙️ Configurações</a></li>
-        <li><a class="dropdown-item" href="#" id="connLogsBtn">📋 Logs da Conexão</a></li>
-        <li><a class="dropdown-item" href="#" id="appLogsBtn">📊 Logs da Aplicação</a></li>
-        <li><a class="dropdown-item" href="#" id="updateBtn">🔄 Atualizações</a></li>
-        <li><a class="dropdown-item" href="#" id="minimizeBtn">📱 Minimizar para Tray</a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="#" id="closeBtn">❌ Fechar</a></li>
-      </ul>
-    </div>
-
-    <!-- Logotipo -->
-    <img src="logo.png" alt="BluePex Logo" class="logo img-fluid">
-
-    <!-- Seleção Unificada de Perfil -->
-    <div class="profile-selector">
-      <div class="mb-3">
-        <label for="profileSelect" class="form-label">🎯 Selecionar Perfil VPN</label>
-        <select class="form-select" id="profileSelect">
-          <option value="">Selecione um perfil...</option>
-          <!-- Perfis serão carregados dinamicamente -->
-        </select>
-      </div>
-
-      <!-- Informação do Perfil Selecionado -->
-      <div id="selectedProfileInfo" class="selected-profile-info" style="display: none;">
-        <div class="profile-info-header">
-          <span id="profileIcon">🎯</span>
-          <strong id="profileName">Perfil Selecionado</strong>
-          <span id="profileType" class="profile-type-badge">TIPO</span>
-        </div>
-        <div class="profile-details">
-          <small id="profileDetails">Detalhes do perfil...</small>
-        </div>
-      </div>
-    </div>
-
-    <!-- Formulário Unificado -->
-    <div id="formUnificado">
-      <!-- Seção de Credenciais (mostrar apenas para perfis usuário) -->
-      <div id="credentialsSection" class="form-section" style="display: none;">
-        <div class="mb-3">
-          <label for="userUsername" class="form-label">👤 Usuário</label>
-          <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
-        </div>
-        <div class="mb-3">
-          <label for="userPassword" class="form-label">🔒 Senha</label>
-          <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
-        </div>
-
-        <div class="mb-3 form-check">
-          <input class="form-check-input" type="checkbox" id="rememberCredentials">
-          <label class="form-check-label" for="rememberCredentials">
-            💾 Lembrar credenciais
-          </label>
-        </div>
-      </div>
-
-      <!-- Botões de Ação Unificados -->
-      <div class="action-buttons">
-        <button class="btn btn-success" id="btnConectar" disabled>🔗 Conectar VPN</button>
-        <button class="btn btn-danger" id="btnDesconectar" disabled>🔴 Desconectar VPN</button>
-      </div>
-
-
-
-       <!-- Device Code Display (Azure Login) -->
-       <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
-         <div class="alert alert-info">
-           <h6>🔐 Login Azure AD - Código de Verificação</h6>
-           <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
-           <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
-           <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
-         </div>
-       </div>
-      </div>
-
-      <!-- Campo de status -->
-      <div class="status mt-3" id="status" style="display: none;">
-        Status: Aguardando...
-      </div>
-
-      <!-- Botão Copiar Código -->
-      <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
-        📋 Copiar Código de Verificação
-      </button>
-    </div>
-
-      <!-- Informação do Perfil Selecionado -->
-      <div id="selectedProfileInfo" class="selected-profile-info" style="display: none;">
-        <div class="profile-info-header">
-          <span id="profileIcon">🎯</span>
-          <strong id="profileName">Perfil Selecionado</strong>
-          <span id="profileType" class="profile-type-badge">TIPO</span>
-        </div>
-        <div class="profile-details">
-          <small id="profileDetails">Detalhes do perfil...</small>
-        </div>
-      </div>
-    </div>
-
-    <!-- Formulário Unificado -->
-    <div id="formUnificado">
-      <!-- Seção de Credenciais (mostrar apenas para perfis usuário) -->
-      <div id="credentialsSection" class="form-section" style="display: none;">
-        <div class="mb-3">
-          <label for="userUsername" class="form-label">👤 Usuário</label>
-          <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
-        </div>
-        <div class="mb-3">
-          <label for="userPassword" class="form-label">🔒 Senha</label>
-          <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
-        </div>
-
-        <div class="mb-3 form-check">
-          <input class="form-check-input" type="checkbox" id="rememberCredentials">
-          <label class="form-check-label" for="rememberCredentials">
-            💾 Lembrar credenciais
-          </label>
-        </div>
-      </div>
-
-       <!-- Device Code Display (Azure Login) -->
-       <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
-         <div class="alert alert-info">
-           <h6>🔐 Login Azure AD - Código de Verificação</h6>
-           <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
-           <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
-           <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
-         </div>
-       </div>
-      </div>
-    </div>
-
-       <!-- Device Code Display (Azure Login) -->
-       <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
-         <div class="alert alert-info">
-           <h6>🔐 Login Azure AD - Código de Verificação</h6>
-           <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
-           <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
-           <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
-         </div>
-       </div>
-      </div>
-
-      <!-- Campo de status -->
-      <div class="status mt-3" id="status" style="display: none;">
-        Status: Aguardando...
-      </div>
-
-      <!-- Botão Copiar Código -->
-      <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
-        📋 Copiar Código de Verificação
-      </button>
-    </div>
-  </div>
-  </div>
-
-  <!-- Modal de Configurações -->
-  <div class="config-modal" id="configModal">
-    <div class="config-content">
-      <h3>⚙️ Configurações da VPN</h3>
-      
-      <div class="config-sections-container">
-        <!-- Configurações OpenVPN -->
-        <div class="config-section">
-          <h4>🔐 Configuração OpenVPN - Usuário/Senha</h4>
-          <div class="mb-3">
-            <label class="form-label">Arquivo de Configuração</label>
-             <div class="mb-3">
-               <button type="button" class="btn btn-outline-info" id="configSelectOvpn">
-                 📁 Selecionar Arquivo .ovpn
-               </button>
-               <div id="configOvpnInfo" class="ovpn-file-info" style="display: none;">
-                 <strong>Arquivo selecionado:</strong> <span id="configOvpnName">Nenhum arquivo selecionado</span>
-          </div>
-         </div>
-
-             <!-- Opções de Perfil -->
-             <div class="profile-options mb-3">
-               <div class="checkbox-group">
-                 <div class="checkbox-item">
-                   <input type="checkbox" id="configSaveProfile">
-                   <label for="configSaveProfile">💾 Salvar como novo perfil</label>
-                 </div>
-               </div>
-               <input type="text" id="configProfileName" placeholder="Nome do perfil (ex: VPN Escritório, Casa, Mobile)"
-                      style="display: none; margin-top: 8px;" class="form-control form-control-sm">
-               <button type="button" class="btn btn-success" id="configSaveUserProfile" style="display: none;">
-                 💾 Salvar Perfil de Usuário
-               </button>
-             </div>
-          </div>
-
-          <!-- Perfis Salvos -->
-          <div class="user-profiles-section">
-            <h4>💾 Perfis Salvos - Usuário/Senha</h4>
-            <div id="configProfilesList" class="profiles-list">
-              <div class="empty-state">Nenhum perfil salvo</div>
+    <div class="app-wrapper">
+        <div class="login-container">
+            <div class="dropdown">
+                <button class="btn btn-secondary dropdown-toggle menu-btn" type="button" id="menuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    ☰
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="menuDropdown">
+                    <li><a class="dropdown-item weight-600" href="#" id="menuBtn"><img src="icon-config.png" alt="Icon Config" class="mg-top-icon"> Configurações</a></li>
+                    <li><a class="dropdown-item weight-600" href="#" id="logsBtn"><img src="icon-logs.png" alt="Icon Logs" class="mg-top-icon"> Logs da Conexão</a></li>
+                    <li><a class="dropdown-item weight-600" href="#" id="appLogsBtn"><img src="icon-log-system.png" alt="Icon Logs System" class="mg-top-icon"> Logs da Aplicação</a></li>
+                    <li><a class="dropdown-item weight-600" href="#" id="updateBtn"><img src="icon-update.png" alt="Icon Update" class="mg-top-icon"> Atualizações</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="#" id="closeBtn"><img src="icon-close.png" alt="Icon Close" class="mg-top-icon"> Fechar</a></li>
+                </ul>
             </div>
-          </div>
+
+            <!-- Logotipo -->
+            <img src="logo.png" alt="BluePex Logo" class="logo img-fluid">
+
+            <!-- Seleção Unificada de Perfil -->
+            <div class="profile-selector">
+                <div class="mb-1">
+                    <label for="profileSelect" class="form-label">Selecionar Perfil VPN</label>
+                    <select class="form-select" id="profileSelect">
+                    <option value="">Selecione um perfil...</option>
+                    <!-- Perfis serão carregados dinamicamente -->
+                    </select>
+                </div>
+
+                <!-- Informação do Perfil Selecionado -->
+                <div id="selectedProfileInfo" class="selected-profile-info" style="display: none;">
+                    <div class="profile-info-header">
+                        <span id="profileIcon">🎯</span>
+                        <strong id="profileName">Perfil Selecionado</strong>
+                        <span id="profileType" class="profile-type-badge">TIPO</span>
+                    </div>
+                    <div class="profile-details mb-4">
+                        <small id="profileDetails">Detalhes do perfil...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulário Unificado -->
+            <div id="formUnificado">
+                <!-- Seção de Credenciais (mostrar apenas para perfis usuário) -->
+                <div id="credentialsSection" class="form-section" style="display: none;">
+                    <hr>
+                    <div class="mb-3">
+                        <label for="userUsername" class="form-label"><img src="icon-user.png" alt="Icon User" class="mg-top-icon"> Usuário</label>
+                        <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
+                    </div>
+                    <div class="mb-1">
+                        <label for="userPassword" class="form-label"><img src="icon-password.png" alt="Icon Password" class="mg-top-icon">  Senha</label>
+                        <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input class="form-check-input" type="checkbox" id="rememberCredentials">
+                        <label class="form-check-label" for="rememberCredentials">
+                            Lembrar credenciais
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Botões de Ação Unificados -->
+                <div class="action-buttons">
+                    <button class="btn btn-success" id="btnConectar" disabled>Conectar VPN</button>
+                    <button class="btn btn-danger" id="btnDesconectar" disabled>Desconectar VPN</button>
+                </div>
+
+                <!-- Device Code Display (Azure Login) -->
+                <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <h6>🔐 Login Azure AD - Código de Verificação</h6>
+                        <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
+                        <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
+                        <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Campo de status -->
+            <div class="status mt-3" id="status" style="display: none;">
+                Status: Aguardando...
+            </div>
+
+            <!-- Botão Copiar Código -->
+            <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
+                📋 Copiar Código de Verificação
+            </button>
         </div>
 
-      <!-- Configurações Azure -->
-         <div class="config-section">
-           <h4>🌐 Configuração Azure AD</h4>
+        <!-- Informação do Perfil Selecionado -->
+        <div id="selectedProfileInfo" class="selected-profile-info" style="display: none;">
+            <div class="profile-info-header">
+                <span id="profileIcon">🎯</span>
+                <strong id="profileName">Perfil Selecionado</strong>
+                <span id="profileType" class="profile-type-badge">TIPO</span>
+            </div>
+            <div class="profile-details mb-4">
+                <small id="profileDetails">Detalhes do perfil...</small>
+            </div>
+        </div>
+    </div>
 
+    <!-- Formulário Unificado -->
+    <div id="formUnificado">
+        <!-- Seção de Credenciais (mostrar apenas para perfis usuário) -->
+        <div id="credentialsSection" class="form-section" style="display: none;">
+            <hr>
             <div class="mb-3">
-              <label class="form-label">Arquivo de Configuração Azure</label>
-              <button type="button" class="btn btn-outline-info" id="configSelectAzureOvpn">
-                📁 Selecionar Arquivo .ovpn para Azure
-              </button>
-              <div id="configAzureOvpnInfo" class="ovpn-file-info" style="display: none;">
-                <strong>Arquivo selecionado:</strong> <span id="configAzureOvpnName">Nenhum arquivo selecionado</span>
-              </div>
+                <label for="userUsername" class="form-label"><img src="icon-user.png" alt="Icon User" class="mg-top-icon"> Usuário</label>
+                <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
             </div>
-           <!-- Opções de Perfil Azure -->
-           <div class="profile-options mb-3">
-             <div class="checkbox-group">
-               <div class="checkbox-item">
-                 <input type="checkbox" id="configSaveAzureProfile">
-                 <label for="configSaveAzureProfile">💾 Salvar como novo perfil Azure</label>
-               </div>
-             </div>
-             <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)"
-                    style="display: none; margin-top: 8px;" class="form-control form-control-sm">
-             <button type="button" class="btn btn-success" id="configSaveAzureProfileBtn" style="display: none;">
-               💾 Salvar Perfil Azure
-             </button>
-           </div>
-
-          <!-- Perfis Azure Salvos -->
-          <div class="user-profiles-section">
-            <h4>💾 Perfis Salvos - Azure AD</h4>
-            <div id="configAzureProfilesList" class="profiles-list">
-              <div class="empty-state">Nenhum perfil Azure salvo</div>
+            <div class="mb-1">
+                <label for="userPassword" class="form-label"><img src="icon-password.png" alt="Icon Password" class="mg-top-icon"> Senha</label>
+                <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
             </div>
-          </div>
+            <div class="mb-3 form-check">
+                <input class="form-check-input" type="checkbox" id="rememberCredentials">
+                <label class="form-check-label" for="rememberCredentials">
+                    Lembrar credenciais
+                </label>
+            </div>
         </div>
-       </div>
 
-
-      </div>
-
-      <!-- Ações LADO A LADO -->
-      <div class="config-actions">
-        <button class="btn btn-secondary flex-fill" id="configCloseBtn">❌ Fechar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal de Logs -->
-  <div class="logs-modal" id="connLogsModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>📋 Logs de Conexão</h3>
-         <button class="btn-close" id="closeLogsModalBtn" >❌</button>
-      </div>
-      <div class="modal-body">
-        <div class="logs-content" id="connLogsModalContent"></div>
-      </div>
-    </div>
-   </div>
-
-   <!-- Modal de Logs da Aplicação -->
-   <div class="logs-modal" id="appLogsModal">
-     <div class="modal-content">
-       <div class="modal-header">
-         <h3>📊 Logs da Aplicação</h3>
-         <button class="btn-close" id="appLogsCloseBtn">❌</button>
-       </div>
-       <div class="modal-body">
-         <div class="logs-content" id="appLogsModalContent"></div>
-       </div>
-     </div>
-   </div>
-
-   <!-- Modal de Atualização -->
-  <div class="update-modal" id="updateModal">
-    <div class="update-content">
-      <h3>🔄 Atualização Disponível</h3>
-
-      <div id="updateInfo" class="update-info">
-        <p><strong>Versão:</strong> <span id="updateVersion"></span></p>
-        <p><strong>Data de lançamento:</strong> <span id="updateDate"></span></p>
-        <div id="updateNotes" class="update-notes"></div>
-      </div>
-
-      <div id="updateProgress" class="update-progress" style="display: none;">
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
+       <!-- Device Code Display (Azure Login) -->
+        <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
+            <div class="alert alert-info">
+                <h6>🔐 Login Azure AD - Código de Verificação</h6>
+                <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
+                <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
+                <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
+            </div>
         </div>
-        <div class="progress-text">
-          <span id="progressPercent">0%</span> -
-          <span id="progressSpeed">0 KB/s</span> -
-          <span id="progressSize">0 MB / 0 MB</span>
-        </div>
-      </div>
-
-      <div class="update-actions">
-        <button class="btn btn-secondary" id="updateLaterBtn">Mais Tarde</button>
-        <button class="btn btn-primary" id="updateDownloadBtn">📥 Baixar Atualização</button>
-        <button class="btn btn-success" id="updateInstallBtn" style="display: none;">⚡ Instalar Agora</button>
-      </div>
     </div>
-  </div>
+</div>
+
+       <!-- Device Code Display (Azure Login) -->
+        <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
+            <div class="alert alert-info">
+                <h6>🔐 Login Azure AD - Código de Verificação</h6>
+                <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
+                <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
+                <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
+            </div>
+        </div>
+        </div>
+
+        <!-- Campo de status -->
+        <div class="status mt-3" id="status" style="display: none;">
+            Status: Aguardando...
+        </div>
+
+        <!-- Botão Copiar Código -->
+        <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
+            📋 Copiar Código de Verificação
+        </button>
+        </div>
+        </div>
+        </div>
+
+    <!-- Modal de Configurações -->
+    <div class="config-modal" id="configModal">
+        <div class="config-content">
+            <div class="config-header">
+                <h3 class="text-uppercase mt-2"> Configurações da VPN</h3>
+                <button class="btn close-modal weight-600" id="configCloseBtn"> X </button>
+            </div>
+
+            <!-- Ações LADO A LADO -->
+            <div class="config-sections-container mt-2">
+                <!-- Configurações OpenVPN -->
+                <div class="config-section">
+                    <h4><img src="icon-key-settings.png" alt="Icon Key" class="mg-top-icon"> Configuração OpenVPN - Usuário/Senha</h4>
+                    <div class="mb-3">
+                        <label class="form-label">Arquivo de Configuração:</label>
+                        <div class="mb-2">
+                            <button type="button" class="btn btn-outline-info" id="configSelectOvpn">
+                                📁 Selecionar Arquivo .ovpn
+                            </button>
+                            <div id="configOvpnInfo" class="ovpn-file-info" style="display: none;">
+                                <strong>Arquivo selecionado:</strong> <span id="configOvpnName">Nenhum arquivo selecionado</span>
+                            </div>
+                        </div>
+
+                        <!-- Opções de Perfil -->
+                        <div class="profile-options mb-4">
+                            <div class="checkbox-group">
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="configSaveProfile">
+                                    <label for="configSaveProfile" class="weight-600">Salvar como novo perfil</label>
+                                </div>
+                            </div>
+                            <input type="text" id="configProfileName" placeholder="Nome do perfil (ex: VPN Escritório, Casa, Mobile)"
+                                    style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+                            <button type="button" class="btn btn-success" id="configSaveUserProfile" style="display: none;">
+                                Salvar Perfil de Usuário
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Perfis Salvos -->
+                    <div class="user-profiles-section">
+                        <h4>Perfis Salvos - Usuário/Senha</h4>
+                        <div id="configProfilesList" class="profiles-list">
+                            <div class="empty-state">Nenhum perfil salvo</div>
+                        </div>
+                    </div>
+                </div>
+
+            <!-- Configurações Azure -->
+                <div class="config-section">
+                    <h4><img src="icon-azure.png" alt="Icon Azure" class="mg-top-icon"> Configuração Azure AD</h4>
+                        <div class="mb-1">
+                            <label class="form-label">Arquivo de Configuração Azure</label>
+                            <button type="button" class="btn btn-outline-info" id="configSelectAzureOvpn">
+                                📁 Selecionar Arquivo .ovpn para Azure
+                            </button>
+                            <div id="configAzureOvpnInfo" class="ovpn-file-info" style="display: none;">
+                                <strong>Arquivo selecionado:</strong> <span id="configAzureOvpnName">Nenhum arquivo selecionado</span>
+                            </div>
+                        </div>
+                        <!-- Opções de Perfil Azure -->
+                        <div class="profile-options mb-4">
+                            <div class="checkbox-group">
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="configSaveAzureProfile">
+                                    <label for="configSaveAzureProfile">Salvar como novo perfil Azure</label>
+                                </div>
+                            </div>
+                            <input type="text" id="configAzureProfileName" placeholder="Nome do perfil Azure (ex: Azure Corporativo)"
+                                    style="display: none; margin-top: 8px;" class="form-control form-control-sm">
+                            <button type="button" class="btn btn-success" id="configSaveAzureProfileBtn" style="display: none;">
+                                Salvar Perfil Azure
+                            </button>
+                        </div>
+
+                        <!-- Perfis Azure Salvos -->
+                        <div class="user-profiles-section">
+                            <h4>Perfis Salvos - Azure AD</h4>
+                            <div id="configAzureProfilesList" class="profiles-list">
+                                <div class="empty-state">Nenhum perfil Azure salvo</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Logs -->
+    <div class="logs-modal" id="connLogsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Logs de Conexão</h3>
+                <button class="btn-close" id="closeLogsModalBtn">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="logs-content" id="connLogsModalContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Logs da Aplicação -->
+    <div class="logs-modal" id="appLogsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="text-uppercase pt-3">Logs da Aplicação</h3>
+                <button class="btn-close" id="appLogsCloseBtn">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="logs-content" id="appLogsModalContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Atualização -->
+    <div class="update-modal" id="updateModal">
+        <div class="update-content">
+            <h3>🔄 Atualização Disponível</h3>
+
+            <div id="updateInfo" class="update-info">
+                <p><strong>Versão:</strong> <span id="updateVersion"></span></p>
+                <p><strong>Data de lançamento:</strong> <span id="updateDate"></span></p>
+                <div id="updateNotes" class="update-notes"></div>
+            </div>
+
+            <div id="updateProgress" class="update-progress" style="display: none;">
+                <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text">
+                <span id="progressPercent">0%</span> -
+                <span id="progressSpeed">0 KB/s</span> -
+                <span id="progressSize">0 MB / 0 MB</span>
+                </div>
+            </div>
+
+            <div class="update-actions">
+                <button class="btn btn-secondary" id="updateLaterBtn">Mais Tarde</button>
+                <button class="btn btn-primary" id="updateDownloadBtn">📥 Baixar Atualização</button>
+                <button class="btn btn-success" id="updateInstallBtn" style="display: none;">⚡ Instalar Agora</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal para token 2FA (INICIALMENTE ESCONDIDO) -->
-  <div class="challenge-modal" id="challengeModal">
-    <div class="challenge-content">
-      <div class="challenge-header">
-        🔐 Autenticação de Dois Fatores
-      </div>
-      <div class="challenge-message" id="challengeMessage">
-        Digite o token do Google Authenticator:
-      </div>
-      <input type="text" 
-             id="challengeResponse" 
-             class="challenge-input" 
-             placeholder="000000" 
-             maxlength="6"
-             autocomplete="off">
-      <div class="challenge-actions">
-        <button class="btn btn-secondary" id="cancelChallengeBtn">Cancelar</button>
-        <button class="btn btn-warning" id="submitChallengeBtn">Enviar Token</button>
-      </div>
-      <div class="challenge-timer" id="challengeTimer">
-        Tempo restante: 120 segundos
-      </div>
+    <div class="challenge-modal" id="challengeModal">
+        <div class="challenge-content">
+            <div class="challenge-header">
+                🔐 Autenticação de Dois Fatores
+            </div>
+            <div class="challenge-message" id="challengeMessage">
+                Digite o token do Google Authenticator:
+            </div>
+            <input type="text" 
+                    id="challengeResponse" 
+                    class="challenge-input" 
+                    placeholder="000000" 
+                    maxlength="6"
+                    autocomplete="off">
+            <div class="challenge-actions">
+                <button class="btn btn-secondary" id="cancelChallengeBtn">Cancelar</button>
+                <button class="btn btn-warning" id="submitChallengeBtn">Enviar Token</button>
+            </div>
+            <div class="challenge-timer" id="challengeTimer">
+                Tempo restante: 120 segundos
+            </div>
+        </div>
     </div>
-  </div>
 
-  <!-- Rodapé fixo na base -->
+    <!-- Rodapé fixo na base -->
     <div style="
       position: fixed;
       bottom: 0;
@@ -1415,15 +1430,14 @@
       font-size: 0.8rem;
       color: rgba(255,255,255,0.9);
       font-weight: 700;
-      background-color: rgba(10, 22, 46, 0.9);
+      background-color: #061C30;
       z-index: 1000;
-      border-top: 1px solid rgba(0, 123, 255, 0.3);
     ">
-      <strong>BluePex® Cybersecurity © Copyright 2025</strong>
+        <strong>BluePex® Cybersecurity © Copyright 2025</strong>
     </div>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="renderer.js"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="renderer.js"></script>
 </body>
 </html>
