@@ -584,6 +584,16 @@ async function initializeApp() {
         console.log('✅ Aplicação inicializada com sucesso');
         logToMain('RENDERER', 'INIT_SUCCESS', {});
         showStatus('Aplicação carregada com sucesso!', 'success');
+
+        // Abrir modal de atualização automaticamente no modo debug
+        if (document.title.includes('DEBUG')) {
+            setTimeout(() => {
+                if (updateModal) {
+                    updateModal.style.display = 'flex';
+                    console.log('🧪 Modal de atualização aberto automaticamente no modo debug');
+                }
+            }, 2000); // Delay para garantir carregamento completo
+        }
     } catch (error) {
         console.error('❌ Erro na inicialização:', error);
         logToMain('RENDERER', 'INIT_ERROR', {
