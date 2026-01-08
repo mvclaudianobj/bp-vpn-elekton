@@ -613,8 +613,8 @@ function createSplashWindow() {
      console.log('📁 __dirname:', __dirname);
      console.log('📄 Preload path:', path.join(__dirname, 'preload.js'));
      mainWindow = new BrowserWindow({
-     width: 480,
-     height: 500,
+     width: 640,
+     height: 680,
      frame: false,
      webPreferences: {
        nodeIntegration: true,
