@@ -58,7 +58,7 @@ ipcRenderer.on('vpn-status-check', (event, data) => {
 function adjustWindowSize() {
   const body = document.body;
   const height = body.scrollHeight + 20; // Margem
-  const width = 480; // Largura fixa
+  const width = 780; // Largura fixa
   ipcRenderer.send('adjust-window-size', { width, height });
 }
 
