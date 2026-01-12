@@ -537,9 +537,18 @@ function createTray() {
   // Suporte a tray em todas as plataformas
   let iconPath;
   if (process.platform === 'win32') {
-    iconPath = path.join(__dirname, 'icon.ico');
+    // No build do Electron, o ícone está na pasta app/
+    if (app.isPackaged) {
+      iconPath = path.join(process.resourcesPath, 'app', 'icon.ico');
+    } else {
+      iconPath = path.join(__dirname, 'icon.ico');
+    }
   } else {
-    iconPath = path.join(__dirname, 'icon.png');
+    if (app.isPackaged) {
+      iconPath = path.join(process.resourcesPath, 'app', 'icon.png');
+    } else {
+      iconPath = path.join(__dirname, 'icon.png');
+    }
   }
 
   try {

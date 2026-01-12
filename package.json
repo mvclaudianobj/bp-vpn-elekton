@@ -23,9 +23,9 @@
     "release:win": "npm run build:win && electron-builder --publish=always",
     "logs": "node scripts/view-logs.js",
     "logs:renderer": "node scripts/view-logs.js --filter renderer",
-     "logs:tail": "tail -f /var/log/bluepex-vpn/logs/*.log 2>/dev/null || tail -f ~/.config/bluepex-vpn/logs/*.log",
-     "test": "node scripts/test-logging.js && node scripts/test-modal-classes.js && node scripts/test-ui-functions.js"
-   },
+    "logs:tail": "tail -f /var/log/bluepex-vpn/logs/*.log 2>/dev/null || tail -f ~/.config/bluepex-vpn/logs/*.log",
+    "test": "node scripts/test-logging.js && node scripts/test-modal-classes.js && node scripts/test-ui-functions.js"
+  },
   "dependencies": {
     "@azure/msal-node": "^2.0.0",
     "axios": "^1.6.0",
@@ -88,10 +88,14 @@
         "from": "splash.html",
         "to": "app/splash.html"
       },
-      {
+       {
         "from": "build/icon.png",
         "to": "app/icon.png"
-      }
+       },
+       {
+        "from": "build/icon.ico",
+        "to": "app/icon.ico"
+       }
     ],
     "linux": {
       "target": [
