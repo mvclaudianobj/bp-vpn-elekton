@@ -1671,7 +1671,7 @@ if (window.electronAPI) {
         console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
-            updateBtn.textContent = `📥 Baixar ${version}`;
+            updateBtn.textContent = `<img src="icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
         }
         // Atualizar modal com nova versão
         const updateVersionEl = document.getElementById('updateVersion');
