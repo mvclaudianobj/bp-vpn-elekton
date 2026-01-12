@@ -534,45 +534,57 @@ function ensurePolicyFile() {
 }
 
 function createTray() {
-  // Tray funciona melhor no Linux, no Windows pode ter limitações
-  if (process.platform !== 'linux') {
-    console.log('Tray não suportado nesta plataforma, pulando...');
-    return;
+  // Suporte a tray em todas as plataformas
+  let iconPath;
+  if (process.platform === 'win32') {
+    iconPath = path.join(__dirname, 'icon.ico');
+  } else {
+    iconPath = path.join(__dirname, 'icon.png');
   }
 
-  tray = new Tray(path.join(__dirname, 'icon.png'));
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Mostrar',
-      click: () => {
+  try {
+    tray = new Tray(iconPath);
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Mostrar',
+        click: () => {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+      {
+        label: 'Minimizar para Tray',
+        click: () => {
+          mainWindow.hide();
+        }
+      },
+      {
+        label: 'Sair',
+        click: () => {
+          app.quit();
+        }
+      }
+    ]);
+    tray.setToolTip('BluePex VPN');
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
         mainWindow.show();
         mainWindow.focus();
       }
-    },
-    {
-      label: 'Minimizar para Tray',
-      click: () => {
-        mainWindow.hide();
-      }
-    },
-    {
-      label: 'Sair',
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-  tray.setToolTip('BluePex VPN');
-  tray.setContextMenu(contextMenu);
+    });
 
-  tray.on('click', () => {
-    if (mainWindow.isVisible()) {
-      mainWindow.hide();
-    } else {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+    console.log('Tray criado com sucesso para plataforma:', process.platform);
+  } catch (error) {
+    console.error('Erro ao criar tray:', error);
+    logger.logSystemError('TRAY_CREATION_FAILED', error, {
+      platform: process.platform,
+      iconPath: iconPath
+    });
+  }
 }
 
 function createSplashWindow() {
@@ -1952,6 +1964,17 @@ ipcMain.handle('load-azure-profiles', async () => {
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('get-platform', () => process.platform);
 
+// Minimizar para tray
+ipcMain.handle('minimize-to-tray', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide();
+    logger.log('SYSTEM', 'WINDOW_MINIMIZED_TO_TRAY', {
+      platform: process.platform,
+      trayAvailable: !!tray
+    });
+  }
+});
+
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = AZURE_PROFILES_PATH;
   try {
@@ -2407,12 +2430,6 @@ ipcMain.on('adjust-window-size', (event, { width, height }) => {
 
 ipcMain.handle('quit-app', async () => {
   app.quit();
-});
-
-ipcMain.handle('minimize-to-tray', async () => {
-  if (mainWindow) {
-    mainWindow.hide();
-  }
 });
 
 // ============ FUNÇÃO PARA SALVAR ESTADO DA APLICAÇÃO ============
