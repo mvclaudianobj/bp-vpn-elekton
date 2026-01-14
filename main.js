@@ -1060,7 +1060,9 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
                   directive: directiveName
                 });
                 
-                line = `${directiveName} ${targetFilePath}`;
+                // Escape backslashes for Windows OpenVPN config
+                const escapedPath = process.platform === 'win32' ? targetFilePath.replace(/\\/g, '\\\\') : targetFilePath;
+                line = `${directiveName} ${escapedPath}`;
                 if (extraParams) {
                   line += ` ${extraParams}`;
                 }
