@@ -1,6 +1,6 @@
 !macro customInstall
-  # Baixar a última versão do OpenVPN MSI
-  ExecWait 'powershell -Command "try { Invoke-WebRequest -Uri https://openvpn.net/downloads/OpenVPN-2.6.17-I001-amd64.msi -OutFile $TEMP\OpenVPN.msi -UseBasicParsing } catch { exit 1 }"'
+  # Baixar a última versão estável do OpenVPN MSI usando bitsadmin
+  ExecWait 'bitsadmin /transfer "OpenVPNDownload" /download /priority normal "https://build.openvpn.net/downloads/releases/latest/openvpn-latest-stable-amd64.msi" "$TEMP\OpenVPN.msi"'
 
   # Verificar se o download foi bem-sucedido
   ${If} ${Errors}
