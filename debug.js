@@ -239,14 +239,27 @@ window.electronAPI = {
   // Simulação de progresso de atualização
   simulateUpdateProgress: () => {
     console.log('Mock: Starting update progress simulation');
+
+    // Abrir modal de atualização automaticamente
+    const updateModal = document.getElementById('updateModal');
+    if (updateModal) {
+      updateModal.style.display = 'flex';
+    }
+
+    // Fase 1: Download (10 segundos fixos)
     let percent = 0;
+    const totalTime = 10000; // 10 segundos
+    const steps = 100;
+    const stepTime = totalTime / steps;
+    let step = 0;
+
     const interval = setInterval(() => {
-      percent += Math.random() * 10;
-      if (percent > 100) percent = 100;
+      step++;
+      percent = (step / steps) * 100;
 
       const progress = {
         percent: Math.round(percent),
-        speed: Math.round(Math.random() * 500 + 100), // KB/s
+        speed: Math.round(500 + Math.random() * 200), // KB/s mais consistente
         transferred: Math.round(percent * 10 / 100), // MB
         total: 10 // MB
       };
@@ -256,11 +269,53 @@ window.electronAPI = {
         window.electronAPI._onUpdateProgressCallback(progress);
       }
 
-      if (percent >= 100) {
+      if (step >= steps) {
         clearInterval(interval);
-        console.log('Mock: Update progress simulation complete');
+        console.log('Mock: Download phase complete');
+
+        // Mudar para botão "Aplicar Atualização"
+        const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+        const updateInstallBtn = document.getElementById('updateInstallBtn');
+        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
+        if (updateInstallBtn) updateInstallBtn.style.display = 'block';
+
+        // Fase 2: Instalação (5 segundos fixos)
+        setTimeout(() => {
+          console.log('Mock: Starting install phase');
+          let installPercent = 0;
+          const installSteps = 50;
+          const installStepTime = 5000 / installSteps; // 5 segundos
+          let installStep = 0;
+
+          const installInterval = setInterval(() => {
+            installStep++;
+            installPercent = (installStep / installSteps) * 100;
+
+            const installProgress = {
+              percent: Math.round(installPercent),
+              speed: Math.round(200 + Math.random() * 100), // KB/s menor para instalação
+              transferred: Math.round(installPercent * 5 / 100), // MB (arquivo menor)
+              total: 5 // MB
+            };
+
+            if (window.electronAPI._onUpdateProgressCallback) {
+              window.electronAPI._onUpdateProgressCallback(installProgress);
+            }
+
+            if (installStep >= installSteps) {
+              clearInterval(installInterval);
+              console.log('Mock: Install phase complete');
+
+              // Simular instalação concluída
+              setTimeout(() => {
+                alert('Atualização aplicada com sucesso! Reinicie o aplicativo.');
+                if (updateModal) updateModal.style.display = 'none';
+              }, 1000);
+            }
+          }, installStepTime);
+        }, 1000); // Pequena pausa antes da instalação
       }
-    }, 500);
+    }, stepTime);
   }
 };
 
