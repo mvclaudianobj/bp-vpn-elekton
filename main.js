@@ -191,6 +191,35 @@ class AppLogger {
   logAzureTokenPublish(username, success, details = {}) {
     this.log('AZURE', success ? 'TOKEN_PUBLISH_SUCCESS' : 'TOKEN_PUBLISH_FAILURE', { username, ...details }, success ? 'INFO' : 'ERROR');
   }
+
+  async getRecentLogs(maxLines = 100) {
+    try {
+      if (!this.currentLogFile || !fs.existsSync(this.currentLogFile)) {
+        return 'Nenhum arquivo de log encontrado.';
+      }
+
+      const content = fs.readFileSync(this.currentLogFile, 'utf8');
+      const lines = content.trim().split('\n').filter(line => line.trim());
+
+      // Retornar as últimas maxLines linhas
+      const recentLines = lines.slice(-maxLines);
+
+      // Formatar para exibição
+      return recentLines.map(line => {
+        try {
+          const entry = JSON.parse(line);
+          const time = new Date(entry.timestamp).toLocaleString();
+          return `[${time}] ${entry.level} [${entry.category}] ${entry.action}: ${JSON.stringify(entry.data)}`;
+        } catch (e) {
+          return line; // Se não conseguir parsear, retorna a linha crua
+        }
+      }).join('\n');
+
+    } catch (error) {
+      console.error('Erro ao ler logs recentes:', error);
+      return `Erro ao ler logs: ${error.message}`;
+    }
+  }
 }
 
 // Verificar processos OpenVPN ativos
