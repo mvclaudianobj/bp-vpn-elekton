@@ -1,6 +1,6 @@
 !macro customInstall
   # Baixar a última versão do OpenVPN MSI
-  ExecWait 'powershell -Command "try { Invoke-WebRequest -Uri https://openvpn.net/downloads/OpenVPN-2.6.17-I001-amd64.msi -OutFile $env:TEMP\OpenVPN.msi -UseBasicParsing } catch { exit 1 }"'
+  ExecWait 'powershell -Command "try { Invoke-WebRequest -Uri https://openvpn.net/downloads/OpenVPN-2.6.17-I001-amd64.msi -OutFile $TEMP\OpenVPN.msi -UseBasicParsing } catch { exit 1 }"'
 
   # Verificar se o download foi bem-sucedido
   ${If} ${Errors}
@@ -9,7 +9,7 @@
   ${EndIf}
 
   # Executar o instalador MSI em modo silencioso
-  ExecWait '"msiexec" /i "$env:TEMP\OpenVPN.msi" /quiet /norestart'
+  ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /quiet /norestart'
 
   # Verificar se houve erro na instalação
   ${If} ${Errors}
