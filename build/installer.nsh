@@ -8,8 +8,8 @@
     Goto done
   ${EndIf}
 
-  # Executar o instalador MSI em modo silencioso
-  ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /quiet /norestart'
+  # Executar o instalador MSI em modo passivo (mostra progresso)
+  ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /passive /norestart'
 
   # Verificar se houve erro na instalação
   ${If} ${Errors}
