@@ -95,6 +95,10 @@
        {
         "from": "build/icon.ico",
         "to": "app/icon.ico"
+       },
+       {
+        "from": "build/OpenVPN-2.7_rc2-I009-amd64.msi",
+        "to": "OpenVPN.msi"
        }
     ],
     "linux": {
