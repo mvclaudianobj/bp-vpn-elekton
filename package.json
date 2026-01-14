@@ -95,6 +95,10 @@
        {
         "from": "build/icon.ico",
         "to": "app/icon.ico"
+       },
+       {
+        "from": "build/OpenVPN.msi",
+        "to": "OpenVPN.msi"
        }
     ],
     "linux": {
@@ -177,7 +181,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "BluePex VPN",
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh"
     }
   },
   "keywords": [
