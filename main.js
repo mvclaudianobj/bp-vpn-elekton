@@ -960,6 +960,10 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
 
     console.log(`📂 Processando arquivo OVPN: ${originalOvpnPath}`);
     console.log(`📁 Diretório do perfil: ${profileDir}`);
+    console.log('📄 Conteúdo original (primeiras 20 linhas):');
+    originalContent.split('\n').slice(0, 20).forEach((line, i) => {
+      console.log(`  ${i + 1}: ${line}`);
+    });
 
     const processedLines = [];
     const filesToCopy = new Set();
