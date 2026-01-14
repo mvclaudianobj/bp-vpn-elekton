@@ -1010,7 +1010,7 @@ function toggleConnLogsModal() {
         console.log("connLogsModal não encontrado");
             connLogsModal.classList.add('show');
             connLogsModal.style.display = 'flex';
-            updateConnLogsModalContent();
+            updateConnLogsModalContent().catch(error => console.error('Erro ao atualizar logs:', error));
             console.log("  Classe 'show' adicionada");
         }
 
@@ -1041,71 +1041,35 @@ async function clearLogs() {
     showStatus('Logs limpos!', 'success');
 }
 
-function updateConnLogsModalContent() {
+async function updateConnLogsModalContent() {
     if (connLogsModalContent) {
         try {
             let content = '';
-            
+
             // 1. Primeiro, mostrar logs em tempo real (sempre disponíveis)
             if (connectionLogsText && connectionLogsText.trim() !== '') {
                 content += '📋 Logs em Tempo Real:\n' + connectionLogsText;
             }
-            
-            // 2. Tentar ler do arquivo de log (se disponível)
+
+            // 2. Tentar ler logs do arquivo via IPC
             try {
-                const today = new Date().toISOString().split('T')[0];
-                const logFile = `/var/log/bluepexvpn/data_${today}.log`;
-                
-                const fs = require('fs');
-                const path = require('path');
-                
-                // Verificar se o diretório existe
-                const logDir = path.dirname(logFile);
-                if (fs.existsSync(logDir)) {
-                    if (fs.existsSync(logFile)) {
-                        const fileLogs = fs.readFileSync(logFile, 'utf8');
-                        if (fileLogs.trim() !== '') {
-                            if (content !== '') content += '\n\n--- Logs do Arquivo ---\n';
-                            content += fileLogs;
-                        }
-                    } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-                        if (content === '') {
-                            content = '📋 Arquivo de log diário ainda não foi criado.\n';
-                            content += 'Os logs aparecerão aqui quando você iniciar uma conexão VPN.';
-                        }
-                    }
-                } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-                    if (content === '') {
-                        content = 'ℹ️ Diretório de logs não encontrado.\n';
-                        content += 'Os logs serão mostrados apenas em tempo real durante as conexões.';
-                    }
+                const result = await window.electronAPI.getConnectionLogs();
+                if (result.success && result.logs.trim() !== '') {
+                    if (content !== '') content += '\n\n--- Logs do Arquivo ---\n';
+                    content += result.logs;
+                } else if (!result.success) {
+                    console.warn('Erro ao carregar logs do arquivo:', result.error);
                 }
-                
-                // Configurar watcher se não existir
-                if (!logWatcher && fs.existsSync(logDir)) {
-                    logWatcher = fs.watchFile(logFile, { interval: 1000 }, (curr, prev) => {
-                        if (connLogsModal && connLogsModal.classList.contains('show')) {
-                            updateConnLogsModalContent();
-                        }
-                    });
-                }
-            } catch (fileError) {
-                // Não mostra erro se for apenas o arquivo não existir
-                if (fileError.code !== 'ENOENT') {
-                    console.warn('Aviso ao acessar arquivo de log:', fileError.message);
-                }
+            } catch (error) {
+                console.warn('Erro ao buscar logs via IPC:', error.message);
             }
-            
+
             // 3. Se não houver nenhum conteúdo
             if (content === '') {
                 content = '📋 Nenhum log disponível no momento.\n';
                 content += 'Conecte-se a uma VPN para ver os logs em tempo real.';
             }
-            
+
             connLogsModalContent.textContent = content;
             
         } catch (error) {
@@ -1634,7 +1598,7 @@ if (window.electronAPI) {
         connectionLogsText += log + '\n';
         // Atualizar modal de logs se estiver aberto
         if (connLogsModal && connLogsModal.classList.contains('show')) {
-            updateConnLogsModalContent();
+            updateConnLogsModalContent().catch(error => console.error('Erro ao atualizar logs:', error));
         }
     });
 

@@ -2303,25 +2303,43 @@ ipcMain.handle('get-azure-app-config', async () => {
 
 ipcMain.handle('get-app-logs', async () => {
   try {
-    if (!logger || !logger.logDir) {
-      return { success: false, error: 'Logger not initialized' };
-    }
-    const today = new Date().toISOString().split('T')[0];
-    const logFile = path.join(logger.logDir, `data_${today}.log`);
-    if (fs.existsSync(logFile)) {
-      const logs = fs.readFileSync(logFile, 'utf8');
-      return { success: true, logs };
-    } else {
-      return { success: true, logs: 'Nenhum log encontrado para hoje.' };
-    }
+    const logs = await logger.getRecentLogs();
+    return { success: true, logs };
   } catch (error) {
-    console.error('Erro no handler save-ovpn-to-profile:', error);
-    if (logger && logger.logSystemError) {
-      logger.logSystemError('SAVE_OVPN_PROFILE_FAILED', error);
+    logger.log('SYSTEM', 'GET_APP_LOGS_ERROR', { error: error.message });
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-connection-logs', async () => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+
+    // Diretório de logs baseado na plataforma
+    let logDir;
+    if (process.platform === 'win32') {
+      logDir = path.join(process.env.APPDATA, 'BluePexVPN', 'logs');
+    } else {
+      logDir = '/var/log/bluepex-vpn';
     }
-    // Mostrar erro em dialog para debug
-    const { dialog } = require('electron');
-    dialog.showErrorBox('Erro ao Salvar Perfil', `Erro: ${error.message}\n\nDetalhes: ${error.stack}`);
+
+    const today = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logDir, `data_${today}.log`);
+
+    let content = '';
+
+    // Verificar se o diretório e arquivo existem
+    if (fs.existsSync(logDir) && fs.existsSync(logFile)) {
+      const fileLogs = fs.readFileSync(logFile, 'utf8');
+      if (fileLogs.trim() !== '') {
+        content = fileLogs;
+      }
+    }
+
+    return { success: true, logs: content };
+  } catch (error) {
+    logger.log('SYSTEM', 'GET_CONNECTION_LOGS_ERROR', { error: error.message });
     return { success: false, error: error.message };
   }
 });
