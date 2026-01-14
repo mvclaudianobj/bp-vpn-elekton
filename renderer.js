@@ -1064,22 +1064,28 @@ async function updateConnLogsModalContent() {
                 console.warn('Erro ao buscar logs via IPC:', error.message);
             }
 
-            // 3. Se não houver nenhum conteúdo
+            // 3. Se não houver nenhum conteúdo, mostrar mensagem amigável
             if (content === '') {
-                content = '📋 Nenhum log disponível no momento.\n';
-                content += 'Conecte-se a uma VPN para ver os logs em tempo real.';
+                content = '📋 Nenhum log de conexão disponível ainda.\n\n';
+                content += '💡 Dica: Conecte-se a uma VPN para ver os logs em tempo real aqui!\n\n';
+                content += 'Os logs aparecerão automaticamente quando você iniciar uma conexão.';
             }
 
             connLogsModalContent.textContent = content;
-            
+
         } catch (error) {
             console.error('Erro ao carregar logs:', error);
-            connLogsModalContent.textContent = '📋 Erro ao carregar logs. Verifique o console para mais detalhes.';
+            // Mesmo em erro, mostrar mensagem amigável em vez de erro técnico
+            connLogsModalContent.textContent = '📋 Nenhum log de conexão disponível ainda.\n\n';
+            connLogsModalContent.textContent += '💡 Dica: Conecte-se a uma VPN para ver os logs em tempo real!\n\n';
+            connLogsModalContent.textContent += 'Se o problema persistir, verifique o console para detalhes técnicos.';
         }
     }
 
     // Rolar para o final
-    connLogsModalContent.scrollTop = connLogsModalContent.scrollHeight;
+    if (connLogsModalContent) {
+        connLogsModalContent.scrollTop = connLogsModalContent.scrollHeight;
+    }
 }
 
 function hideConnectionElements() {
