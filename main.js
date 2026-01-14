@@ -1254,22 +1254,58 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
              console.log(`🔐 Usando sudo com ${openvpnPath} para elevação`);
              console.log(`🔐 Método de elevação armazenado: ${currentElevationMethod}`);
            }
-       } else if (process.platform === 'win32') {
-         const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
-         openvpnCommand = 'powershell.exe';
-         openvpnArgsFinal = [
-           '-Command',
-           `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
-         ];
-         spawnOptions.shell = true;
-         logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-           connectionId,
-           strategy: 'powershell_runas',
-           openvpnPath,
-           profileDir,
-           platform: 'windows'
+        } else if (process.platform === 'win32') {
+          // Detect OpenVPN installation path on Windows
+          const possiblePaths = [
+            'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe',
+            'C:\\Program Files (x86)\\OpenVPN\\bin\\openvpn.exe',
+            'C:\\Program Files\\OpenVPN Connect\\openvpn.exe',
+            'C:\\Program Files (x86)\\OpenVPN Connect\\openvpn.exe'
+          ];
+
+          let openvpnPath = null;
+          for (const path of possiblePaths) {
+            if (fs.existsSync(path)) {
+              openvpnPath = path;
+              break;
+            }
+          }
+
+          if (!openvpnPath) {
+            // Try to find via registry or PATH
+            try {
+              const { execSync } = require('child_process');
+              const result = execSync('where openvpn.exe 2>nul', { encoding: 'utf8' });
+              openvpnPath = result.trim().split('\n')[0];
+            } catch (e) {
+              logger.log('CONNECTION', 'OPENVPN_NOT_FOUND_WINDOWS', {
+                connectionId,
+                searchedPaths: possiblePaths,
+                error: 'OpenVPN executable not found'
+              }, 'ERROR');
+              reject(new Error('OpenVPN não encontrado. Verifique se está instalado corretamente.'));
+              return;
+            }
+          }
+
+          logger.log('CONNECTION', 'OPENVPN_PATH_DETECTED', {
+            connectionId,
+            openvpnPath,
+            method: 'path_detection'
+          });
+
+          openvpnCommand = openvpnPath;
+          openvpnArgsFinal = openvpnArgs;
+          spawnOptions.shell = false; // Direct execution, no PowerShell wrapper
+
+          logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+            connectionId,
+            strategy: 'direct_execution',
+            openvpnPath,
+            profileDir,
+            platform: 'windows'
          });
-         console.log('🔐 Usando PowerShell com RunAs para elevação no Windows');
+          console.log(`🔐 Usando OpenVPN diretamente: ${openvpnPath}`);
        } else {
          logger.log('CONNECTION', 'UNSUPPORTED_PLATFORM', {
            connectionId,
