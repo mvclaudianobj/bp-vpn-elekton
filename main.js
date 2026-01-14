@@ -1013,17 +1013,18 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
       
       const fileDirectives = ['ca', 'cert', 'key', 'tls-auth', 'tls-crypt', 'pkcs12', 'dh', 'extra-certs', 'crl-verify'];
       
-      for (const directive of fileDirectives) {
-        if (line.startsWith(directive + ' ')) {
-          console.log(`🔍 Processando diretiva: ${line}`);
-          
-          const parts = line.split(/\s+/);
-          if (parts.length >= 2) {
-            const directiveName = parts[0];
-            let fileNamePart = parts[1];
-            let extraParams = parts.slice(2).join(' ');
-            
-            console.log(`   Diretiva: ${directiveName}, Arquivo: ${fileNamePart}, Extra: ${extraParams}`);
+       for (const directive of fileDirectives) {
+         if (line.startsWith(directive + ' ')) {
+           console.log(`🔍 Processando diretiva: ${line}`);
+
+           const parts = line.split(/\s+/);
+           if (parts.length >= 2) {
+             const directiveName = parts[0];
+             let fileNamePart = parts[1];
+             let extraParams = parts.slice(2).join(' ');
+
+             console.log(`   Diretiva: ${directiveName}, Arquivo: ${fileNamePart}, Extra: ${extraParams}`);
+             console.log(`   Parts: ${JSON.stringify(parts)}`);
             
             if (fileNamePart) {
               let absoluteSourcePath;
@@ -1099,8 +1100,12 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
     const processedContent = processedLines.filter(line => line.trim() !== '').join('\n');
     const targetOvpnPath = path.join(profileDir, `${profileId}.ovpn`);
     await fsAsync.writeFile(targetOvpnPath, processedContent, 'utf-8');
-    
+
     console.log(`✅ Perfil OVPN processado salvo em: ${targetOvpnPath}`);
+    console.log('📄 Conteúdo processado (primeiras 20 linhas):');
+    processedContent.split('\n').slice(0, 20).forEach((line, i) => {
+      console.log(`  ${i + 1}: ${line}`);
+    });
     
     return {
       success: true,
