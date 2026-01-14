@@ -234,6 +234,33 @@ window.electronAPI = {
   getAppLogs: async () => {
     console.log('Mock: getAppLogs called');
     return { success: true, logs: '[2025-12-18T15:00:00.000Z] INFO [SYSTEM] MOCK_LOG: This is a mock log entry for debugging.' };
+  },
+
+  // Simulação de progresso de atualização
+  simulateUpdateProgress: () => {
+    console.log('Mock: Starting update progress simulation');
+    let percent = 0;
+    const interval = setInterval(() => {
+      percent += Math.random() * 10;
+      if (percent > 100) percent = 100;
+
+      const progress = {
+        percent: Math.round(percent),
+        speed: Math.round(Math.random() * 500 + 100), // KB/s
+        transferred: Math.round(percent * 10 / 100), // MB
+        total: 10 // MB
+      };
+
+      // Trigger the progress event
+      if (window.electronAPI._onUpdateProgressCallback) {
+        window.electronAPI._onUpdateProgressCallback(progress);
+      }
+
+      if (percent >= 100) {
+        clearInterval(interval);
+        console.log('Mock: Update progress simulation complete');
+      }
+    }, 500);
   }
 };
 
@@ -247,5 +274,15 @@ window.ipcRenderer = {
   on: (channel, callback) => console.log('Mock ipcRenderer.on:', channel),
   removeAllListeners: (channel) => console.log('Mock ipcRenderer.removeAllListeners:', channel)
 };
+
+// Adicionar event listener para simulação de progresso
+document.addEventListener('DOMContentLoaded', () => {
+  const simulateBtn = document.getElementById('simulateProgressBtn');
+  if (simulateBtn) {
+    simulateBtn.addEventListener('click', () => {
+      window.electronAPI.simulateUpdateProgress();
+    });
+  }
+});
 
 console.log('🔧 Debug mocks loaded - Electron APIs simulated for browser debugging');

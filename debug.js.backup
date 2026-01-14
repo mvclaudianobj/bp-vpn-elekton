@@ -1,0 +1,15 @@
+  }
+};
+
+// Mock para ipcRenderer (se usado diretamente)
+window.ipcRenderer = {
+  send: (channel, ...args) => console.log('Mock ipcRenderer.send:', channel, ...args),
+  invoke: async (channel, ...args) => {
+    console.log('Mock ipcRenderer.invoke:', channel, ...args);
+    return { success: true };
+  },
+  on: (channel, callback) => console.log('Mock ipcRenderer.on:', channel),
+  removeAllListeners: (channel) => console.log('Mock ipcRenderer.removeAllListeners:', channel)
+};
+
+console.log('🔧 Debug mocks loaded - Electron APIs simulated for browser debugging');
