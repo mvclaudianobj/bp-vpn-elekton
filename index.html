@@ -1079,10 +1079,18 @@
             margin-top: 1.5rem;
         }
 
-        .update-actions .btn {
-            padding: 8px 16px;
-            font-size: 0.9rem;
-        }
+    .update-actions .btn {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
+
+    .update-phase {
+        text-align: center;
+        color: #007BFF;
+        font-weight: bold;
+        margin-bottom: 1rem;
+        font-size: 1rem;
+    }
 
         .update-actions .btn-secondary {
             background-color: #cccccc36;
@@ -1380,16 +1388,17 @@
                 <div id="updateNotes" class="update-notes"></div>
             </div>
 
-            <div id="updateProgress" class="update-progress" style="display: none;">
-                <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-text">
-                <span id="progressPercent">0%</span> -
-                <span id="progressSpeed">0 KB/s</span> -
-                <span id="progressSize">0 MB / 0 MB</span>
-                </div>
-            </div>
+             <div id="updateProgress" class="update-progress" style="display: none;">
+                 <div id="updatePhase" class="update-phase">Baixando atualização...</div>
+                 <div class="progress-bar">
+                 <div class="progress-fill" id="progressFill"></div>
+                 </div>
+                 <div class="progress-text">
+                 <span id="progressPercent">0%</span> -
+                 <span id="progressSpeed">0 KB/s</span> -
+                 <span id="progressSize">0 MB / 0 MB</span>
+                 </div>
+             </div>
 
             <div class="update-actions">
                 <button class="btn btn-secondary" id="updateLaterBtn">Mais Tarde</button>

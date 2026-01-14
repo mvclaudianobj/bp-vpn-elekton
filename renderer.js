@@ -377,6 +377,15 @@ function setupEventListeners() {
     if (updateInstallBtn) {
         updateInstallBtn.addEventListener('click', async () => {
             try {
+                // Mostrar progresso de instalação
+                const updatePhase = document.getElementById('updatePhase');
+                if (updatePhase) updatePhase.textContent = 'Instalando atualização...';
+
+                // Esconder botões
+                updateInstallBtn.style.display = 'none';
+                const updateLaterBtn = document.getElementById('updateLaterBtn');
+                if (updateLaterBtn) updateLaterBtn.style.display = 'none';
+
                 showStatus('Aplicando atualização...', 'success');
                 const result = await window.electronAPI.installUpdate();
                 if (result.success) {
@@ -1701,22 +1710,13 @@ if (window.electronAPI) {
     });
 
     window.electronAPI.onUpdateDownloaded((info) => {
-        console.log('✅ Update downloaded:', info);
-        logToMain('RENDERER', 'UPDATE_DOWNLOADED', { info: info });
-        const updateInstallBtn = document.getElementById('updateInstallBtn');
-        if (updateInstallBtn) {
-            updateInstallBtn.style.display = 'block';
-            updateInstallBtn.textContent = '⚡ Aplicar Atualização';
-        }
+        console.log('📦 Update downloaded:', info);
         const updateDownloadBtn = document.getElementById('updateDownloadBtn');
-        if (updateDownloadBtn) {
-            updateDownloadBtn.style.display = 'none';
-        }
-        const updateProgress = document.getElementById('updateProgress');
-        if (updateProgress) {
-            updateProgress.style.display = 'none';
-        }
-        showStatus('Atualização baixada com sucesso! Clique em "Aplicar Atualização" para instalar.', 'success');
+        const updateInstallBtn = document.getElementById('updateInstallBtn');
+        const updatePhase = document.getElementById('updatePhase');
+        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
+        if (updateInstallBtn) updateInstallBtn.style.display = 'block';
+        if (updatePhase) updatePhase.textContent = 'Pronto para instalar!';
     });
 
     window.electronAPI.onUpdateDownloadStarted(() => {
