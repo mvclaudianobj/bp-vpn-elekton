@@ -80,6 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Window controls
     const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
     const windowCloseBtn = document.getElementById('windowCloseBtn');
+    const minimizeToTrayBtn = document.getElementById('minimizeToTrayBtn');
 
     console.log('🎛️ Window controls - windowMinimizeBtn:', !!windowMinimizeBtn, 'windowCloseBtn:', !!windowCloseBtn);
 
@@ -101,6 +102,21 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ Window close listener added');
     } else {
         console.log('❌ windowCloseBtn not found');
+    }
+
+    if (minimizeToTrayBtn) {
+        minimizeToTrayBtn.addEventListener('click', async () => {
+            console.log('🖱️ Minimize to tray clicked');
+            try {
+                await window.electronAPI.minimizeToTray();
+                console.log('✅ Minimizado para tray');
+            } catch (error) {
+                console.error('❌ Erro ao minimizar para tray:', error);
+            }
+        });
+        console.log('✅ Minimize to tray listener added');
+    } else {
+        console.log('❌ minimizeToTrayBtn not found');
     }
 
     const menuBtn = document.getElementById('menuBtn');
