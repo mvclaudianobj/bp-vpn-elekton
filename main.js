@@ -662,22 +662,25 @@ function createSplashWindow() {
      console.log('🏗️ Criando janela principal...');
      console.log('📁 __dirname:', __dirname);
      console.log('📄 Preload path:', path.join(__dirname, 'preload.js'));
-     mainWindow = new BrowserWindow({
-     width: 640,
-     height: 680,
-     frame: false,
-     webPreferences: {
-       nodeIntegration: true,
-       contextIsolation: false,
-      preload: path.join(__dirname, 'preload.js')
-      },
-      title: 'BluePex VPN Connections',
-      icon: path.join(__dirname, 'icon.ico'), // Adicionar ícone
-     autoHideMenuBar: false,
-     resizable: true,
-     center: true,
-     show: false,
-    });
+      mainWindow = new BrowserWindow({
+      width: 640,
+      height: 680,
+      frame: false,
+      minimizable: true,
+      maximizable: false,
+      movable: true,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+       preload: path.join(__dirname, 'preload.js')
+       },
+       title: 'BluePex VPN Connections',
+       icon: path.join(__dirname, 'icon.ico'), // Adicionar ícone
+      autoHideMenuBar: false,
+      resizable: true,
+      center: true,
+      show: false,
+     });
 
     console.log('✅ Janela principal criada com sucesso');
 
