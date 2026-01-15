@@ -2067,6 +2067,20 @@ ipcMain.handle('minimize-to-tray', () => {
   }
 });
 
+ipcMain.handle('minimize-window', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+    logger.log('SYSTEM', 'WINDOW_MINIMIZED', {});
+  }
+});
+
+ipcMain.handle('close-window', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+    logger.log('SYSTEM', 'WINDOW_CLOSED', {});
+  }
+});
+
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = AZURE_PROFILES_PATH;
   try {

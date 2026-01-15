@@ -107,9 +107,14 @@ globalThis.electronAPI = {
   onVPNConnected: (callback) => ipcRenderer.on('vpn-connected', callback),
   onVPNLog: (callback) => ipcRenderer.on('vpn-log', callback),
 
-  // Minimizar para tray
-  minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
-  getPlatform: () => ipcRenderer.invoke('get-platform'),
+   // Minimizar para tray
+   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
+
+   // Controles da janela
+   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+   closeWindow: () => ipcRenderer.invoke('close-window'),
+
+   getPlatform: () => ipcRenderer.invoke('get-platform'),
 
    // Obter versão da aplicação
    getVersion: () => ipcRenderer.invoke('get-version'),

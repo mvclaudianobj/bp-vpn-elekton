@@ -77,6 +77,22 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update copyright with dynamic year and version
     updateCopyright();
 
+    // Window controls
+    const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
+    const windowCloseBtn = document.getElementById('windowCloseBtn');
+
+    if (windowMinimizeBtn) {
+        windowMinimizeBtn.addEventListener('click', () => {
+            window.electronAPI.minimizeWindow();
+        });
+    }
+
+    if (windowCloseBtn) {
+        windowCloseBtn.addEventListener('click', () => {
+            window.electronAPI.closeWindow();
+        });
+    }
+
     const menuBtn = document.getElementById('menuBtn');
     const configModal = document.getElementById('configModal');
 
