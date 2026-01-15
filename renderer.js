@@ -519,6 +519,12 @@ async function initializeApp() {
         console.log('ℹ️ windowCloseBtn não encontrado');
     }
 
+    // Hide custom title bar on Windows since it has native frame
+    if (navigator.platform.includes('Win')) {
+      const titleBar = document.getElementById('title-bar');
+      if (titleBar) titleBar.style.display = 'none';
+    }
+
     // Configurar event listeners
     setupEventListeners();
 
