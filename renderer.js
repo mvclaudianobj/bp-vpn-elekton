@@ -521,14 +521,14 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Minimizar para tray (só no Linux)
+    // Minimizar janela
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Minimizado para tray');
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada');
             } catch (error) {
-                console.error('❌ Erro ao minimizar para tray:', error);
+                console.error('❌ Erro ao minimizar janela:', error);
             }
         });
         console.log('✅ Event listener adicionado ao minimizeBtn');

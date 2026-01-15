@@ -669,6 +669,7 @@ function createSplashWindow() {
       minimizable: true,
       maximizable: false,
       movable: true,
+      showInTaskbar: true,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
