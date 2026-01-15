@@ -223,7 +223,7 @@
       "requestedExecutionLevel": "requireAdministrator"
     },
     "win": {
-      "requestedExecutionLevel": "requireAdministrator"
+      "requestedExecutionLevel": "highestAvailable"
     },
     "nsis": {
       "oneClick": false,
