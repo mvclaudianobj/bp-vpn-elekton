@@ -5,6 +5,31 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-01-15
+
+### 🎯 Novidades
+- **Janela sem Frame**: Removida barra de menu do sistema e implementada barra de título customizada com marca BluePex VPN
+- **Controle Unificado de Minimização**: Única opção "Minimizar" no menu que mantém ícones visíveis na barra de tarefas e no tray
+- **Interface Limpa**: Removida opção duplicada de minimizar para tray para melhor UX
+
+### 🐛 Correções
+- **Conexão Windows**: Corrigida execução do OpenVPN removendo complexidade de elevação do PowerShell
+- **Localização do Arquivo de Auth**: Alterado arquivo de autenticação do diretório temporário para diretório do perfil para melhor compatibilidade com Windows
+- **UI do Modal de Atualização**: Removido texto de progresso indefinido que aparecia durante verificações de atualização
+- **Comportamento de Minimização**: Garantida minimização correta para barra de tarefas em vez de ocultar imediatamente
+
+### 📱 Melhorias de Plataforma
+- **Windows**: Execução direta do OpenVPN sem verbo RunAs do PowerShell para melhor compatibilidade
+- **Multiplataforma**: Melhorado tratamento de caminhos e permissões de arquivos para Windows
+- **Debugging**: Logs aprimorados para melhor resolução de problemas no Windows
+
+### 🔧 Técnico
+- **Configurações Electron**: Otimizada configuração do BrowserWindow para design sem frame
+- **Comunicações IPC**: Simplificadas operações de minimização entre processos main e renderer
+- **Sistema de Arquivos**: Melhor tratamento de caminhos de arquivos e permissões no Windows
+
+---
+
 ## [0.1.2] - 2026-01-15
 
 ### Adicionado

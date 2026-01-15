@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-01-15
+
+### 🎯 Features
+- **Frameless Window Design**: Removed system menu bar and implemented custom title bar with BluePex VPN branding
+- **Unified Minimize Control**: Single "Minimizar" option in menu that keeps both taskbar and tray icons visible
+- **Cleaner Interface**: Removed duplicate minimize-to-tray option for better UX
+
+### 🐛 Bug Fixes
+- **Windows Connection Fix**: Fixed OpenVPN execution by removing PowerShell elevation complexity
+- **Auth File Location**: Changed auth file from temp directory to profile directory for better Windows compatibility
+- **Update Modal UI**: Removed undefined progress text that appeared during update checks
+- **Minimize Behavior**: Ensured proper minimize to taskbar instead of immediate hiding
+
+### 📱 Platform Improvements
+- **Windows**: Direct OpenVPN execution without PowerShell RunAs verb for better compatibility
+- **Cross-platform**: Improved path handling and file permissions for Windows environments
+- **Debugging**: Enhanced logging for better troubleshooting on Windows
+
+### 🔧 Technical
+- **Electron Settings**: Optimized BrowserWindow configuration for frameless design
+- **IPC Communications**: Streamlined minimize operations between main and renderer processes
+- **File System**: Better handling of Windows file paths and permissions
+
+---
+
 ## [0.1.2] - 2026-01-15
 
 ### Added
