@@ -464,8 +464,8 @@ async function initializeApp() {
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Janela minimizada para tray');
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada para barra de tarefas');
             } catch (error) {
                 console.error('❌ Erro ao minimizar:', error);
             }
@@ -480,8 +480,8 @@ async function initializeApp() {
     if (minimizeToTrayBtn) {
         minimizeToTrayBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Janela minimizada para tray');
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada para barra de tarefas');
             } catch (error) {
                 console.error('❌ Erro ao minimizar para tray:', error);
             }
