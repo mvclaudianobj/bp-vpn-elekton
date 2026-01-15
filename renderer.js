@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (windowMinimizeBtn) {
         windowMinimizeBtn.addEventListener('click', () => {
             console.log('🖱️ Window minimize button clicked');
+            logToMain('RENDERER', 'MINIMIZE_WINDOW_CLICKED', { source: 'title_bar' });
             window.electronAPI.minimizeWindow();
         });
         console.log('✅ Window minimize listener added');
