@@ -665,7 +665,7 @@ function createSplashWindow() {
       mainWindow = new BrowserWindow({
       width: 640,
       height: 712, // 680 + 32 for title bar
-       frame: true,
+       frame: false,
       minimizable: true,
       maximizable: false,
       movable: true,
@@ -685,28 +685,8 @@ function createSplashWindow() {
 
     console.log('✅ Janela principal criada com sucesso');
 
-   const menuTemplate = [
-    {
-      label: 'Arquivo',
-      submenu: [
-        { role: 'quit', label: 'Sair' }
-      ]
-    },
-    {
-      label: 'Visualizar',
-      submenu: [
-        {
-          label: 'Minimizar para Tray',
-          click: () => {
-            mainWindow.hide();
-          }
-        }
-      ]
-    }
-  ];
-
-  const menu = Menu.buildFromTemplate(menuTemplate);
-  Menu.setApplicationMenu(menu);
+   // Menu removido conforme solicitado
+   Menu.setApplicationMenu(null);
 
   console.log('📄 Carregando index.html...');
   mainWindow.loadFile('index.html');

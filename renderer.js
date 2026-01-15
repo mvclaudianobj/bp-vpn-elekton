@@ -459,15 +459,15 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Minimizar janela (hide to tray but keep in taskbar)
+    // Minimizar janela (minimize to taskbar)
     const minimizeBtn = document.getElementById('minimizeBtn');
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Janela minimizada para tray');
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada para barra de tarefas');
             } catch (error) {
-                console.error('❌ Erro ao minimizar para tray:', error);
+                console.error('❌ Erro ao minimizar:', error);
             }
         });
         console.log('✅ Event listener adicionado ao minimizeBtn');
@@ -480,8 +480,8 @@ async function initializeApp() {
     if (minimizeToTrayBtn) {
         minimizeToTrayBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Janela minimizada para tray');
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada para barra de tarefas');
             } catch (error) {
                 console.error('❌ Erro ao minimizar para tray:', error);
             }
