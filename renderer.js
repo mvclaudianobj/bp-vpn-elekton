@@ -538,20 +538,8 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Minimizar janela
-    if (minimizeBtn) {
-        minimizeBtn.addEventListener('click', async () => {
-            try {
-                await window.electronAPI.minimizeWindow();
-                console.log('✅ Janela minimizada');
-            } catch (error) {
-                console.error('❌ Erro ao minimizar janela:', error);
-            }
-        });
-        console.log('✅ Event listener adicionado ao minimizeBtn');
-    } else {
-        console.log('ℹ️ minimizeBtn não encontrado');
-    }
+    // Minimizar janela (já adicionado no DOMContentLoaded)
+    // Removido para evitar duplicação
 
     // Configurar event listeners
     setupEventListeners();
