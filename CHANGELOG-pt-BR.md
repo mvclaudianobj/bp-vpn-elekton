@@ -5,6 +5,28 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-01-15
+
+### Adicionado
+- **Suporte a Domínios Windows**: Compatibilidade aprimorada com máquinas Windows ingressadas em domínio
+- **Elevação Automática**: OpenVPN executa com privilégios de admin quando necessário no Windows
+- **Controle de Nível de Execução**: Configurado explicitamente para não requerer privilégios de admin
+
+### Corrigido
+- **Problemas de Privilégios Admin**: App não solicita mais senha em máquinas de domínio
+- **Execução OpenVPN**: Restaurada elevação adequada para conexões VPN no Windows
+- **Gerenciamento de Processos**: Melhor tratamento de processos em background e visibilidade de janelas
+
+### Alterado
+- **Configuração do Instalador**: Adicionada configuração requestedExecutionLevel
+- **Estratégia de Conexão**: Execução OpenVPN aprimorada no Windows com elevação PowerShell
+- **Visibilidade de Processos**: Janelas PowerShell ocultas para experiência mais limpa
+
+### Melhorias Técnicas
+- **Segurança**: Separação adequada de privilégios entre app e processos VPN
+- **Compatibilidade**: Melhor suporte para ambientes corporativos/domínio
+- **Controle de Processos**: Passagem de argumentos e controle de execução aprimorados
+
 ## [0.1.1] - 2026-01-14
 
 ### Adicionado
