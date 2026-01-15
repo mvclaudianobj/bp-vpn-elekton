@@ -459,15 +459,15 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Minimizar janela
+    // Minimizar janela (hide to tray but keep in taskbar)
     const minimizeBtn = document.getElementById('minimizeBtn');
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeWindow();
-                console.log('✅ Janela minimizada');
+                await window.electronAPI.minimizeToTray();
+                console.log('✅ Janela minimizada para tray');
             } catch (error) {
-                console.error('❌ Erro ao minimizar janela:', error);
+                console.error('❌ Erro ao minimizar para tray:', error);
             }
         });
         console.log('✅ Event listener adicionado ao minimizeBtn');
@@ -519,11 +519,9 @@ async function initializeApp() {
         console.log('ℹ️ windowCloseBtn não encontrado');
     }
 
-    // Hide custom title bar on Windows since it has native frame
-    if (navigator.platform.includes('Win')) {
-      const titleBar = document.getElementById('title-bar');
-      if (titleBar) titleBar.style.display = 'none';
-    }
+    // Hide custom title bar since using native frame
+    const titleBar = document.getElementById('title-bar');
+    if (titleBar) titleBar.style.display = 'none';
 
     // Configurar event listeners
     setupEventListeners();

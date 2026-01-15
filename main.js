@@ -665,7 +665,7 @@ function createSplashWindow() {
       mainWindow = new BrowserWindow({
       width: 640,
       height: 712, // 680 + 32 for title bar
-       frame: process.platform === 'win32',
+       frame: true,
       minimizable: true,
       maximizable: false,
       movable: true,
