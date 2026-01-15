@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (windowCloseBtn) {
         windowCloseBtn.addEventListener('click', () => {
             console.log('🖱️ Window close button clicked');
+            logToMain('RENDERER', 'WINDOW_CLOSE_CLICKED', { source: 'title_bar' });
             window.electronAPI.closeWindow();
         });
         console.log('✅ Window close listener added');
