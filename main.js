@@ -1296,22 +1296,20 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           });
 
           // Use PowerShell to run OpenVPN with admin privileges
-          openvpnCommand = 'powershell.exe';
-           openvpnArgsFinal = [
-             '-Command',
-             `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
-           ];
-          spawnOptions.shell = true;
+          // Try direct execution first (no elevation)
+           openvpnCommand = openvpnPath;
+           openvpnArgsFinal = openvpnArgs;
+           spawnOptions.shell = false;
 
-          logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-            connectionId,
-            strategy: 'powershell_runas',
-            openvpnPath,
-            profileDir,
-            platform: 'windows'
-          });
-           console.log(`🔐 Usando PowerShell para elevar OpenVPN: ${openvpnPath}`);
-           console.log('PowerShell command:', openvpnArgsFinal[1]);
+           logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+             connectionId,
+             strategy: 'direct_execution',
+             openvpnPath,
+             profileDir,
+             platform: 'windows'
+           });
+            console.log(`🔐 Usando OpenVPN diretamente (sem elevação): ${openvpnPath}`);
+            console.log('OpenVPN args:', openvpnArgsFinal.join(' '));
        } else {
          logger.log('CONNECTION', 'UNSUPPORTED_PLATFORM', {
            connectionId,
