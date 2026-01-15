@@ -92,9 +92,57 @@
         "from": "build/icon.png",
         "to": "app/icon.png"
        },
-       {
+        {
         "from": "build/icon.ico",
         "to": "app/icon.ico"
+       },
+       {
+        "from": "icon-azure.png",
+        "to": "app/icon-azure.png"
+       },
+       {
+        "from": "icon-close.png",
+        "to": "app/icon-close.png"
+       },
+       {
+        "from": "icon-config.png",
+        "to": "app/icon-config.png"
+       },
+       {
+        "from": "icon-download.png",
+        "to": "app/icon-download.png"
+       },
+       {
+        "from": "icon-key-settings.png",
+        "to": "app/icon-key-settings.png"
+       },
+       {
+        "from": "icon-key.png",
+        "to": "app/icon-key.png"
+       },
+       {
+        "from": "icon-log-system.png",
+        "to": "app/icon-log-system.png"
+       },
+       {
+        "from": "icon-logs.png",
+        "to": "app/icon-logs.png"
+       },
+       {
+        "from": "icon-minimize.png",
+        "to": "app/icon-minimize.png"
+       },
+       {
+        "from": "icon-password.png",
+        "to": "app/icon-password.png"
+       },
+       {
+        "from": "icon-update.png",
+        "to": "app/icon-update.png"
+       },
+       {
+        "from": "icon-user.png",
+        "to": "app/icon-user.png"
        },
        {
         "from": "build/OpenVPN-2.7_rc2-I009-amd64.msi",
