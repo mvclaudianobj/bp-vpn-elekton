@@ -81,16 +81,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
     const windowCloseBtn = document.getElementById('windowCloseBtn');
 
+    console.log('🎛️ Window controls - windowMinimizeBtn:', !!windowMinimizeBtn, 'windowCloseBtn:', !!windowCloseBtn);
+
     if (windowMinimizeBtn) {
         windowMinimizeBtn.addEventListener('click', () => {
+            console.log('🖱️ Window minimize button clicked');
             window.electronAPI.minimizeWindow();
         });
+        console.log('✅ Window minimize listener added');
+    } else {
+        console.log('❌ windowMinimizeBtn not found');
     }
 
     if (windowCloseBtn) {
         windowCloseBtn.addEventListener('click', () => {
+            console.log('🖱️ Window close button clicked');
             window.electronAPI.closeWindow();
         });
+        console.log('✅ Window close listener added');
+    } else {
+        console.log('❌ windowCloseBtn not found');
     }
 
     const menuBtn = document.getElementById('menuBtn');
@@ -296,11 +306,11 @@ function setupEventListeners() {
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
-                await window.electronAPI.minimizeToTray();
-                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_CLICKED', {}, 'INFO');
+                await window.electronAPI.minimizeWindow();
+                logToMain('RENDERER', 'MINIMIZE_WINDOW_CLICKED', {}, 'INFO');
             } catch (error) {
-                console.error('Erro ao minimizar para tray:', error);
-                logToMain('RENDERER', 'MINIMIZE_TO_TRAY_ERROR', { error: error.message }, 'ERROR');
+                console.error('Erro ao minimizar janela:', error);
+                logToMain('RENDERER', 'MINIMIZE_WINDOW_ERROR', { error: error.message }, 'ERROR');
             }
         });
     } else {
