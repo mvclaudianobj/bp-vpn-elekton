@@ -233,7 +233,8 @@
       "shortcutName": "BluePex VPN",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "artifactName": "BluePex.VPN.Setup.${version}.${ext}"
     }
   },
   "keywords": [
