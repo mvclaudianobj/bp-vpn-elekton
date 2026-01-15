@@ -219,7 +219,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "BluePex.VPN.Setup.${version}.${ext}",
+      "artifactName": "BluePex-VPN-Setup-${version}.${ext}",
       "requestedExecutionLevel": "requireAdministrator"
     },
     "win": {
