@@ -664,7 +664,7 @@ function createSplashWindow() {
      console.log('📄 Preload path:', path.join(__dirname, 'preload.js'));
       mainWindow = new BrowserWindow({
       width: 640,
-      height: 680,
+      height: 712, // 680 + 32 for title bar
       frame: false,
       minimizable: true,
       maximizable: false,
