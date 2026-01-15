@@ -74,6 +74,9 @@ window.addEventListener('load', () => {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🎯 DOM CARREGADO!');
 
+    // Update copyright with dynamic year and version
+    updateCopyright();
+
     const menuBtn = document.getElementById('menuBtn');
     const configModal = document.getElementById('configModal');
 
@@ -1719,6 +1722,19 @@ if (window.electronAPI) {
             progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
         }
     });
+}
+
+async function updateCopyright() {
+    try {
+        const currentYear = new Date().getFullYear();
+        const version = await window.electronAPI.getVersion();
+        const copyrightElement = document.getElementById('copyright');
+        if (copyrightElement) {
+            copyrightElement.textContent = `BluePex® CyberSecurity © Copyright ${currentYear} - v${version}`;
+        }
+    } catch (error) {
+        console.error('Erro ao atualizar copyright:', error);
+    }
 }
 
 function toggleAppLogsModal() {
