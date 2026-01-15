@@ -77,55 +77,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update copyright with dynamic year and version
     updateCopyright();
 
-    // Window controls
-    const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
-    const windowCloseBtn = document.getElementById('windowCloseBtn');
-    const minimizeToTrayBtn = document.getElementById('minimizeToTrayBtn');
-
-    console.log('🎛️ Window controls - windowMinimizeBtn:', !!windowMinimizeBtn, 'windowCloseBtn:', !!windowCloseBtn);
-
-    if (windowMinimizeBtn) {
-        windowMinimizeBtn.addEventListener('click', () => {
-            console.log('🖱️ Window minimize button clicked');
-            logToMain('RENDERER', 'MINIMIZE_WINDOW_CLICKED', { source: 'title_bar' });
-            window.electronAPI.minimizeWindow();
-        });
-        console.log('✅ Window minimize listener added');
-    } else {
-        console.log('❌ windowMinimizeBtn not found');
-    }
-
-    if (windowCloseBtn) {
-        windowCloseBtn.addEventListener('click', () => {
-            console.log('🖱️ Window close button clicked');
-            logToMain('RENDERER', 'WINDOW_CLOSE_CLICKED', { source: 'title_bar' });
-            window.electronAPI.closeWindow();
-        });
-        console.log('✅ Window close listener added');
-    } else {
-        console.log('❌ windowCloseBtn not found');
-    }
-
-    if (minimizeToTrayBtn) {
-        minimizeToTrayBtn.addEventListener('click', async () => {
-            console.log('🖱️ Minimize to tray clicked');
-            try {
-                await window.electronAPI.minimizeToTray();
-                console.log('✅ Minimizado para tray');
-            } catch (error) {
-                console.error('❌ Erro ao minimizar para tray:', error);
-            }
-        });
-        console.log('✅ Minimize to tray listener added');
-    } else {
-        console.log('❌ minimizeToTrayBtn not found');
-    }
-
     const menuBtn = document.getElementById('menuBtn');
     const configModal = document.getElementById('configModal');
 
     console.log('🔍 menuBtn encontrado:', !!menuBtn);
     console.log('🔍 configModal encontrado:', !!configModal);
+
+    // Removed duplicate closeBtn declaration
 
     if (menuBtn) {
         menuBtn.addEventListener('click', function() {
@@ -148,6 +106,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('❌ menuBtn não encontrado');
         alert('menuBtn não encontrado!');
     }
+
+    // Update copyright with dynamic year and version
+    updateCopyright();
+
+    // Window controls (moved to initializeApp to avoid duplicates)
+    // minimizeBtn, windowMinimizeBtn, windowCloseBtn, minimizeToTrayBtn handlers are in initializeApp
 
     // Inicializar aplicação
     initializeApp();
@@ -320,22 +284,7 @@ function setupEventListeners() {
     }
 
     // Botão de minimizar para tray
-    const minimizeBtn = document.getElementById('minimizeBtn');
-    if (minimizeBtn) {
-        minimizeBtn.addEventListener('click', async () => {
-            try {
-                await window.electronAPI.minimizeWindow();
-                logToMain('RENDERER', 'MINIMIZE_WINDOW_CLICKED', {}, 'INFO');
-            } catch (error) {
-                console.error('Erro ao minimizar janela:', error);
-                logToMain('RENDERER', 'MINIMIZE_WINDOW_ERROR', { error: error.message }, 'ERROR');
-            }
-        });
-    } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        logToMain('RENDERER', 'ELEMENT_NOT_FOUND', { element: 'minimizeBtn' }, 'ERROR');
-    }
+    // minimizeBtn handler moved to initializeApp to avoid duplicates
 
     // Configurações
     if (configSelectOvpn) {
@@ -380,17 +329,7 @@ function setupEventListeners() {
         console.log('ℹ️ updateBtn não encontrado');
     }
 
-    const closeBtn = document.getElementById('closeBtn');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            window.electronAPI.quitApp();
-        });
-        console.log('✅ Event listener adicionado ao closeBtn');
-    } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        console.log('ℹ️ closeBtn não encontrado');
-    }
+
     if (updateCloseBtn) {
         updateCloseBtn.addEventListener('click', closeUpdateModal);
     }
@@ -485,28 +424,9 @@ function setupEventListeners() {
         appLogsCloseBtn.addEventListener('click', closeAppLogsModal);
     }
 
-    // Configurações
-    if (configCloseBtn) {
-        configCloseBtn.addEventListener('click', function(event) {
-            console.log('🖱️ Botão fechar clicado!', event);
-            logToMain('RENDERER', 'CLOSE_BUTTON_CLICKED', {
-                button: configCloseBtn.outerHTML,
-                eventType: event.type,
-                target: event.target.id
-            });
-            console.log('🔒 Chamando closeConfigModal...');
-            closeConfigModal();
-            console.log('✅ closeConfigModal chamado');
-        });
-        console.log('✅ Event listener adicionado ao configCloseBtn');
-        logToMain('RENDERER', 'CLOSE_BUTTON_LISTENER_ADDED', {});
-    } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-        console.error('❌ configCloseBtn não encontrado!');
-        logToMain('RENDERER', 'CLOSE_BUTTON_NOT_FOUND', {}, 'ERROR');
-    }
 }
+
+
 
 async function initializeApp() {
     // Aguardar Bootstrap carregar completamente
@@ -539,8 +459,64 @@ async function initializeApp() {
         appLogsCloseBtn: !!appLogsCloseBtn
     });
 
-    // Minimizar janela (já adicionado no DOMContentLoaded)
-    // Removido para evitar duplicação
+    // Minimizar janela
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada');
+            } catch (error) {
+                console.error('❌ Erro ao minimizar janela:', error);
+            }
+        });
+        console.log('✅ Event listener adicionado ao minimizeBtn');
+    } else {
+        console.log('ℹ️ minimizeBtn não encontrado');
+    }
+
+    // Minimizar para tray
+    const minimizeToTrayBtn = document.getElementById('minimizeToTrayBtn');
+    if (minimizeToTrayBtn) {
+        minimizeToTrayBtn.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.minimizeToTray();
+                console.log('✅ Janela minimizada para tray');
+            } catch (error) {
+                console.error('❌ Erro ao minimizar para tray:', error);
+            }
+        });
+        console.log('✅ Event listener adicionado ao minimizeToTrayBtn');
+    } else {
+        console.log('ℹ️ minimizeToTrayBtn não encontrado');
+    }
+
+    // Minimizar janela (barra de título)
+    const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
+    if (windowMinimizeBtn) {
+        windowMinimizeBtn.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.minimizeWindow();
+                console.log('✅ Janela minimizada via barra de título');
+            } catch (error) {
+                console.error('❌ Erro ao minimizar janela via barra de título:', error);
+            }
+        });
+        console.log('✅ Event listener adicionado ao windowMinimizeBtn');
+    } else {
+        console.log('ℹ️ windowMinimizeBtn não encontrado');
+    }
+
+    // Fechar janela (barra de título)
+    const windowCloseBtn = document.getElementById('windowCloseBtn');
+    if (windowCloseBtn) {
+        windowCloseBtn.addEventListener('click', () => {
+            window.electronAPI.quitApp();
+            console.log('✅ Aplicação fechada via barra de título');
+        });
+        console.log('✅ Event listener adicionado ao windowCloseBtn');
+    } else {
+        console.log('ℹ️ windowCloseBtn não encontrado');
+    }
 
     // Configurar event listeners
     setupEventListeners();
