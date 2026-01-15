@@ -460,6 +460,7 @@ async function initializeApp() {
     });
 
     // Minimizar janela
+    const minimizeBtn = document.getElementById('minimizeBtn');
     if (minimizeBtn) {
         minimizeBtn.addEventListener('click', async () => {
             try {
