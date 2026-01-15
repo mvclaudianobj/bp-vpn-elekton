@@ -1089,6 +1089,12 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
     const targetOvpnPath = path.join(profileDir, `${profileId}.ovpn`);
     await fsAsync.writeFile(targetOvpnPath, processedContent, 'utf-8');
 
+    console.log(`📄 Configuração processada salva em: ${targetOvpnPath}`);
+    console.log('📄 Conteúdo processado (primeiras 20 linhas):');
+    processedContent.split('\n').slice(0, 20).forEach((line, i) => {
+      console.log(`  ${i + 1}: ${line}`);
+    });
+
     console.log(`✅ Perfil OVPN processado salvo em: ${targetOvpnPath}`);
     console.log('📄 Conteúdo processado (primeiras 20 linhas):');
     processedContent.split('\n').slice(0, 20).forEach((line, i) => {
@@ -1161,7 +1167,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       console.log(`📁 Diretório do perfil: ${profileDir}`);
       console.log(`📄 Configuração: ${configPath}`);
 
-       authFilePath = path.join(os.tmpdir(), `openvpn_auth_${Date.now()}.txt`);
+        authFilePath = path.join(profileDir, `openvpn_auth_${Date.now()}.txt`);
        fs.writeFileSync(authFilePath, `${username}\n${password}\n`);
 
        if (process.platform !== 'win32') {
@@ -1291,10 +1297,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
           // Use PowerShell to run OpenVPN with admin privileges
           openvpnCommand = 'powershell.exe';
-          openvpnArgsFinal = [
-            '-Command',
-            `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.map(arg => `"${arg}"`).join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}' -WindowStyle Hidden`
-          ];
+           openvpnArgsFinal = [
+             '-Command',
+             `Start-Process -FilePath '${openvpnPath}' -ArgumentList '${openvpnArgs.join(' ')}' -Verb RunAs -WorkingDirectory '${profileDir.replace(/\\/g, '\\\\')}'`
+           ];
           spawnOptions.shell = true;
 
           logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
@@ -1304,7 +1310,8 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             profileDir,
             platform: 'windows'
           });
-          console.log(`🔐 Usando OpenVPN diretamente: ${openvpnPath}`);
+           console.log(`🔐 Usando PowerShell para elevar OpenVPN: ${openvpnPath}`);
+           console.log('PowerShell command:', openvpnArgsFinal[1]);
        } else {
          logger.log('CONNECTION', 'UNSUPPORTED_PLATFORM', {
            connectionId,
