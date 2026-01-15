@@ -2071,7 +2071,7 @@ ipcMain.handle('minimize-to-tray', () => {
 ipcMain.handle('minimize-window', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.minimize();
-    logger.log('SYSTEM', 'WINDOW_MINIMIZED', {});
+    logger.log('SYSTEM', 'MINIMIZE_WINDOW_SUCCESS', {});
   }
 });
 
