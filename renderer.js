@@ -475,22 +475,6 @@ async function initializeApp() {
         console.log('ℹ️ minimizeBtn não encontrado');
     }
 
-    // Minimizar para tray
-    const minimizeToTrayBtn = document.getElementById('minimizeToTrayBtn');
-    if (minimizeToTrayBtn) {
-        minimizeToTrayBtn.addEventListener('click', async () => {
-            try {
-                await window.electronAPI.minimizeWindow();
-                console.log('✅ Janela minimizada para barra de tarefas');
-            } catch (error) {
-                console.error('❌ Erro ao minimizar para tray:', error);
-            }
-        });
-        console.log('✅ Event listener adicionado ao minimizeToTrayBtn');
-    } else {
-        console.log('ℹ️ minimizeToTrayBtn não encontrado');
-    }
-
     // Minimizar janela (barra de título)
     const windowMinimizeBtn = document.getElementById('windowMinimizeBtn');
     if (windowMinimizeBtn) {
@@ -511,17 +495,17 @@ async function initializeApp() {
     const windowCloseBtn = document.getElementById('windowCloseBtn');
     if (windowCloseBtn) {
         windowCloseBtn.addEventListener('click', () => {
-            window.electronAPI.quitApp();
-            console.log('✅ Aplicação fechada via barra de título');
+            try {
+                window.electronAPI.closeWindow();
+                console.log('✅ Janela fechada via barra de título');
+            } catch (error) {
+                console.error('❌ Erro ao fechar janela via barra de título:', error);
+            }
         });
         console.log('✅ Event listener adicionado ao windowCloseBtn');
     } else {
         console.log('ℹ️ windowCloseBtn não encontrado');
     }
-
-    // Hide custom title bar since using native frame
-    const titleBar = document.getElementById('title-bar');
-    if (titleBar) titleBar.style.display = 'none';
 
     // Configurar event listeners
     setupEventListeners();

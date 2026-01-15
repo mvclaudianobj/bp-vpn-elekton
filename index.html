@@ -1134,10 +1134,82 @@
         overflow: hidden;
     }
 
+    /* Custom Title Bar */
+    .title-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 32px;
+        background: linear-gradient(135deg, #061c2e 0%, #0a162e 100%);
+        -webkit-app-region: drag;
+        z-index: 1000;
+        border-bottom: 1px solid #1a2332;
+    }
+
+    .title-bar-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 100%;
+        padding: 0 10px;
+    }
+
+    .title-text {
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 600;
+        user-select: none;
+    }
+
+    .title-bar-controls {
+        display: flex;
+        gap: 2px;
+    }
+
+    .title-btn {
+        width: 32px;
+        height: 24px;
+        border: none;
+        background: transparent;
+        color: #ffffff;
+        font-size: 14px;
+        cursor: pointer;
+        border-radius: 3px;
+        transition: background-color 0.2s;
+        -webkit-app-region: no-drag;
+    }
+
+    .title-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .minimize-btn:hover {
+        background: rgba(255, 235, 59, 0.2);
+    }
+
+    .close-btn:hover {
+        background: rgba(244, 67, 54, 0.2);
+    }
+
+    /* Adjust app wrapper to account for title bar */
+    .app-wrapper {
+        margin-top: 32px;
+    }
+
    </style>
  </head>
- <body>
-
+  <body>
+    <!-- Custom Title Bar -->
+    <div class="title-bar">
+        <div class="title-bar-content">
+            <span class="title-text">BluePex VPN</span>
+            <div class="title-bar-controls">
+                <button class="title-btn minimize-btn" id="windowMinimizeBtn" title="Minimizar">─</button>
+                <button class="title-btn close-btn" id="windowCloseBtn" title="Fechar">✕</button>
+            </div>
+        </div>
+    </div>
 
     <div class="app-wrapper">
         <div class="login-container">
