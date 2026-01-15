@@ -223,7 +223,7 @@
       "requestedExecutionLevel": "requireAdministrator"
     },
     "win": {
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
       "oneClick": false,
