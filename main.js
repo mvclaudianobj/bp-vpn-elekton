@@ -9,6 +9,7 @@ const axios = require('axios');
 const { PublicClientApplication } = require('@azure/msal-node');
 const { dialog } = require('electron');
 const ps = require('ps-node');
+const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 
 // ============ SISTEMA DE LOGGING ============
@@ -478,6 +479,41 @@ const APP_STATE_PATH = path.join(USER_DATA_DIR, 'app_state.json');
 const USER_CREDENTIALS_PATH = path.join(USER_DATA_DIR, 'user_credentials.json');
 const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
 
+// ============ UTILITÁRIOS DE CRIPTOGRAFIA ============
+// Chave derivada de uma senha mestre (em produção, use uma chave segura)
+const MASTER_PASSWORD = 'BluePexVPN-SecureStorage-2025';
+const SALT = 'BluePexSalt2025';
+const ENCRYPTION_KEY = crypto.scryptSync(MASTER_PASSWORD, SALT, 32);
+const ALGORITHM = 'aes-256-gcm';
+
+function encrypt(text) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipherGCM(ALGORITHM, ENCRYPTION_KEY);
+  cipher.setIV(iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  return {
+    encrypted: encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+function decrypt(encryptedData) {
+  try {
+    const decipher = crypto.createDecipherGCM(ALGORITHM, ENCRYPTION_KEY);
+    decipher.setIV(Buffer.from(encryptedData.iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    console.error('Erro ao descriptografar:', error);
+    return null;
+  }
+}
+
 // Criar diretórios necessários
 function ensureDirectories() {
   const dirs = [
@@ -763,6 +799,9 @@ app.whenReady().then(async () => {
   try {
     // Inicializar logger após app ready
     logger = new AppLogger();
+
+    // Migrar credenciais antigas para criptografia segura
+    await migrateCredentials();
 
     // Inicializar auto-updater
     updaterManager = new AutoUpdaterManager();
@@ -1836,6 +1875,38 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
 
 // ============ GESTÃO DE CREDENCIAIS SEGURAS ============
 
+// Migração de credenciais antigas (Base64) para criptografia AES
+async function migrateCredentials() {
+  try {
+    if (await fileExists(USER_CREDENTIALS_PATH)) {
+      const credentials = JSON.parse(await fsAsync.readFile(USER_CREDENTIALS_PATH, 'utf-8'));
+      let needsMigration = false;
+
+      for (const profileId in credentials) {
+        const creds = credentials[profileId];
+        if (creds.password && typeof creds.password === 'string' && !creds.password.includes(':')) {
+          // Parece ser Base64 antigo (não tem ':' que indica formato novo)
+          try {
+            const decrypted = Buffer.from(creds.password, 'base64').toString('utf-8');
+            creds.password = encrypt(decrypted);
+            needsMigration = true;
+            console.log(`🔐 Migrando credenciais para ${profileId}`);
+          } catch (error) {
+            console.error(`❌ Erro ao migrar credenciais para ${profileId}:`, error);
+          }
+        }
+      }
+
+      if (needsMigration) {
+        await fsAsync.writeFile(USER_CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+        console.log('✅ Migração de credenciais concluída');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Erro na migração de credenciais:', error);
+  }
+}
+
 ipcMain.handle('save-user-credentials', async (event, profileId, username, password, rememberPassword) => {
   const credentialsPath = USER_CREDENTIALS_PATH;
 
@@ -1846,7 +1917,7 @@ ipcMain.handle('save-user-credentials', async (event, profileId, username, passw
       credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
     }
 
-    const encryptedPassword = rememberPassword ? Buffer.from(password).toString('base64') : '';
+    const encryptedPassword = rememberPassword ? encrypt(password) : null;
 
     credentials[profileId] = {
       username: username,
@@ -1872,7 +1943,12 @@ ipcMain.handle('load-user-credentials', async (event, profileId) => {
       if (credentials[profileId]) {
         const creds = credentials[profileId];
         if (creds.rememberPassword && creds.password) {
-          creds.password = Buffer.from(creds.password, 'base64').toString('utf-8');
+          creds.password = decrypt(creds.password);
+          if (creds.password === null) {
+            // Falha na descriptografia, limpar credenciais
+            creds.password = '';
+            creds.rememberPassword = false;
+          }
         } else {
           creds.password = '';
         }
