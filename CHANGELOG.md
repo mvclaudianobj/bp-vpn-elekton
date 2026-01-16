@@ -27,8 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Electron Settings**: Optimized BrowserWindow configuration for frameless design
 - **IPC Communications**: Streamlined minimize operations between main and renderer processes
 - **File System**: Better handling of Windows file paths and permissions
+- **Build Configuration**: Fixed artifactName in NSIS to match binary filename format
 
 ---
+
+## [0.1.2] - 2026-01-15
 
 ## [0.1.2] - 2026-01-15
 

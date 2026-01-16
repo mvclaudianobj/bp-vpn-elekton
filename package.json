@@ -1,7 +1,7 @@
 {
   "name": "bluepex-vpn",
   "productName": "BluePexVPN",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "BluePex VPN Client with Azure AD authentication and 2FA support",
   "main": "main.js",
   "author": {

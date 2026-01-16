@@ -1706,18 +1706,7 @@ if (window.electronAPI) {
         if (progressFill) {
             progressFill.style.width = `${progress.percent}%`;
         }
-        const progressPercent = document.getElementById('progressPercent');
-        if (progressPercent) {
-            progressPercent.textContent = `${progress.percent}%`;
-        }
-        const progressSpeed = document.getElementById('progressSpeed');
-        if (progressSpeed) {
-            progressSpeed.textContent = `${progress.speed} KB/s`;
-        }
-        const progressSize = document.getElementById('progressSize');
-        if (progressSize) {
-            progressSize.textContent = `${progress.transferred} MB / ${progress.total} MB`;
-        }
+
     });
 }
 

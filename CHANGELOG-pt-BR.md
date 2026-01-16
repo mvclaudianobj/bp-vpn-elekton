@@ -27,8 +27,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Configurações Electron**: Otimizada configuração do BrowserWindow para design sem frame
 - **Comunicações IPC**: Simplificadas operações de minimização entre processos main e renderer
 - **Sistema de Arquivos**: Melhor tratamento de caminhos de arquivos e permissões no Windows
+- **Configuração de Build**: Corrigido artifactName no NSIS para corresponder ao formato do nome do binário
 
 ---
+
+## [0.1.2] - 2026-01-15
 
 ## [0.1.2] - 2026-01-15
 
