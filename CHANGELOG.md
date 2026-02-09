@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-01-15
+
+### 🔒 Security Improvements
+- **Enhanced Credential Encryption**: Upgraded from Base64 encoding to AES-256-GCM encryption for stored passwords
+- **Automatic Migration**: Seamless migration of existing credentials to secure encryption
+- **Cryptographic Functions**: Implemented proper encryption/decryption utilities using Node.js crypto module
+
+### 🔧 Technical
+- **Security Architecture**: Added secure credential storage with industry-standard encryption
+- **Backward Compatibility**: Automatic detection and migration of legacy Base64 credentials
+
+---
+
 ## [0.1.3] - 2026-01-15
 
 ### 🎯 Features

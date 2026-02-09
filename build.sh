@@ -53,11 +53,12 @@ echo "1) Linux (DEB + RPM + AppImage)"
 echo "2) Windows (NSIS Installer)"
 echo "3) Todas as plataformas"
 echo "4) Apenas DEB"
-echo "5) Apenas AppImage"
-echo "6) DEB + AppImage"
-echo "7) Sair"
+echo "5) Apenas RPM"
+echo "6) Apenas AppImage"
+echo "7) DEB + AppImage"
+echo "8) Sair"
 echo ""
-read -p "Opção [1-7]: " choice
+read -p "Opção [1-8]: " choice
 
 case $choice in
     1)
@@ -77,6 +78,10 @@ case $choice in
         npx electron-builder --linux deb
         ;;
     5)
+        echo -e "${BLUE}📦 Buildando RPM...${NC}"
+        npx electron-builder --linux rpm
+        ;;
+    6)
         echo -e "${BLUE}📦 Buildando AppImage...${NC}"
         npx electron-builder --linux AppImage --publish=never
         if [ $? -eq 0 ]; then
@@ -98,7 +103,7 @@ case $choice in
             fi
         fi
         ;;
-    6)
+    7)
         echo -e "${BLUE}📦 Buildando DEB + AppImage...${NC}"
         npx electron-builder --linux deb AppImage --publish=never
         if [ $? -eq 0 ]; then
@@ -134,7 +139,7 @@ case $choice in
             fi
         fi
         ;;
-    7)
+    8)
         echo "👋 Saindo..."
         exit 0
         ;;

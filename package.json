@@ -71,10 +71,9 @@
       "icon-password.png",
       "icon-update.png",
       "icon-user.png",
-      "node_modules/**/*",
       "package.json"
     ],
-    "asar": false,
+    "asar": true,
     "extraResources": [
       {
         "from": "build/com.bpvpn.pkexec.policy",
@@ -140,14 +139,10 @@
         "from": "icon-update.png",
         "to": "app/icon-update.png"
        },
-       {
+      {
         "from": "icon-user.png",
         "to": "app/icon-user.png"
-       },
-       {
-        "from": "build/OpenVPN-2.7_rc2-I009-amd64.msi",
-        "to": "OpenVPN-2.7_rc2-I009-amd64.msi"
-       }
+      }
     ],
     "linux": {
       "target": [
@@ -204,10 +199,7 @@
       "vendor": "BluePex",
       "afterInstall": "build/afterInstall.sh",
       "afterRemove": "build/afterRemove.sh",
-      "fpm": [
-        "--rpm-tag",
-        "License: MIT"
-      ]
+      "fpm": []
     },
     "win": {
       "target": [
@@ -220,10 +212,13 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "BluePex.VPN.Setup.${version}.${ext}",
-      "requestedExecutionLevel": "requireAdministrator"
-    },
-    "win": {
-      "requestedExecutionLevel": "highestAvailable"
+      "requestedExecutionLevel": "highestAvailable",
+      "extraResources": [
+        {
+          "from": "build/OpenVPN-2.7_rc2-I009-amd64.msi",
+          "to": "OpenVPN-2.7_rc2-I009-amd64.msi"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

@@ -5,6 +5,19 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-01-15
+
+### 🔒 Melhorias de Segurança
+- **Criptografia Aprimorada de Credenciais**: Atualização de codificação Base64 para criptografia AES-256-GCM para senhas armazenadas
+- **Migração Automática**: Migração perfeita de credenciais existentes para criptografia segura
+- **Funções Criptográficas**: Implementadas utilitários adequados de criptografia/descriptografia usando módulo crypto do Node.js
+
+### 🔧 Técnico
+- **Arquitetura de Segurança**: Adicionado armazenamento seguro de credenciais com criptografia padrão da indústria
+- **Compatibilidade Reversa**: Detecção automática e migração de credenciais Base64 legadas
+
+---
+
 ## [0.1.3] - 2026-01-15
 
 ### 🎯 Novidades
