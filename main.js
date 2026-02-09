@@ -604,13 +604,13 @@ function createTray() {
   if (process.platform === 'win32') {
     // No build do Electron, o ícone está na pasta app/
     if (app.isPackaged) {
-      iconPath = path.join(process.resourcesPath, 'app', 'icon.ico');
+      iconPath = path.join(__dirname, 'icon.ico');
     } else {
       iconPath = path.join(__dirname, 'icon.ico');
     }
   } else {
     if (app.isPackaged) {
-      iconPath = path.join(process.resourcesPath, 'app', 'icon.png');
+      iconPath = path.join(__dirname, 'icon.png');
     } else {
       iconPath = path.join(__dirname, 'icon.png');
     }
