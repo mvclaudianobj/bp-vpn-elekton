@@ -49,16 +49,17 @@ fi
 
 # Menu de opções
 echo "Escolha a plataforma para build:"
-echo "1) Linux (DEB + RPM + AppImage)"
+echo "1) Linux (DEB + RPM + AppImage) - sem latest-linux.yml"
 echo "2) Windows (NSIS Installer)"
 echo "3) Todas as plataformas"
 echo "4) Apenas DEB"
 echo "5) Apenas RPM"
 echo "6) Apenas AppImage"
-echo "7) DEB + AppImage"
-echo "8) Sair"
+echo "7) Distros Linux + latest-linux.yml"
+echo "8) DEB + AppImage"
+echo "9) Sair"
 echo ""
-read -p "Opção [1-8]: " choice
+read -p "Opção [1-9]: " choice
 
 case $choice in
     1)
@@ -104,6 +105,42 @@ case $choice in
         fi
         ;;
     7)
+        echo -e "${BLUE}📦 Buildando distros Linux (DEB + RPM + AppImage)...${NC}"
+        npx electron-builder --linux deb rpm AppImage --publish=never
+        if [ $? -eq 0 ]; then
+            echo -e "${BLUE}🔧 Ajustando arquivos e latest-linux.yml...${NC}"
+            VERSION=$(node -p "require('./package.json').version")
+            APPIMAGE_FILE="dist/bluepex-vpn-${VERSION}.AppImage"
+            DEB_FILE="dist/bluepex-vpn_${VERSION}_amd64.deb"
+            if [ -f "dist/BluePex VPN-${VERSION}.AppImage" ]; then
+                mv "dist/BluePex VPN-${VERSION}.AppImage" "$APPIMAGE_FILE"
+            fi
+            # Calcular hashes
+            if [ -f "$APPIMAGE_FILE" ]; then
+                SHA512_APPIMAGE=$(sha512sum "$APPIMAGE_FILE" | awk '{print $1}')
+                SHA256_APPIMAGE=$(sha256sum "$APPIMAGE_FILE" | awk '{print $1}')
+                SIZE_APPIMAGE=$(stat -c%s "$APPIMAGE_FILE")
+            fi
+            if [ -f "$DEB_FILE" ]; then
+                SHA512_DEB=$(sha512sum "$DEB_FILE" | awk '{print $1}')
+                SHA256_DEB=$(sha256sum "$DEB_FILE" | awk '{print $1}')
+                SIZE_DEB=$(stat -c%s "$DEB_FILE")
+            fi
+            # Ajustar yml
+            if [ -f "$APPIMAGE_FILE" ]; then
+                sed -i "s/version: .*/version: $VERSION/" dist/latest-linux.yml
+                sed -i "s|BluePex-VPN-${VERSION}.AppImage|bluepex-vpn-${VERSION}.AppImage|g" dist/latest-linux.yml
+                # Adicionar sha256 se não existir
+                if ! grep -q "^sha256:" dist/latest-linux.yml; then
+                    sed -i "/^sha512: .*/a\sha256: $SHA256_APPIMAGE" dist/latest-linux.yml
+                else
+                    sed -i "s/^sha256: .*/sha256: $SHA256_APPIMAGE/" dist/latest-linux.yml
+                fi
+                echo -e "${GREEN}✅ Arquivos ajustados com SHA256${NC}"
+            fi
+        fi
+        ;;
+    8)
         echo -e "${BLUE}📦 Buildando DEB + AppImage...${NC}"
         npx electron-builder --linux deb AppImage --publish=never
         if [ $? -eq 0 ]; then
@@ -139,7 +176,7 @@ case $choice in
             fi
         fi
         ;;
-    8)
+    9)
         echo "👋 Saindo..."
         exit 0
         ;;
