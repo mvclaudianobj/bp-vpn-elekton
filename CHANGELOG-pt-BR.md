@@ -5,6 +5,26 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-02-27
+
+### 🔧 Correções de Bugs
+
+- **Correção de Salvamento de Credenciais**: Corrigido bug onde senhas não eram salvas ao marcar "Lembrar credenciais". Agora o perfil é automaticamente selecionado após criação e o ID do perfil é corretamente utilizado para salvar/carregar credenciais.
+
+- **Correção de Ícones no App Packaged**: Corrigido problema onde ícones do menu não carregavam no aplicativo compilado. Implementado protocolo customizado `local-resource://` para servir ícones corretamente tanto em desenvolvimento quanto em produção.
+
+- **Correção de HTML Duplicado**: Removidas seções HTML duplicadas no index.html que causavam comportamento estranho na interface.
+
+- **Correção de Event Listeners Duplicados**: Removida chamada duplicada de `setupEventListeners()` no renderer.js que podia causar múltiplas execuções de eventos.
+
+### 🐛 Melhorias Técnicas
+
+- Adicionado tratamento de erro mais robusto para salvar credenciais
+- Adicionado logging para debug de problemas com credenciais
+- Configurado asarUnpack para permitir acesso a recursos estáticos (ícones)
+
+---
+
 ## [0.1.4] - 2026-01-15
 
 ### 🔒 Melhorias de Segurança

@@ -790,6 +790,28 @@ if (!gotTheLock) {
 // Disable hardware acceleration to avoid DISPLAY issues
 app.disableHardwareAcceleration();
 
+// Register custom protocol for serving icons and static assets
+const { protocol } = require('electron');
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-resource', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true } }
+]);
+
+app.on('ready', () => {
+  protocol.registerFileProtocol('local-resource', (request, callback) => {
+    const url = request.url.replace('local-resource://', '');
+    const decodedUrl = decodeURIComponent(url);
+    let filePath = path.join(__dirname, decodedUrl);
+    
+    // If file doesn't exist in app directory, try resources directory (for packaged app)
+    if (!fs.existsSync(filePath) && app.isPackaged) {
+      filePath = path.join(process.resourcesPath, 'app.asar.unpacked', decodedUrl);
+    }
+    
+    callback({ path: filePath });
+  });
+});
+
 // Log environment info for DISPLAY verification
 console.log('DISPLAY env:', process.env.DISPLAY);
 console.log('Platform:', process.platform);

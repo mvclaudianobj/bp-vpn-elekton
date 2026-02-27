@@ -507,9 +507,6 @@ async function initializeApp() {
         console.log('ℹ️ windowCloseBtn não encontrado');
     }
 
-    // Configurar event listeners
-    setupEventListeners();
-
     try {
         console.log('🚀 Inicializando aplicação...');
         logToMain('RENDERER', 'INIT_START', {});
@@ -864,13 +861,22 @@ async function handleConnect() {
 
             // Salvar credenciais se "Lembrar credenciais" estiver marcado
             if (rememberCredentials && rememberCredentials.checked) {
-                await window.electronAPI.saveUserCredentials(
-                    currentProfile.id,
-                    username,
-                    password,
-                    true
-                );
-                console.log('💾 Credenciais salvas para perfil:', currentProfile.id);
+                if (!currentProfile || !currentProfile.id) {
+                    console.error('❌ Erro: currentProfile ou currentProfile.id está vazio');
+                    showStatus('Erro: Perfil inválido para salvar credenciais', 'alert');
+                } else {
+                    const saveResult = await window.electronAPI.saveUserCredentials(
+                        currentProfile.id,
+                        username,
+                        password,
+                        true
+                    );
+                    if (saveResult.success) {
+                        console.log('💾 Credenciais salvas para perfil:', currentProfile.id);
+                    } else {
+                        console.error('❌ Erro ao salvar credenciais:', saveResult.error);
+                    }
+                }
             }
 
             // Esconder elementos desnecessários quando conectado
@@ -1316,6 +1322,16 @@ async function saveUserProfileConfig() {
         if (result.success) {
             console.log('✅ Perfil salvo:', result);
             showStatus(`Perfil "${profileName}" salvo com sucesso!`, 'success');
+
+            // Recarregar perfis e selecionar automaticamente o novo perfil
+            await loadAllProfiles();
+            
+            // Forçar seleção do novo perfil criado
+            const newProfileKey = `user:${profileId}`;
+            if (profileSelect) {
+                profileSelect.value = newProfileKey;
+                profileSelect.dispatchEvent(new Event('change'));
+            }
 
             // Limpar formulário
             selectedOvpnFile = null;

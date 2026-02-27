@@ -1211,6 +1211,22 @@
         </div>
     </div>
 
+    <script>
+        // Fix icon paths for packaged app
+        (function() {
+            var isElectron = window.navigator.userAgent.indexOf('Electron') > -1;
+            if (isElectron) {
+                var basePath = '';
+                document.querySelectorAll('img[src$=".png"]').forEach(function(img) {
+                    var src = img.getAttribute('src');
+                    if (src && !src.startsWith('data:') && !src.startsWith('local-resource://')) {
+                        img.setAttribute('src', 'local-resource://' + src);
+                    }
+                });
+            }
+        })();
+    </script>
+
     <div class="app-wrapper">
         <div class="login-container">
             <div class="dropdown">
@@ -1302,76 +1318,7 @@
                 📋 Copiar Código de Verificação
             </button>
         </div>
-
-        <!-- Informação do Perfil Selecionado -->
-        <div id="selectedProfileInfo" class="selected-profile-info" style="display: none;">
-            <div class="profile-info-header">
-                <span id="profileIcon">🎯</span>
-                <strong id="profileName">Perfil Selecionado</strong>
-                <span id="profileType" class="profile-type-badge">TIPO</span>
-            </div>
-            <div class="profile-details mb-4">
-                <small id="profileDetails">Detalhes do perfil...</small>
-            </div>
-        </div>
     </div>
-
-    <!-- Formulário Unificado -->
-    <div id="formUnificado">
-        <!-- Seção de Credenciais (mostrar apenas para perfis usuário) -->
-        <div id="credentialsSection" class="form-section" style="display: none;">
-            <hr>
-            <div class="mb-3">
-                <label for="userUsername" class="form-label"><img src="icon-user.png" alt="Icon User" class="mg-top-icon"> Usuário</label>
-                <input type="text" class="form-control" id="userUsername" placeholder="Digite seu usuário OpenVPN">
-            </div>
-            <div class="mb-1">
-                <label for="userPassword" class="form-label"><img src="icon-password.png" alt="Icon Password" class="mg-top-icon"> Senha</label>
-                <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
-            </div>
-            <div class="mb-3 form-check">
-                <input class="form-check-input" type="checkbox" id="rememberCredentials">
-                <label class="form-check-label" for="rememberCredentials">
-                    Lembrar credenciais
-                </label>
-            </div>
-        </div>
-
-       <!-- Device Code Display (Azure Login) -->
-        <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
-            <div class="alert alert-info">
-                <h6>🔐 Login Azure AD - Código de Verificação</h6>
-                <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
-                <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
-                <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
-            </div>
-        </div>
-    </div>
-</div>
-
-       <!-- Device Code Display (Azure Login) -->
-        <div id="deviceCodeSection" class="device-code-section mt-3" style="display: none;">
-            <div class="alert alert-info">
-                <h6>🔐 Login Azure AD - Código de Verificação</h6>
-                <p><strong>URL:</strong> <span id="verificationUri">https://...</span></p>
-                <p><strong>Código:</strong> <code id="userCode" class="user-code">XXXX-XXXX</code></p>
-                <p class="text-muted small">Abra o link acima em seu navegador e digite o código mostrado.</p>
-            </div>
-        </div>
-        </div>
-
-        <!-- Campo de status -->
-        <div class="status mt-3" id="status" style="display: none;">
-            Status: Aguardando...
-        </div>
-
-        <!-- Botão Copiar Código -->
-        <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
-            📋 Copiar Código de Verificação
-        </button>
-        </div>
-        </div>
-        </div>
 
     <!-- Modal de Configurações -->
     <div class="config-modal" id="configModal">
