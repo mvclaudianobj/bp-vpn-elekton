@@ -116,13 +116,7 @@
       "maintainer": "BluePex <contato@bluepex.com>",
       "vendor": "BluePex",
       "synopsis": "BluePex VPN Client with Azure AD authentication",
-      "description": "BluePex VPN - Professional OpenVPN client with Azure AD authentication and 2FA support",
-      "desktop": {
-        "Name": "BluePex VPN",
-        "Comment": "BluePex VPN Client with Azure AD authentication",
-        "Categories": "Network;Security;",
-        "Icon": "icon"
-      }
+      "description": "BluePex VPN - Professional OpenVPN client with Azure AD authentication and 2FA support"
     },
     "deb": {
       "depends": [
