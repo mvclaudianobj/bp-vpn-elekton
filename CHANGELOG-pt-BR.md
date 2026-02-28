@@ -17,11 +17,20 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - **Correção de Event Listeners Duplicados**: Removida chamada duplicada de `setupEventListeners()` no renderer.js que podia causar múltiplas execuções de eventos.
 
+- **Correção de Configuração Desktop**: Removida configuração `desktop` incompatível com electron-builder 26.x.
+
+### 🐛 Problemas Conhecidos (a serem corrigidos em próxima versão)
+
+- **Senha não persiste após fechar e reabrir**: O sistema de restauração de perfil na inicialização usa `lastProfileId` mas o estado é salvo como `selectedProfileId`, causando falha na restauração automática de credenciais.
+
+- **Estado不一致após desconexão/crash**: Quando o app é fechado inesperadamente ou a VPN desconecta, ao reabrir o app ele assume que ainda está conectado (baseado no vpnPid salvo), mas o túnel já caiu. Necessário verificar o status real da conexão na inicialização.
+
 ### 🐛 Melhorias Técnicas
 
 - Adicionado tratamento de erro mais robusto para salvar credenciais
 - Adicionado logging para debug de problemas com credenciais
 - Configurado asarUnpack para permitir acesso a recursos estáticos (ícones)
+- Atualizado dependências npm (axios, msal-node, electron, electron-builder, electron-updater)
 
 ---
 
