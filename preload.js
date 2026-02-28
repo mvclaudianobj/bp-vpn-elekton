@@ -122,8 +122,11 @@ globalThis.electronAPI = {
     // Logs da aplicação
     getAppLogs: () => ipcRenderer.invoke('get-app-logs'),
 
-    // Logs de conexão
-    getConnectionLogs: () => ipcRenderer.invoke('get-connection-logs'),
+   // Logs de conexão
+   getConnectionLogs: () => ipcRenderer.invoke('get-connection-logs'),
+
+   // Verificação de status VPN
+   checkVpnStatus: (savedPid) => ipcRenderer.invoke('check-vpn-status', savedPid),
 
    // Azure device code
    onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),

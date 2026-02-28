@@ -636,12 +636,18 @@ async function loadAllProfiles() {
 async function loadLastProfile() {
     try {
         const result = await window.electronAPI.loadAppState();
-        if (result.success && result.state.lastProfileId) {
-            const lastProfileId = result.state.lastProfileId;
-            const option = profileSelect.querySelector(`option[value*="${lastProfileId}"]`);
+        // Usar selectedProfileId (mesma chave usada em saveApplicationState)
+        if (result.success && result.state.selectedProfileId) {
+            const lastProfileId = result.state.selectedProfileId;
+            const profileType = result.state.selectedProfileType || 'user';
+            const profileKey = `${profileType}:${lastProfileId}`;
+            const option = profileSelect.querySelector(`option[value="${profileKey}"]`);
             if (option) {
-                profileSelect.value = option.value;
+                profileSelect.value = profileKey;
                 profileSelect.dispatchEvent(new Event('change'));
+                console.log('✅ Último perfil restaurado:', profileKey);
+            } else {
+                console.log('⚠️ Perfil não encontrado:', profileKey);
             }
         }
     } catch (error) {
@@ -1191,9 +1197,25 @@ async function restoreApplicationState() {
 
             // Restaurar status de conexão
             if (state.vpnPid) {
-                vpnPid = state.vpnPid;
-                updateConnectionButtons();
-                showStatus('Estado de conexão restaurado', 'success');
+                // Verificar se a VPN ainda está realmente ativa
+                try {
+                    const statusResult = await window.electronAPI.checkVpnStatus(state.vpnPid);
+                    if (statusResult.connected) {
+                        vpnPid = state.vpnPid;
+                        updateConnectionButtons();
+                        showStatus('Estado de conexão restaurado', 'success');
+                        console.log('✅ VPN ainda está ativa:', vpnPid);
+                    } else {
+                        console.log('⚠️ VPN não está mais ativa, limpando estado');
+                        vpnPid = null;
+                        // Limpar estado de conexão persistido
+                        saveApplicationState();
+                        showStatus('Conexão anterior detectada mas VPN já está离线', 'alert');
+                    }
+                } catch (error) {
+                    console.error('❌ Erro ao verificar status VPN:', error);
+                    vpnPid = null;
+                }
             }
 
             console.log('✅ Estado da aplicação restaurado');

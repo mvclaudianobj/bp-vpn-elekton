@@ -2407,6 +2407,52 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
   return await killVPNConnection();
 });
 
+// ============ VERIFICAÇÃO DE STATUS VPN ============
+
+ipcMain.handle('check-vpn-status', async (event, savedPid) => {
+  console.log(`🔍 [MAIN] Verificando status da VPN para PID: ${savedPid}`);
+  
+  try {
+    // Verificar se o processo ainda está ativo
+    if (savedPid) {
+      const { execSync } = require('child_process');
+      const platform = process.platform;
+      
+      let isRunning = false;
+      
+      if (platform === 'win32') {
+        try {
+          execSync(`tasklist /FI "PID eq ${savedPid}"`, { stdio: 'pipe' });
+          isRunning = true;
+        } catch (e) {
+          isRunning = false;
+        }
+      } else {
+        // Linux/Mac
+        try {
+          execSync(`kill -0 ${savedPid}`, { stdio: 'pipe' });
+          isRunning = true;
+        } catch (e) {
+          isRunning = false;
+        }
+      }
+      
+      if (isRunning) {
+        console.log(`✅ [MAIN] VPN ainda está ativa (PID: ${savedPid})`);
+        return { connected: true, pid: savedPid };
+      } else {
+        console.log(`❌ [MAIN] VPN não está mais ativa (PID: ${savedPid} não existe)`);
+        return { connected: false, pid: null };
+      }
+    }
+    
+    return { connected: false, pid: null };
+  } catch (error) {
+    console.error('❌ [MAIN] Erro ao verificar status VPN:', error);
+    return { connected: false, pid: null, error: error.message };
+  }
+});
+
 // ============ FUNÇÕES AUXILIARES ============
 
 ipcMain.handle('validate-openvpn-config', async () => {
