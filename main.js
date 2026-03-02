@@ -918,6 +918,21 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', (event) => {
+  const activePid = getTrackedVpnPid();
+  if (activePid && isVpnPidRunning(activePid)) {
+    event.preventDefault();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
+    }
+
+    logger.log('SYSTEM', 'APP_QUIT_BLOCKED_VPN_ACTIVE', { pid: activePid });
+  }
+});
+
 // ============ FUNÇÕES AUXILIARES ============
 
 async function checkPkexecAvailable() {
