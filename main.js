@@ -573,6 +573,7 @@ let config;
 let currentElevationMethod = null;
 let currentOvpnPath = null;
 let vpnProcess = null;
+let vpnConnectionActive = false;
 
 // Caminhos dos arquivos
 const cachePath = path.join(os.tmpdir(), 'electron_token_cache.json');
@@ -637,6 +638,16 @@ function createTray() {
       {
         label: 'Sair',
         click: () => {
+          if (isVpnSessionActive()) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
+              mainWindow.focus();
+              mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
+            }
+            logger.log('SYSTEM', 'TRAY_QUIT_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
+            return;
+          }
+
           app.quit();
         }
       }
@@ -752,13 +763,12 @@ function createSplashWindow() {
   });
 
   mainWindow.on('close', (event) => {
-    const activePid = getTrackedVpnPid();
-    if (activePid && isVpnPidRunning(activePid)) {
+    if (isVpnSessionActive()) {
       event.preventDefault();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de fechar o aplicativo.');
       }
-      logger.log('SYSTEM', 'WINDOW_NATIVE_CLOSE_BLOCKED_VPN_ACTIVE', { pid: activePid });
+      logger.log('SYSTEM', 'WINDOW_NATIVE_CLOSE_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
     }
   });
 
@@ -778,6 +788,8 @@ function createSplashWindow() {
         }
       }, 2000);
     }
+
+    vpnConnectionActive = false;
 
     // Não usar killVPNConnection() com pkexec ao fechar a aplicação
     console.log("✅ Processo de limpeza ao fechar concluído");
@@ -915,12 +927,17 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    if (isVpnSessionActive()) {
+      logger.log('SYSTEM', 'WINDOW_ALL_CLOSED_QUIT_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
+      return;
+    }
+    app.quit();
+  }
 });
 
 app.on('before-quit', (event) => {
-  const activePid = getTrackedVpnPid();
-  if (activePid && isVpnPidRunning(activePid)) {
+  if (isVpnSessionActive()) {
     event.preventDefault();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -929,7 +946,7 @@ app.on('before-quit', (event) => {
       mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
     }
 
-    logger.log('SYSTEM', 'APP_QUIT_BLOCKED_VPN_ACTIVE', { pid: activePid });
+    logger.log('SYSTEM', 'APP_QUIT_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
   }
 });
 
@@ -1409,6 +1426,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        }
      
         vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
+        vpnConnectionActive = true;
 
         currentOvpnPath = configPath;
 
@@ -1465,6 +1483,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
           if ((output.includes('Initialization Sequence Completed') || output.includes('Connected')) && !connectionEstablished) {
            connectionEstablished = true;
+           vpnConnectionActive = true;
            console.log('✅ [MAIN] VPN conectada com sucesso!');
            logger.logConnectionSuccess(profileId, 'user', { pid: vpnProcess.pid });
            mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
@@ -1545,6 +1564,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
         vpnProcess.on('close', (code) => {
            console.log(`OpenVPN encerrado com código ${code}`);
+           vpnConnectionActive = false;
            vpnProcess = null;
            ipcMain.removeAllListeners('send-challenge-response');
            mainWindow.webContents.send('vpn-disconnected');
@@ -1575,6 +1595,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
         vpnProcess.on('error', (error) => {
           console.error('❌ Erro ao executar OpenVPN:', error);
+          vpnConnectionActive = false;
 
           logger.log('CONNECTION', 'PROCESS_SPAWN_ERROR', {
             connectionId,
@@ -2202,9 +2223,9 @@ ipcMain.handle('minimize-window', () => {
 
 ipcMain.handle('close-window', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    const activePid = getTrackedVpnPid();
-    if (activePid && isVpnPidRunning(activePid)) {
-      logger.log('SYSTEM', 'WINDOW_CLOSE_BLOCKED_VPN_ACTIVE', { pid: activePid });
+    if (isVpnSessionActive()) {
+      const activePid = getTrackedVpnPid();
+      logger.log('SYSTEM', 'WINDOW_CLOSE_BLOCKED_VPN_ACTIVE', { trackedPid: activePid });
       return { success: false, blocked: true, reason: 'vpn_active', pid: activePid };
     }
 
@@ -2351,11 +2372,14 @@ ipcMain.handle('connect-openvpn', async () => {
     vpnProcess = spawn('sudo', ['openvpn', ...openvpnArgs]);
   }
 
+  vpnConnectionActive = true;
+
   vpnProcess.stdout.on('data', (data) => console.log(data.toString()));
   vpnProcess.stderr.on('data', (data) => console.error(data.toString()));
 
   vpnProcess.on('close', (code) => {
     console.log(`OpenVPN encerrado com código ${code}`);
+    vpnConnectionActive = false;
     vpnProcess = null;
     mainWindow.webContents.send('vpn-disconnected');
   });
@@ -2394,6 +2418,7 @@ async function killVPNConnection() {
       }
       
       vpnProcess = null;
+      vpnConnectionActive = false;
       currentOvpnPath = null;
       currentElevationMethod = null;
     }
@@ -2437,6 +2462,8 @@ async function killVPNConnection() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vpn-disconnected');
     }
+
+    vpnConnectionActive = false;
     
     console.log('✅ Conexão VPN finalizada (MÉTODO DO FECHAR)');
     return { success: true };
@@ -2510,6 +2537,49 @@ function getTrackedVpnPid() {
   }
 }
 
+function hasAnyOpenVpnProcess() {
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync(
+        'tasklist /FI "IMAGENAME eq openvpn.exe" /FO CSV /NH',
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      ).trim();
+
+      if (!output || output.includes('No tasks are running')) {
+        return false;
+      }
+
+      return output.toLowerCase().includes('openvpn.exe');
+    }
+
+    execSync('pgrep -x openvpn', { stdio: ['ignore', 'ignore', 'ignore'] });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function isVpnSessionActive() {
+  const trackedPid = getTrackedVpnPid();
+  if (trackedPid && isVpnPidRunning(trackedPid)) {
+    vpnConnectionActive = true;
+    return true;
+  }
+
+  const anyOpenVpnRunning = hasAnyOpenVpnProcess();
+  if (vpnConnectionActive && !anyOpenVpnRunning) {
+    vpnConnectionActive = false;
+    return false;
+  }
+
+  if (anyOpenVpnRunning) {
+    vpnConnectionActive = true;
+    return true;
+  }
+
+  return false;
+}
+
 ipcMain.handle('check-vpn-status', async (event, savedPid) => {
   console.log(`🔍 [MAIN] Verificando status da VPN para PID: ${savedPid}`);
   
@@ -2517,14 +2587,21 @@ ipcMain.handle('check-vpn-status', async (event, savedPid) => {
     const pidToCheck = savedPid || getTrackedVpnPid();
 
     if (pidToCheck && isVpnPidRunning(pidToCheck)) {
+      vpnConnectionActive = true;
       console.log(`✅ [MAIN] VPN ainda está ativa (PID: ${pidToCheck})`);
       return { connected: true, pid: Number(pidToCheck) };
+    }
+
+    if (isVpnSessionActive()) {
+      vpnConnectionActive = true;
+      return { connected: true, pid: pidToCheck ? Number(pidToCheck) : null };
     }
 
     console.log(`❌ [MAIN] VPN não está ativa para PID: ${pidToCheck}`);
     if (vpnProcess && vpnProcess.pid === Number(pidToCheck)) {
       vpnProcess = null;
     }
+    vpnConnectionActive = false;
     
     return { connected: false, pid: null };
   } catch (error) {
@@ -2763,8 +2840,8 @@ ipcMain.on('adjust-window-size', (event, { width, height }) => {
 });
 
 ipcMain.handle('quit-app', async () => {
-  const activePid = getTrackedVpnPid();
-  if (activePid && isVpnPidRunning(activePid)) {
+  if (isVpnSessionActive()) {
+    const activePid = getTrackedVpnPid();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
     }
