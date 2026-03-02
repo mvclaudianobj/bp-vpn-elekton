@@ -19,11 +19,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - **Correção de Configuração Desktop**: Removida configuração `desktop` incompatível com electron-builder 26.x.
 
-### 🐛 Problemas Conhecidos (a serem corrigidos em próxima versão)
+### ✅ Correções de Persistência e Estado (hotfix)
 
-- **Senha não persiste após fechar e reabrir**: O sistema de restauração de perfil na inicialização usa `lastProfileId` mas o estado é salvo como `selectedProfileId`, causando falha na restauração automática de credenciais.
+- **Persistência de senha corrigida**: Ajustado uso de chaves de estado (`selectedProfileId`/`selectedProfileType`) e removida gravação parcial inconsistente com `lastProfileId`.
 
-- **Estado不一致após desconexão/crash**: Quando o app é fechado inesperadamente ou a VPN desconecta, ao reabrir o app ele assume que ainda está conectado (baseado no vpnPid salvo), mas o túnel já caiu. Necessário verificar o status real da conexão na inicialização.
+- **Criptografia de credenciais corrigida**: Substituídas APIs inválidas de criptografia GCM por `createCipheriv`/`createDecipheriv` com AES-256-GCM, restaurando gravação/leitura de senha.
+
+- **Estado do túnel VPN validado na inicialização**: A checagem passou a validar PID + processo OpenVPN real, evitando UI conectada com túnel já caído.
+
+- **Bloqueio de fechamento com VPN ativa**: Fechamento da janela/aplicação agora é bloqueado enquanto houver túnel ativo, exigindo desconexão explícita.
 
 ### 🐛 Melhorias Técnicas
 
@@ -135,5 +139,4 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - Gerenciamento de perfis de usuário
 - Sistema básico de logging
 - Aplicação desktop baseada em Electron
-- Suporte para Windows e Linux</content>
-<parameter name="filePath">/home/marcos/projetos/BluePexVPN/CHANGELOG-pt-BR.md
+- Suporte para Windows e Linux

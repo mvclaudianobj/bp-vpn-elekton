@@ -235,8 +235,11 @@ let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
 
     const closeBtn = document.getElementById('closeBtn');
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        window.electronAPI.quitApp();
+      closeBtn.addEventListener('click', async () => {
+        const result = await window.electronAPI.quitApp();
+        if (result?.blocked && result?.reason === 'vpn_active') {
+            showStatus('Desconecte da VPN antes de sair do aplicativo.', 'alert');
+        }
       });
       console.log('✅ Event listener adicionado ao closeBtn');
     } else {
@@ -494,10 +497,14 @@ async function initializeApp() {
     // Fechar janela (barra de título)
     const windowCloseBtn = document.getElementById('windowCloseBtn');
     if (windowCloseBtn) {
-        windowCloseBtn.addEventListener('click', () => {
+        windowCloseBtn.addEventListener('click', async () => {
             try {
-                window.electronAPI.closeWindow();
-                console.log('✅ Janela fechada via barra de título');
+                const result = await window.electronAPI.closeWindow();
+                if (result?.success) {
+                    console.log('✅ Janela fechada via barra de título');
+                } else if (result?.blocked && result?.reason === 'vpn_active') {
+                    showStatus('Desconecte da VPN antes de fechar o aplicativo.', 'alert');
+                }
             } catch (error) {
                 console.error('❌ Erro ao fechar janela via barra de título:', error);
             }
@@ -636,9 +643,10 @@ async function loadAllProfiles() {
 async function loadLastProfile() {
     try {
         const result = await window.electronAPI.loadAppState();
-        // Usar selectedProfileId (mesma chave usada em saveApplicationState)
-        if (result.success && result.state.selectedProfileId) {
-            const lastProfileId = result.state.selectedProfileId;
+        // Priorizar selectedProfileId (estado atual), com fallback para lastProfileId legado
+        const restoredProfileId = result.success ? (result.state.selectedProfileId || result.state.lastProfileId) : null;
+        if (restoredProfileId) {
+            const lastProfileId = restoredProfileId;
             const profileType = result.state.selectedProfileType || 'user';
             const profileKey = `${profileType}:${lastProfileId}`;
             const option = profileSelect.querySelector(`option[value="${profileKey}"]`);
@@ -900,8 +908,11 @@ async function handleConnect() {
             vpnPid = pid;
             showStatus(`Conectado com sucesso! PID: ${pid}`, 'success');
 
-            // Salvar último perfil usado
-            await window.electronAPI.saveAppState({ lastProfileId: currentProfile.id });
+            // Salvar estado do perfil atual
+            await window.electronAPI.saveAppState({
+                selectedProfileId: currentProfile.id,
+                selectedProfileType: currentProfile.type
+            });
 
             // Esconder elementos desnecessários quando conectado
             hideConnectionElements();
@@ -1201,7 +1212,7 @@ async function restoreApplicationState() {
                 try {
                     const statusResult = await window.electronAPI.checkVpnStatus(state.vpnPid);
                     if (statusResult.connected) {
-                        vpnPid = state.vpnPid;
+                        vpnPid = statusResult.pid || state.vpnPid;
                         updateConnectionButtons();
                         showStatus('Estado de conexão restaurado', 'success');
                         console.log('✅ VPN ainda está ativa:', vpnPid);
@@ -1210,7 +1221,7 @@ async function restoreApplicationState() {
                         vpnPid = null;
                         // Limpar estado de conexão persistido
                         saveApplicationState();
-                        showStatus('Conexão anterior detectada mas VPN já está离线', 'alert');
+                        showStatus('Conexão anterior detectada, mas a VPN já está desconectada.', 'alert');
                     }
                 } catch (error) {
                     console.error('❌ Erro ao verificar status VPN:', error);

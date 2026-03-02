@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const fsAsync = require('fs').promises;
 const os = require('os');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execSync } = require('child_process');
 const axios = require('axios');
 const { PublicClientApplication } = require('@azure/msal-node');
 const { dialog } = require('electron');
@@ -488,8 +488,7 @@ const ALGORITHM = 'aes-256-gcm';
 
 function encrypt(text) {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipherGCM(ALGORITHM, ENCRYPTION_KEY);
-  cipher.setIV(iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag();
@@ -502,8 +501,11 @@ function encrypt(text) {
 
 function decrypt(encryptedData) {
   try {
-    const decipher = crypto.createDecipherGCM(ALGORITHM, ENCRYPTION_KEY);
-    decipher.setIV(Buffer.from(encryptedData.iv, 'hex'));
+    if (!encryptedData || typeof encryptedData !== 'object' || !encryptedData.iv || !encryptedData.authTag || !encryptedData.encrypted) {
+      return null;
+    }
+
+    const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, Buffer.from(encryptedData.iv, 'hex'));
     decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
@@ -747,6 +749,17 @@ function createSplashWindow() {
 
   mainWindow.on('minimize', () => {
     mainWindow.hide();
+  });
+
+  mainWindow.on('close', (event) => {
+    const activePid = getTrackedVpnPid();
+    if (activePid && isVpnPidRunning(activePid)) {
+      event.preventDefault();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de fechar o aplicativo.');
+      }
+      logger.log('SYSTEM', 'WINDOW_NATIVE_CLOSE_BLOCKED_VPN_ACTIVE', { pid: activePid });
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -1906,8 +1919,11 @@ async function migrateCredentials() {
 
       for (const profileId in credentials) {
         const creds = credentials[profileId];
-        if (creds.password && typeof creds.password === 'string' && !creds.password.includes(':')) {
-          // Parece ser Base64 antigo (não tem ':' que indica formato novo)
+        const isLegacyBase64 = creds.password && typeof creds.password === 'string';
+        const isCurrentEncrypted = creds.password && typeof creds.password === 'object' && creds.password.iv && creds.password.authTag && creds.password.encrypted;
+
+        if (isLegacyBase64 && !isCurrentEncrypted) {
+          // Formato legado em Base64
           try {
             const decrypted = Buffer.from(creds.password, 'base64').toString('utf-8');
             creds.password = encrypt(decrypted);
@@ -2104,7 +2120,18 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 ipcMain.handle('save-app-state', async (event, appState) => {
   const statePath = APP_STATE_PATH;
   try {
-    await fsAsync.writeFile(statePath, JSON.stringify(appState, null, 2));
+    let currentState = {};
+    if (await fileExists(statePath)) {
+      currentState = JSON.parse(await fsAsync.readFile(statePath, 'utf-8'));
+    }
+
+    const mergedState = {
+      ...currentState,
+      ...appState,
+      lastSaved: new Date().toISOString()
+    };
+
+    await fsAsync.writeFile(statePath, JSON.stringify(mergedState, null, 2));
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2160,9 +2187,18 @@ ipcMain.handle('minimize-window', () => {
 
 ipcMain.handle('close-window', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    const activePid = getTrackedVpnPid();
+    if (activePid && isVpnPidRunning(activePid)) {
+      logger.log('SYSTEM', 'WINDOW_CLOSE_BLOCKED_VPN_ACTIVE', { pid: activePid });
+      return { success: false, blocked: true, reason: 'vpn_active', pid: activePid };
+    }
+
     mainWindow.close();
     logger.log('SYSTEM', 'WINDOW_CLOSED', {});
+    return { success: true };
   }
+
+  return { success: false, blocked: false, reason: 'window_unavailable' };
 });
 
 ipcMain.handle('save-azure-profile', async (event, profile) => {
@@ -2409,41 +2445,70 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
 
 // ============ VERIFICAÇÃO DE STATUS VPN ============
 
+function isVpnPidRunning(pid) {
+  const pidNumber = Number(pid);
+  if (!Number.isInteger(pidNumber) || pidNumber <= 0) {
+    return false;
+  }
+
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync(
+        `tasklist /FI "PID eq ${pidNumber}" /FI "IMAGENAME eq openvpn.exe" /FO CSV /NH`,
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      ).trim();
+
+      if (!output || output.includes('No tasks are running')) {
+        return false;
+      }
+
+      return output.toLowerCase().includes('openvpn.exe');
+    }
+
+    process.kill(pidNumber, 0);
+    const processName = execSync(`ps -p ${pidNumber} -o comm=`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    }).trim().toLowerCase();
+
+    return processName.includes('openvpn');
+  } catch (error) {
+    return false;
+  }
+}
+
+function getTrackedVpnPid() {
+  if (vpnProcess?.pid) {
+    return vpnProcess.pid;
+  }
+
+  try {
+    if (!fs.existsSync(APP_STATE_PATH)) {
+      return null;
+    }
+
+    const state = JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'));
+    const pid = Number(state?.vpnPid);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 ipcMain.handle('check-vpn-status', async (event, savedPid) => {
   console.log(`🔍 [MAIN] Verificando status da VPN para PID: ${savedPid}`);
   
   try {
-    // Verificar se o processo ainda está ativo
-    if (savedPid) {
-      const { execSync } = require('child_process');
-      const platform = process.platform;
-      
-      let isRunning = false;
-      
-      if (platform === 'win32') {
-        try {
-          execSync(`tasklist /FI "PID eq ${savedPid}"`, { stdio: 'pipe' });
-          isRunning = true;
-        } catch (e) {
-          isRunning = false;
-        }
-      } else {
-        // Linux/Mac
-        try {
-          execSync(`kill -0 ${savedPid}`, { stdio: 'pipe' });
-          isRunning = true;
-        } catch (e) {
-          isRunning = false;
-        }
-      }
-      
-      if (isRunning) {
-        console.log(`✅ [MAIN] VPN ainda está ativa (PID: ${savedPid})`);
-        return { connected: true, pid: savedPid };
-      } else {
-        console.log(`❌ [MAIN] VPN não está mais ativa (PID: ${savedPid} não existe)`);
-        return { connected: false, pid: null };
-      }
+    const pidToCheck = savedPid || getTrackedVpnPid();
+
+    if (pidToCheck && isVpnPidRunning(pidToCheck)) {
+      console.log(`✅ [MAIN] VPN ainda está ativa (PID: ${pidToCheck})`);
+      return { connected: true, pid: Number(pidToCheck) };
+    }
+
+    console.log(`❌ [MAIN] VPN não está ativa para PID: ${pidToCheck}`);
+    if (vpnProcess && vpnProcess.pid === Number(pidToCheck)) {
+      vpnProcess = null;
     }
     
     return { connected: false, pid: null };
@@ -2683,7 +2748,16 @@ ipcMain.on('adjust-window-size', (event, { width, height }) => {
 });
 
 ipcMain.handle('quit-app', async () => {
+  const activePid = getTrackedVpnPid();
+  if (activePid && isVpnPidRunning(activePid)) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
+    }
+    return { success: false, blocked: true, reason: 'vpn_active', pid: activePid };
+  }
+
   app.quit();
+  return { success: true };
 });
 
 // ============ FUNÇÃO PARA SALVAR ESTADO DA APLICAÇÃO ============
