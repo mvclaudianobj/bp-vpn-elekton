@@ -10,6 +10,35 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+fix_dist_permissions() {
+    if [ ! -d "dist" ]; then
+        return 0
+    fi
+
+    DIST_OWNER_UID=$(stat -c "%u" dist 2>/dev/null || echo "")
+    CURRENT_UID=$(id -u)
+
+    if [ -n "$DIST_OWNER_UID" ] && [ "$DIST_OWNER_UID" != "$CURRENT_UID" ]; then
+        echo -e "${BLUE}🔐 Detectadas permissões de outro usuário em ./dist. Tentando corrigir...${NC}"
+
+        if command -v sudo >/dev/null 2>&1; then
+            if sudo chown -R "$USER":"$USER" dist; then
+                echo -e "${GREEN}✅ Permissões de ./dist corrigidas automaticamente${NC}"
+            else
+                echo -e "${RED}❌ Não foi possível corrigir permissões automaticamente${NC}"
+                echo -e "${RED}   Execute manualmente: sudo chown -R $USER:$USER dist${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}❌ sudo não disponível para corrigir permissões de ./dist${NC}"
+            return 1
+        fi
+    fi
+
+    chmod -R u+rwX dist 2>/dev/null || true
+    return 0
+}
+
 # Verificar se está rodando como root
 if [ "$EUID" -eq 0 ]; then
     echo -e "${RED}❌ Não execute este script como root/sudo${NC}"
@@ -19,7 +48,19 @@ fi
 
 # Limpar diretório dist para evitar problemas de permissões
 echo -e "${BLUE}🧹 Limpando dist...${NC}"
+fix_dist_permissions || exit 1
 rm -rf dist 2>/dev/null || true
+if [ -d "dist" ]; then
+    echo -e "${BLUE}🔁 Tentando limpeza forçada com correção de permissões...${NC}"
+    fix_dist_permissions || exit 1
+    rm -rf dist 2>/dev/null || true
+fi
+
+if [ -d "dist" ]; then
+    echo -e "${RED}❌ Não foi possível limpar ./dist automaticamente${NC}"
+    echo -e "${RED}   Execute manualmente: sudo chown -R $USER:$USER dist && rm -rf dist${NC}"
+    exit 1
+fi
 echo -e "${GREEN}✅ Dist limpo${NC}"
 echo ""
 
@@ -61,31 +102,39 @@ echo "9) Sair"
 echo ""
 read -p "Opção [1-9]: " choice
 
+BUILD_RESULT=0
+
 case $choice in
     1)
         echo -e "${BLUE}🐧 Buildando para Linux...${NC}"
         npm run build:linux
+        BUILD_RESULT=$?
         ;;
     2)
         echo -e "${BLUE}🪟 Buildando para Windows...${NC}"
         npm run build:win
+        BUILD_RESULT=$?
         ;;
     3)
         echo -e "${BLUE}🌍 Buildando para todas as plataformas...${NC}"
         npm run build:all
+        BUILD_RESULT=$?
         ;;
     4)
         echo -e "${BLUE}📦 Buildando DEB...${NC}"
         npx electron-builder --linux deb
+        BUILD_RESULT=$?
         ;;
     5)
         echo -e "${BLUE}📦 Buildando RPM...${NC}"
         npx electron-builder --linux rpm
+        BUILD_RESULT=$?
         ;;
     6)
         echo -e "${BLUE}📦 Buildando AppImage...${NC}"
         npx electron-builder --linux AppImage --publish=never
-        if [ $? -eq 0 ]; then
+        BUILD_RESULT=$?
+        if [ $BUILD_RESULT -eq 0 ]; then
             echo -e "${BLUE}🔧 Ajustando latest-linux.yml...${NC}"
             VERSION=$(node -p "require('./package.json').version")
             APPIMAGE_FILE="dist/bluepex-vpn-${VERSION}.AppImage"
@@ -107,7 +156,8 @@ case $choice in
     7)
         echo -e "${BLUE}📦 Buildando distros Linux (DEB + RPM + AppImage)...${NC}"
         npx electron-builder --linux deb rpm AppImage --publish=never
-        if [ $? -eq 0 ]; then
+        BUILD_RESULT=$?
+        if [ $BUILD_RESULT -eq 0 ]; then
             echo -e "${BLUE}🔧 Ajustando arquivos e latest-linux.yml...${NC}"
             VERSION=$(node -p "require('./package.json').version")
             APPIMAGE_FILE="dist/bluepex-vpn-${VERSION}.AppImage"
@@ -143,7 +193,8 @@ case $choice in
     8)
         echo -e "${BLUE}📦 Buildando DEB + AppImage...${NC}"
         npx electron-builder --linux deb AppImage --publish=never
-        if [ $? -eq 0 ]; then
+        BUILD_RESULT=$?
+        if [ $BUILD_RESULT -eq 0 ]; then
             echo -e "${BLUE}🔧 Ajustando arquivos e latest-linux.yml...${NC}"
             VERSION=$(node -p "require('./package.json').version")
             APPIMAGE_FILE="dist/bluepex-vpn-${VERSION}.AppImage"
@@ -186,7 +237,7 @@ case $choice in
         ;;
 esac
 
-if [ $? -eq 0 ]; then
+if [ $BUILD_RESULT -eq 0 ]; then
     echo ""
     echo -e "${GREEN}✅ Build concluído com sucesso!${NC}"
     echo ""
