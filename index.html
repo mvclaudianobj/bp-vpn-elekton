@@ -1214,15 +1214,22 @@
     <script>
         // Fix icon paths for packaged app
         (function() {
-            var isElectron = window.navigator.userAgent.indexOf('Electron') > -1;
-            if (isElectron) {
-                var basePath = '';
+            function applyIconPaths() {
+                var isElectron = window.navigator.userAgent.indexOf('Electron') > -1;
+                if (!isElectron) return;
+
                 document.querySelectorAll('img[src$=".png"]').forEach(function(img) {
                     var src = img.getAttribute('src');
                     if (src && !src.startsWith('data:') && !src.startsWith('local-resource://')) {
                         img.setAttribute('src', 'local-resource://' + src);
                     }
                 });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', applyIconPaths);
+            } else {
+                applyIconPaths();
             }
         })();
     </script>

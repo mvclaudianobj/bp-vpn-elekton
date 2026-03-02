@@ -224,10 +224,7 @@ let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
     }
 
     // Atualizações
-    if (updateBtn) {
-      updateBtn.addEventListener('click', checkForUpdates);
-      console.log('✅ Event listener adicionado ao updateBtn');
-    } else {
+    if (!updateBtn) {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
         console.log('ℹ️ minimizeBtn não encontrado (removido do layout)');
@@ -342,16 +339,32 @@ function setupEventListeners() {
         updateDownloadBtn.addEventListener('click', async () => {
             console.log('🖱️ Download button clicked');
             try {
+                const updateProgress = document.getElementById('updateProgress');
+                const updatePhase = document.getElementById('updatePhase');
+
+                updateDownloadBtn.style.display = 'none';
+                updateDownloadBtn.disabled = true;
+                if (updateProgress) {
+                    updateProgress.style.display = 'block';
+                }
+                if (updatePhase) {
+                    updatePhase.textContent = 'Baixando atualização...';
+                }
+
                 console.log('📡 Calling downloadUpdate IPC');
                 const result = await window.electronAPI.downloadUpdate();
                 console.log('📡 downloadUpdate result:', result);
                 if (result.success) {
                     showStatus('Download da atualização iniciado!', 'success');
                 } else {
+                    updateDownloadBtn.style.display = 'block';
+                    updateDownloadBtn.disabled = false;
                     showStatus(`Erro no download: ${result.error}`, 'alert');
                 }
             } catch (error) {
                 console.error('❌ Error in download button:', error);
+                updateDownloadBtn.style.display = 'block';
+                updateDownloadBtn.disabled = false;
                 showStatus('Erro ao iniciar download da atualização', 'alert');
             }
         });
@@ -1699,7 +1712,7 @@ if (window.electronAPI) {
         console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
-            updateBtn.textContent = `<img src="icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
+            updateBtn.innerHTML = `<img src="icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
         }
         // Atualizar modal com nova versão
         const updateVersionEl = document.getElementById('updateVersion');
