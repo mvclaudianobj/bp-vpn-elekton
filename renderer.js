@@ -318,8 +318,8 @@ function setupEventListeners() {
                     updateModal.style.display = 'flex';
                 }
             } else {
-                // Senão, verifica por atualizações
-                await window.electronAPI.checkForUpdates(true);
+                // Senão, verifica por atualizações com feedback de status
+                await checkForUpdates();
             }
         });
         console.log('✅ Event listener adicionado ao updateBtn');
@@ -1769,6 +1769,12 @@ if (window.electronAPI) {
             progressFill.style.width = `${progress.percent}%`;
         }
 
+    });
+
+    window.electronAPI.onUpdateCheckComplete((data) => {
+        if (data && data.available === false) {
+            showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
+        }
     });
 }
 
