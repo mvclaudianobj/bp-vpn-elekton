@@ -2306,10 +2306,19 @@ ipcMain.handle('login-azure', async () => {
     const response = await pca.acquireTokenByDeviceCode(request);
     const { accessToken, account } = response;
 
+    let expiresAtIso;
+    if (response.expiresOn instanceof Date) {
+      expiresAtIso = response.expiresOn.toISOString();
+    } else if (typeof response.expiresOn === 'number') {
+      expiresAtIso = new Date(response.expiresOn * 1000).toISOString();
+    } else {
+      expiresAtIso = new Date(Date.now() + 3600 * 1000).toISOString();
+    }
+
     const cache = {
       access_token: accessToken,
       username: account.username,
-      expires_at: new Date(Date.now() + response.expiresOn * 1000).toISOString()
+      expires_at: expiresAtIso
     };
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
 
@@ -2343,48 +2352,148 @@ ipcMain.handle('publish-token', async (event, username, token) => {
 });
 
 ipcMain.handle('connect-openvpn', async () => {
-  console.log(`🔗 [MAIN] connect-openvpn chamado - Timestamp: ${new Date().toISOString()}`);
+  return new Promise((resolve, reject) => {
+    console.log(`🔗 [MAIN] connect-openvpn chamado - Timestamp: ${new Date().toISOString()}`);
 
-  if (vpnProcess && !vpnProcess.killed) {
-    console.log(`⚠️ [MAIN] Conexão Azure já ativa (PID: ${vpnProcess.pid})`);
-    throw new Error('Já existe uma conexão VPN ativa');
-  }
+    if (vpnProcess && !vpnProcess.killed) {
+      console.log(`⚠️ [MAIN] Conexão Azure já ativa (PID: ${vpnProcess.pid})`);
+      reject(new Error('Já existe uma conexão VPN ativa'));
+      return;
+    }
 
-  let cache;
-  try {
-    cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-  } catch (err) {
-    throw new Error('Token não encontrado. Faça login primeiro.');
-  }
+    if (!config?.openvpn_config || !fs.existsSync(config.openvpn_config)) {
+      reject(new Error('Arquivo de configuração OpenVPN Azure não encontrado.'));
+      return;
+    }
 
-  const shortID = cache.access_token.substring(0, 16);
-  fs.writeFileSync(authPath, `user\n${shortID}`, 'utf-8');
+    let cache;
+    try {
+      cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+    } catch (err) {
+      reject(new Error('Token não encontrado. Faça login primeiro.'));
+      return;
+    }
 
-   let openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
+    const shortID = cache.access_token.substring(0, 16);
+    fs.writeFileSync(authPath, `user\n${shortID}`, 'utf-8');
 
-   currentOvpnPath = config.openvpn_config;
-   currentElevationMethod = 'sudo';
+    const openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
+    let openvpnCommand;
+    let openvpnArgsFinal;
 
-   if (process.platform === 'win32') {
-    const openvpnPath = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
-    vpnProcess = spawn(openvpnPath, openvpnArgs);
-  } else {
-    vpnProcess = spawn('sudo', ['openvpn', ...openvpnArgs]);
-  }
+    currentOvpnPath = config.openvpn_config;
+    currentElevationMethod = 'sudo';
 
-  vpnConnectionActive = true;
+    if (process.platform === 'win32') {
+      openvpnCommand = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
+      openvpnArgsFinal = openvpnArgs;
+    } else {
+      openvpnCommand = 'sudo';
+      openvpnArgsFinal = ['openvpn', ...openvpnArgs];
+    }
 
-  vpnProcess.stdout.on('data', (data) => console.log(data.toString()));
-  vpnProcess.stderr.on('data', (data) => console.error(data.toString()));
+    let connectionEstablished = false;
+    let lastErrorOutput = '';
 
-  vpnProcess.on('close', (code) => {
-    console.log(`OpenVPN encerrado com código ${code}`);
-    vpnConnectionActive = false;
-    vpnProcess = null;
-    mainWindow.webContents.send('vpn-disconnected');
+    let connectionTimeout = null;
+
+    const cleanup = () => {
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      try {
+        if (fs.existsSync(authPath)) {
+          fs.unlinkSync(authPath);
+        }
+      } catch (error) {
+        console.log('⚠️ Erro ao limpar authPath Azure:', error.message);
+      }
+    };
+
+    try {
+      vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, SYSTEMD_ASK_PASSWORD: '' }
+      });
+    } catch (spawnError) {
+      cleanup();
+      reject(new Error(`Falha ao iniciar OpenVPN: ${spawnError.message}`));
+      return;
+    }
+
+    vpnConnectionActive = true;
+
+    connectionTimeout = setTimeout(() => {
+      if (!connectionEstablished) {
+        vpnConnectionActive = false;
+        if (vpnProcess && !vpnProcess.killed) {
+          try {
+            vpnProcess.kill('SIGTERM');
+          } catch (_) {}
+        }
+        reject(new Error(`Timeout na conexão OpenVPN Azure. ${lastErrorOutput || ''}`.trim()));
+      }
+    }, 60000);
+
+    vpnProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      console.log('OpenVPN Azure stdout:', output);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-log', output);
+      }
+
+      if ((output.includes('Initialization Sequence Completed') || output.includes('CONNECTED,SUCCESS')) && !connectionEstablished) {
+        connectionEstablished = true;
+        if (connectionTimeout) clearTimeout(connectionTimeout);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
+        }
+        resolve({ pid: vpnProcess.pid, shortID });
+      }
+
+      if (output.includes('AUTH_FAILED')) {
+        lastErrorOutput = 'Falha de autenticação do OpenVPN.';
+      }
+    });
+
+    vpnProcess.stderr.on('data', (data) => {
+      const errorText = data.toString();
+      console.error('OpenVPN Azure stderr:', errorText);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-log', `ERRO: ${errorText}`);
+      }
+
+      if (errorText.includes('sudo:') || errorText.includes('a password is required')) {
+        lastErrorOutput = 'Sudo requer senha/interação para iniciar OpenVPN.';
+      } else if (errorText.includes('Cannot open TUN/TAP dev')) {
+        lastErrorOutput = 'Sem permissão para abrir TUN/TAP.';
+      } else if (errorText.includes('AUTH_FAILED')) {
+        lastErrorOutput = 'Falha de autenticação do OpenVPN.';
+      } else if (errorText.trim()) {
+        lastErrorOutput = errorText.trim().split('\n').pop();
+      }
+    });
+
+    vpnProcess.on('error', (error) => {
+      vpnConnectionActive = false;
+      cleanup();
+      vpnProcess = null;
+      reject(new Error(`Erro ao iniciar OpenVPN Azure: ${error.message}`));
+    });
+
+    vpnProcess.on('close', (code) => {
+      console.log(`OpenVPN Azure encerrado com código ${code}`);
+      vpnConnectionActive = false;
+      cleanup();
+      vpnProcess = null;
+
+      if (connectionEstablished && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-disconnected');
+      }
+
+      if (!connectionEstablished) {
+        reject(new Error(`OpenVPN Azure encerrou antes de conectar (código ${code}). ${lastErrorOutput || ''}`.trim()));
+      }
+    });
   });
-
-  return { pid: vpnProcess.pid, shortID };
 });
 
 // ============ DESCONEXÃO VPN ============

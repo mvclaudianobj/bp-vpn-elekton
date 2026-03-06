@@ -5,6 +5,22 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-03-06
+
+### 🔧 Correções de Conexão Entra ID (Azure)
+
+- **Conexão OpenVPN Azure robusta**: O fluxo `connect-openvpn` agora só confirma sucesso após detectar conexão real (`Initialization Sequence Completed`/`CONNECTED,SUCCESS`), evitando falso positivo apenas por PID.
+- **Diagnóstico de falhas ampliado**: Adicionado tratamento de `stdout`/`stderr`, timeout explícito, captura de erro de spawn e mensagens mais claras para falhas de sudo, TUN/TAP e autenticação.
+- **Tratamento de desconexão ajustado**: O evento de desconexão não é mais disparado como se fosse sessão ativa quando o processo cai antes de estabelecer túnel.
+
+### 🛡️ Correções de Sessão e Fechamento
+
+- **Bloqueio reforçado de saída com VPN ativa**: Melhorada detecção de sessão ativa para impedir fechamento da aplicação enquanto houver túnel VPN em execução.
+
+### 🔐 Correção de Token Azure
+
+- **Expiração do token corrigida**: Ajustado cálculo de `expires_at` para tratar corretamente `expiresOn` retornado pelo MSAL como objeto `Date`.
+
 ## [1.0.5] - 2026-02-27
 
 ### 🔧 Correções de Bugs
