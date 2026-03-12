@@ -277,24 +277,7 @@ class AutoUpdaterManager {
     this.startPeriodicChecks();
   }
 
-  configureUpdater() {
-    // No Linux, electron-updater só suporta auto-update via AppImage.
-    // Instalações via .deb ou .rpm não são detectadas pelo updater.
-    if (process.platform === 'linux') {
-      const isAppImage = !!process.env.APPIMAGE;
-      this.linuxAutoUpdateSupported = isAppImage;
-      logger.log('UPDATE', 'LINUX_UPDATE_SUPPORT', {
-        isAppImage,
-        APPIMAGE: process.env.APPIMAGE || null,
-        note: isAppImage ? 'AppImage: auto-update suportado' : 'deb/rpm: auto-update NÃO suportado; redirecionar para GitHub Releases'
-      });
-      if (!isAppImage) {
-        console.log('⚠️ [UPDATE] Instalação via .deb/.rpm — auto-update não suportado pelo electron-updater. Use o AppImage ou baixe manualmente em GitHub Releases.');
-      }
-    } else {
-      this.linuxAutoUpdateSupported = true;
-    }
-
+   configureUpdater() {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
@@ -411,21 +394,6 @@ class AutoUpdaterManager {
         manual: showDialog,
         currentVersion: app.getVersion()
       });
-
-      // Verificar se auto-update é suportado nesta instalação Linux
-      if (process.platform === 'linux' && !this.linuxAutoUpdateSupported) {
-        logger.log('UPDATE', 'NOT_SUPPORTED_DEB_RPM', { currentVersion: app.getVersion() });
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('update-check-complete', {
-            available: false,
-            currentVersion: app.getVersion(),
-            notSupported: true,
-            message: 'Auto-update não suportado para instalações .deb/.rpm. Baixe a versão mais recente em GitHub Releases.',
-            releasesUrl: 'https://github.com/mvclaudianobj/BluePexVPN/releases/latest'
-          });
-        }
-        return;
-      }
 
       console.log('🔍 Iniciando checkForUpdates()...');
 

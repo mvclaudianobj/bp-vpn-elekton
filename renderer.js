@@ -1771,15 +1771,7 @@ if (window.electronAPI) {
 
     window.electronAPI.onUpdateCheckComplete((data) => {
         if (!data) return;
-
-        if (data.notSupported) {
-            // Instalação .deb/.rpm no Linux — auto-update não suportado
-            const url = data.releasesUrl || 'https://github.com/mvclaudianobj/BluePexVPN/releases/latest';
-            showStatus(
-                `Atualização manual necessária. <a href="#" onclick="window.electronAPI.openExternal('${url}');return false;" style="color:inherit;text-decoration:underline;">Baixar em GitHub Releases</a>`,
-                'alert'
-            );
-        } else if (data.available === false) {
+        if (data.available === false) {
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         }
     });
