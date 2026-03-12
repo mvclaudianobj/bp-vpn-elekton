@@ -5,7 +5,7 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
-## [0.1.6] - 2026-03-06
+## [0.1.6-beta] - 2026-03-06
 
 ### 🔧 Correções de Conexão Entra ID (Azure)
 
