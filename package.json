@@ -9,6 +9,10 @@
     "email": "contato@bluepex.com"
   },
   "homepage": "https://bluepex.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mvclaudianobj/BluePexVPN.git"
+  },
   "scripts": {
     "start": "electron . --no-sandbox --disable-gpu",
     "dev": "electron . --dev --no-sandbox --disable-gpu",
