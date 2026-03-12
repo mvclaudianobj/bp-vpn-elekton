@@ -1557,16 +1557,14 @@ function initializeUpdateElements() {
 async function checkForUpdates() {
     try {
         console.log('🔄 BOTÃO DE ATUALIZAÇÃO CLICADO - Verificando atualizações...');
-        //alert("Botão Atualização clicado!");
         showStatus('Verificando atualizações...', 'status');
 
         const result = await window.electronAPI.checkForUpdates(true);
 
-        if (result.success) {
-            showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
-        } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
+        // Não exibir "versão mais recente" aqui — o resultado correto chega via evento:
+        // onUpdateAvailable (se houver update) ou onUpdateCheckComplete (se não houver).
+        // Exibir mensagem apenas em caso de erro técnico no IPC.
+        if (!result.success) {
             showStatus(`Erro na verificação: ${result.error}`, 'alert');
         }
     } catch (error) {
@@ -1772,7 +1770,16 @@ if (window.electronAPI) {
     });
 
     window.electronAPI.onUpdateCheckComplete((data) => {
-        if (data && data.available === false) {
+        if (!data) return;
+
+        if (data.notSupported) {
+            // Instalação .deb/.rpm no Linux — auto-update não suportado
+            const url = data.releasesUrl || 'https://github.com/mvclaudianobj/BluePexVPN/releases/latest';
+            showStatus(
+                `Atualização manual necessária. <a href="#" onclick="window.electronAPI.openExternal('${url}');return false;" style="color:inherit;text-decoration:underline;">Baixar em GitHub Releases</a>`,
+                'alert'
+            );
+        } else if (data.available === false) {
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         }
     });
