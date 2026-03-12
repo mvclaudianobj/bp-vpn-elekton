@@ -130,6 +130,9 @@ globalThis.electronAPI = {
 
    // Azure device code
    onDeviceCodeResponse: (callback) => ipcRenderer.on('device-code-response', callback),
+
+   // Abrir URL externa no navegador padrão
+   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 };
 
 // Send success log

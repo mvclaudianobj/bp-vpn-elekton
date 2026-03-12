@@ -278,6 +278,23 @@ class AutoUpdaterManager {
   }
 
   configureUpdater() {
+    // No Linux, electron-updater só suporta auto-update via AppImage.
+    // Instalações via .deb ou .rpm não são detectadas pelo updater.
+    if (process.platform === 'linux') {
+      const isAppImage = !!process.env.APPIMAGE;
+      this.linuxAutoUpdateSupported = isAppImage;
+      logger.log('UPDATE', 'LINUX_UPDATE_SUPPORT', {
+        isAppImage,
+        APPIMAGE: process.env.APPIMAGE || null,
+        note: isAppImage ? 'AppImage: auto-update suportado' : 'deb/rpm: auto-update NÃO suportado; redirecionar para GitHub Releases'
+      });
+      if (!isAppImage) {
+        console.log('⚠️ [UPDATE] Instalação via .deb/.rpm — auto-update não suportado pelo electron-updater. Use o AppImage ou baixe manualmente em GitHub Releases.');
+      }
+    } else {
+      this.linuxAutoUpdateSupported = true;
+    }
+
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
@@ -310,39 +327,9 @@ class AutoUpdaterManager {
   }
 
   setupEventHandlers() {
-    autoUpdater.on('update-available', (info) => {
-      console.log('🎉 UPDATE_AVAILABLE EVENT RECEIVED!');
-      console.log('📦 Update info:', JSON.stringify(info, null, 2));
-      console.log('📦 Version fields:', { version: info.version, releaseName: info.releaseName, tag: info.tag });
-
-      logger.log('UPDATE', 'AVAILABLE', {
-        version: info.version,
-        releaseName: info.releaseName,
-        releaseDate: info.releaseDate,
-        releaseNotes: info.releaseNotes,
-        currentVersion: app.getVersion()
-      });
-
-      this.updateAvailable = true;
-      this.updateInfo = info;
-
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('update-available', info);
-      }
-    });
-
-    autoUpdater.on('update-not-available', (info) => {
-      console.log('❌ UPDATE_NOT_AVAILABLE EVENT RECEIVED!');
-      console.log('📋 Current version:', app.getVersion());
-
-      logger.log('UPDATE', 'NOT_AVAILABLE', {
-        currentVersion: app.getVersion(),
-        checkedAt: new Date().toISOString()
-      });
-
-      this.updateAvailable = false;
-      this.updateInfo = null;
-    });
+    // NOTA: os eventos 'update-available' e 'update-not-available' são gerenciados
+    // com .once() dentro de checkForUpdates() para garantir sequência correta.
+    // Aqui ficam apenas os eventos de longa duração (download e erro global).
 
     autoUpdater.on('download-progress', (progressObj) => {
       const progress = {
@@ -425,18 +412,73 @@ class AutoUpdaterManager {
         currentVersion: app.getVersion()
       });
 
-      console.log('🔍 Iniciando checkForUpdates()...');
-      await autoUpdater.checkForUpdates();
-      console.log('✅ checkForUpdates() concluído, aguardando eventos...');
-
-      if (showDialog && this.updateAvailable) {
-        logger.log('UPDATE', 'NOTIFYING_UPDATE_AVAILABLE', { version: this.updateInfo.version });
-        // Notificar renderer para abrir modal
+      // Verificar se auto-update é suportado nesta instalação Linux
+      if (process.platform === 'linux' && !this.linuxAutoUpdateSupported) {
+        logger.log('UPDATE', 'NOT_SUPPORTED_DEB_RPM', { currentVersion: app.getVersion() });
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('update-available', { info: this.updateInfo, showDialog: showDialog });
+          mainWindow.webContents.send('update-check-complete', {
+            available: false,
+            currentVersion: app.getVersion(),
+            notSupported: true,
+            message: 'Auto-update não suportado para instalações .deb/.rpm. Baixe a versão mais recente em GitHub Releases.',
+            releasesUrl: 'https://github.com/mvclaudianobj/BluePexVPN/releases/latest'
+          });
         }
-      } else if (showDialog && !this.updateAvailable) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        return;
+      }
+
+      console.log('🔍 Iniciando checkForUpdates()...');
+
+      // Aguardar resolução real do evento antes de retornar ao renderer.
+      // autoUpdater.checkForUpdates() dispara os eventos 'update-available' ou
+      // 'update-not-available' de forma assíncrona após retornar — por isso usamos
+      // uma Promise que aguarda um desses dois eventos (ou erro) com timeout de 30s.
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Timeout na verificação de atualização (30s)'));
+        }, 30000);
+
+        const onAvailable = (info) => {
+          cleanup();
+          this.updateAvailable = true;
+          this.updateInfo = info;
+          resolve({ available: true, info });
+        };
+
+        const onNotAvailable = (info) => {
+          cleanup();
+          this.updateAvailable = false;
+          this.updateInfo = null;
+          resolve({ available: false, info });
+        };
+
+        const onError = (err) => {
+          cleanup();
+          reject(err);
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          autoUpdater.removeListener('update-available', onAvailable);
+          autoUpdater.removeListener('update-not-available', onNotAvailable);
+          autoUpdater.removeListener('error', onError);
+        };
+
+        autoUpdater.once('update-available', onAvailable);
+        autoUpdater.once('update-not-available', onNotAvailable);
+        autoUpdater.once('error', onError);
+
+        autoUpdater.checkForUpdates().catch(onError);
+      });
+
+      console.log('✅ checkForUpdates() concluído. updateAvailable:', this.updateAvailable);
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (this.updateAvailable) {
+          logger.log('UPDATE', 'NOTIFYING_UPDATE_AVAILABLE', { version: this.updateInfo?.version });
+          mainWindow.webContents.send('update-available', { info: this.updateInfo, showDialog });
+        } else {
           mainWindow.webContents.send('update-check-complete', {
             available: false,
             currentVersion: app.getVersion()
@@ -445,6 +487,12 @@ class AutoUpdaterManager {
       }
     } catch (error) {
       logger.logSystemError('UPDATE_CHECK', error);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-error', {
+          message: error.message,
+          code: error.code
+        });
+      }
     } finally {
       this.isChecking = false;
     }
@@ -2202,6 +2250,13 @@ ipcMain.handle('load-azure-profiles', async () => {
 
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('get-platform', () => process.platform);
+ipcMain.handle('open-external', (event, url) => {
+  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+    return { success: true };
+  }
+  return { success: false, error: 'URL inválida' };
+});
 
 // Minimizar para tray
 ipcMain.handle('minimize-to-tray', () => {
