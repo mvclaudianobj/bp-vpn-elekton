@@ -5,21 +5,113 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/spec/v2.0.0.html).
 
-## [0.1.6-beta] - 2026-03-06
+---
 
-### 🔧 Correções de Conexão Entra ID (Azure)
+## [0.1.9] - PLANEJADO — Fase 3: Baixa Prioridade / Qualidade de Código
 
-- **Conexão OpenVPN Azure robusta**: O fluxo `connect-openvpn` agora só confirma sucesso após detectar conexão real (`Initialization Sequence Completed`/`CONNECTED,SUCCESS`), evitando falso positivo apenas por PID.
-- **Diagnóstico de falhas ampliado**: Adicionado tratamento de `stdout`/`stderr`, timeout explícito, captura de erro de spawn e mensagens mais claras para falhas de sudo, TUN/TAP e autenticação.
-- **Tratamento de desconexão ajustado**: O evento de desconexão não é mais disparado como se fosse sessão ativa quando o processo cai antes de estabelecer túnel.
+### 🔀 RF012: Split Tunneling
+- Permitir configurar rotas específicas por perfil `.ovpn` diretamente na interface
+
+### 🍎 RNF011-012: Suporte macOS + ARM
+- Testar e validar build para macOS 10.15+
+- Suporte a arquitetura ARM (Apple Silicon / Linux ARM)
+
+### 🧱 RNF021: Modularização do `main.js`
+- Separar arquivo de 2.876 linhas em módulos independentes: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
+- Aplicar padrão de módulos CommonJS com interfaces claras entre processos
+
+### ⚙️ CI/CD: GitHub Actions
+- Criar workflow para build automático em push para branches `beta-*`
+- Publicação automática de releases para GitHub Releases
+
+### 🧹 Limpeza de Repositório
+- Remover arquivos de debug commitados: `debug.js`, `debug.js.backup`, `index_backup.html`, `index_debug.html`
+- Atualizar badge de versão no `README.md`
+
+---
+
+## [0.1.8] - PLANEJADO — Fase 2: Média Prioridade / Features
+
+### 🔔 RF021/RNF016: Notificações de Sistema
+- Implementar `Notification` API do Electron para eventos: conexão estabelecida, desconexão, erro e atualização disponível
+
+### 📊 RF022-RF024: Monitoramento em Tempo Real
+- Exibir velocidade de upload/download em tempo real no dashboard
+- Contador de tráfego total consumido na sessão
+- Timer de tempo de conexão ativo
+
+### 📋 RF025: Histórico de Conexões
+- Persistir e exibir log de sessões anteriores (perfil, duração, data, status)
+
+### 🔒 RF011: Kill Switch
+- Bloquear todo tráfego de rede fora da interface VPN quando a conexão cair
+- Implementação via `iptables` (Linux) e `netsh` (Windows)
+
+### 🛡️ RNF008: Proteção contra DNS Leak
+- Forçar resolução DNS exclusivamente via interface VPN
+- Validação automática de ausência de leak na tela de diagnósticos
+
+---
+
+## [0.1.7] - PLANEJADO — Fase 1: Alta Prioridade / Correções Críticas
+
+### 🐛 IS007: Ícones ausentes no pacote `.deb`
+- Corrigir carregamento de ícones no aplicativo empacotado
+- Substituir caminhos relativos simples no `index.html` pelo protocolo `local-resource://` já implementado no `main.js`
+
+### 🐛 IS006: Senha não limpa ao trocar de perfil
+- Limpar campos de usuário e senha antes de carregar credenciais do novo perfil
+- Garantir que perfis sem senha salva exibam campos vazios
+
+### 🐛 IS002: Falso estado "conectado" após reiniciar
+- Reforçar validação de PID no `restoreApplicationState` para verificar processo real no SO antes de exibir status conectado
+- Limpar `app_state.json` quando PID não corresponder a processo ativo
+
+### 🐛 IS001: Tray icon — app desaparece ao minimizar
+- Corrigir race condition na criação do tray no Linux
+- Garantir que clicar no ícone do tray restaure a janela corretamente em todas as plataformas
+
+### 🐛 IS005: Verificação de updates reporta versão errada
+- Corrigir lógica de comparação de versão no auto-updater
+- Garantir que a versão atual seja lida corretamente de `app.getVersion()`
+
+### 🐛 IS003: Windows — OpenVPN não instalado automaticamente
+- Validar existência do executável OpenVPN antes de tentar conectar
+- Exibir mensagem clara e link de download caso o executável não seja encontrado
+- Verificar silenciosamente se o MSI foi instalado pelo NSIS pós-instalação
+
+### 🔐 IS004 / RF003 / RNF006: Segurança de Credenciais
+- Remover `MASTER_PASSWORD` e `SALT` hardcoded do `main.js`
+- Implementar derivação de chave a partir de `machine-id` do sistema ou keychain nativo (`keytar`)
+
+### 🔐 RF004 / RNF006: Logout e Limpeza de Credenciais
+- Validar que logout apaga todos os tokens Azure, credenciais de perfil e cache de sessão
+
+### 🔄 RF010: Reconexão Automática em Caso de Queda
+- Implementar lógica de retry com backoff exponencial no evento `close` do `vpnProcess`
+- Configuração do número de tentativas e intervalo na tela de preferências
+
+---
+
+## [0.1.6] - 2026-03-06
+
+### 🔧 Correções de Conexão Entra ID (Azure AD)
+
+- **Conexão OpenVPN Azure robusta**: O fluxo `connect-openvpn` foi refatorado para usar Promise explícita e só resolve após detecção real de túnel estabelecido (`Initialization Sequence Completed` / `CONNECTED,SUCCESS`), eliminando falso positivo por PID.
+- **Timeout de conexão**: Adicionado timeout explícito de 60 segundos; se o túnel não for estabelecido dentro do prazo, o processo é encerrado com `SIGTERM` e a Promise é rejeitada com mensagem descritiva.
+- **Diagnóstico de falhas ampliado**: Captura e classificação de erros de `stdout`/`stderr` com mensagens específicas para falha de sudo, permissão TUN/TAP e `AUTH_FAILED`.
+- **Limpeza garantida do arquivo de auth**: O arquivo temporário de autenticação (`authPath`) é removido em todos os caminhos de encerramento (sucesso, falha e timeout).
+- **Erro de spawn tratado**: Adicionado bloco `try/catch` ao `spawn()` do OpenVPN com rejeição limpa da Promise em caso de falha no início do processo.
+- **Tratamento de desconexão ajustado**: O evento `vpn-disconnected` não é mais disparado quando o processo cai antes de estabelecer túnel, evitando estado inconsistente na UI.
+- **Validação de config antes de conectar**: Adicionada verificação da existência de `config.openvpn_config` antes de tentar iniciar o processo OpenVPN.
 
 ### 🛡️ Correções de Sessão e Fechamento
 
-- **Bloqueio reforçado de saída com VPN ativa**: Melhorada detecção de sessão ativa para impedir fechamento da aplicação enquanto houver túnel VPN em execução.
+- **Bloqueio reforçado de saída com VPN ativa**: Melhorada detecção de sessão ativa via `isVpnSessionActive()` para impedir fechamento da aplicação enquanto houver túnel VPN em execução.
 
 ### 🔐 Correção de Token Azure
 
-- **Expiração do token corrigida**: Ajustado cálculo de `expires_at` para tratar corretamente `expiresOn` retornado pelo MSAL como objeto `Date`.
+- **Expiração do token corrigida**: Ajustado cálculo de `expires_at` para tratar todos os formatos possíveis do campo `expiresOn` retornado pelo MSAL: objeto `Date`, número Unix timestamp (segundos) ou ausência do campo (fallback de +1 hora).
 
 ## [1.0.5] - 2026-02-27
 

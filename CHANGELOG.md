@@ -5,6 +5,116 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## [0.1.9] - PLANNED — Phase 3: Low Priority / Code Quality
+
+### 🔀 RF012: Split Tunneling
+- Allow configuring specific routes per `.ovpn` profile from the UI
+
+### 🍎 RNF011-012: macOS + ARM Support
+- Test and validate build for macOS 10.15+
+- ARM architecture support (Apple Silicon / Linux ARM)
+
+### 🧱 RNF021: `main.js` Modularization
+- Split 2,876-line file into independent modules: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
+- Apply CommonJS module pattern with clear inter-process interfaces
+
+### ⚙️ CI/CD: GitHub Actions
+- Create workflow for automatic builds on push to `beta-*` branches
+- Automated release publishing to GitHub Releases
+
+### 🧹 Repository Cleanup
+- Remove committed debug files: `debug.js`, `debug.js.backup`, `index_backup.html`, `index_debug.html`
+- Update version badge in `README.md`
+
+---
+
+## [0.1.8] - PLANNED — Phase 2: Medium Priority / Features
+
+### 🔔 RF021/RNF016: System Notifications
+- Implement Electron `Notification` API for events: connection established, disconnection, error, update available
+
+### 📊 RF022-RF024: Real-Time Monitoring
+- Display real-time upload/download speed in the dashboard
+- Session traffic counter (total bytes)
+- Active connection timer
+
+### 📋 RF025: Connection History
+- Persist and display log of previous sessions (profile, duration, date, status)
+
+### 🔒 RF011: Kill Switch
+- Block all network traffic outside the VPN interface when connection drops
+- Implementation via `iptables` (Linux) and `netsh` (Windows)
+
+### 🛡️ RNF008: DNS Leak Protection
+- Force DNS resolution exclusively through the VPN interface
+- Automatic leak validation in the diagnostics screen
+
+---
+
+## [0.1.7] - PLANNED — Phase 1: High Priority / Critical Fixes
+
+### 🐛 IS007: Missing icons in `.deb` package
+- Fix icon loading in packaged application
+- Replace simple relative paths in `index.html` with the `local-resource://` protocol already implemented in `main.js`
+
+### 🐛 IS006: Password not cleared when switching profiles
+- Clear username and password fields before loading credentials for the new profile
+- Ensure profiles without saved passwords display empty fields
+
+### 🐛 IS002: False "connected" state after reboot
+- Strengthen PID validation in `restoreApplicationState` to verify real OS process before showing connected status
+- Clear `app_state.json` when PID does not match an active process
+
+### 🐛 IS001: Tray icon — app disappears when minimized
+- Fix race condition in tray creation on Linux
+- Ensure clicking the tray icon correctly restores the window on all platforms
+
+### 🐛 IS005: Update check reports wrong version
+- Fix version comparison logic in auto-updater
+- Ensure current version is correctly read from `app.getVersion()`
+
+### 🐛 IS003: Windows — OpenVPN not installed automatically
+- Validate OpenVPN executable existence before attempting to connect
+- Display clear message and download link if executable is not found
+- Silently verify MSI was installed by NSIS post-install
+
+### 🔐 IS004 / RF003 / RNF006: Credential Security
+- Remove hardcoded `MASTER_PASSWORD` and `SALT` from `main.js`
+- Implement key derivation from system `machine-id` or native keychain (`keytar`)
+
+### 🔐 RF004 / RNF006: Logout and Credential Cleanup
+- Validate that logout erases all Azure tokens, profile credentials, and session cache
+
+### 🔄 RF010: Automatic Reconnection on Drop
+- Implement retry logic with exponential backoff on `vpnProcess` `close` event
+- Configurable retry count and interval in preferences screen
+
+---
+
+## [0.1.6] - 2026-03-06
+
+### 🔧 Entra ID (Azure AD) Connection Fixes
+
+- **Robust OpenVPN Azure connection**: `connect-openvpn` refactored to use an explicit Promise, resolving only after real tunnel detection (`Initialization Sequence Completed` / `CONNECTED,SUCCESS`), eliminating false positives from PID alone.
+- **Connection timeout**: Added explicit 60-second timeout; if tunnel is not established in time, the process is killed with `SIGTERM` and the Promise is rejected with a descriptive message.
+- **Expanded failure diagnostics**: Captures and classifies `stdout`/`stderr` errors with specific messages for sudo failure, TUN/TAP permission, and `AUTH_FAILED`.
+- **Guaranteed auth file cleanup**: Temporary auth file (`authPath`) is removed on all exit paths (success, failure, timeout).
+- **Spawn error handling**: Added `try/catch` around `spawn()` with clean Promise rejection if process fails to start.
+- **Disconnection event fix**: `vpn-disconnected` event is no longer emitted when the process exits before the tunnel is established, preventing inconsistent UI state.
+- **Config validation before connect**: Added check for `config.openvpn_config` file existence before attempting to start OpenVPN.
+
+### 🛡️ Session and Close Fixes
+
+- **Reinforced exit blocking with active VPN**: Improved active session detection via `isVpnSessionActive()` to prevent application close while a VPN tunnel is running.
+
+### 🔐 Azure Token Fix
+
+- **Token expiration corrected**: Adjusted `expires_at` calculation to handle all possible formats of the `expiresOn` field returned by MSAL: `Date` object, Unix timestamp (seconds), or missing field (fallback +1 hour).
+
+---
+
 ## [0.1.4] - 2026-01-15
 
 ### 🔒 Security Improvements
