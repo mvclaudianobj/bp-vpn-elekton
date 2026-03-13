@@ -496,10 +496,33 @@ const USER_CREDENTIALS_PATH = path.join(USER_DATA_DIR, 'user_credentials.json');
 const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
 
 // ============ UTILITÁRIOS DE CRIPTOGRAFIA ============
-// Chave derivada de uma senha mestre (em produção, use uma chave segura)
-const MASTER_PASSWORD = 'BluePexVPN-SecureStorage-2025';
-const SALT = 'BluePexSalt2025';
-const ENCRYPTION_KEY = crypto.scryptSync(MASTER_PASSWORD, SALT, 32);
+// IS004: chave derivada do machine-id do sistema (não hardcoded)
+function getMachineId() {
+  try {
+    if (process.platform === 'win32') {
+      const { execSync } = require('child_process');
+      const out = execSync(
+        'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const match = out.match(/MachineGuid\s+REG_SZ\s+([^\r\n]+)/);
+      if (match) return match[1].trim();
+    } else {
+      // Linux: /etc/machine-id ou /var/lib/dbus/machine-id
+      for (const p of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
+        if (fs.existsSync(p)) {
+          return fs.readFileSync(p, 'utf8').trim();
+        }
+      }
+    }
+  } catch (_) {}
+  // Fallback: identificador baseado no caminho de dados do app (único por instalação)
+  return crypto.createHash('sha256').update(USER_DATA_DIR).digest('hex');
+}
+
+const _machineId = getMachineId();
+const _appSalt = 'BluePexVPN-v2-Salt';
+const ENCRYPTION_KEY = crypto.scryptSync(_machineId, _appSalt, 32);
 const ALGORITHM = 'aes-256-gcm';
 
 function encrypt(text) {
@@ -526,9 +549,20 @@ function decrypt(encryptedData) {
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
-  } catch (error) {
-    console.error('Erro ao descriptografar:', error);
-    return null;
+  } catch (_) {
+    // IS004: fallback — tenta descriptografar com a chave legada (antes da migração machine-id)
+    try {
+      const legacyKey = crypto.scryptSync('BluePexVPN-SecureStorage-2025', 'BluePexSalt2025', 32);
+      const decipher = crypto.createDecipheriv(ALGORITHM, legacyKey, Buffer.from(encryptedData.iv, 'hex'));
+      decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+      let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      console.log('🔑 [IS004] Credencial descriptografada com chave legada — será re-criptografada na próxima gravação');
+      return decrypted;
+    } catch (error) {
+      console.error('Erro ao descriptografar (chave nova e legada falharam):', error.message);
+      return null;
+    }
   }
 }
 
@@ -591,6 +625,61 @@ let currentOvpnPath = null;
 let vpnProcess = null;
 let vpnConnectionActive = false;
 
+// RF010: controle de reconexão automática
+const AUTO_RECONNECT = {
+  enabled: true,       // habilita reconexão automática
+  maxRetries: 3,       // máximo de tentativas
+  baseDelay: 5000,     // delay inicial em ms (5s)
+  maxDelay: 60000,     // delay máximo em ms (60s)
+  retryCount: 0,       // contador atual
+  retryTimer: null,    // timer pendente
+  lastProfileId: null, // perfil da última conexão
+  lastProfileType: null
+};
+
+function scheduleReconnect(profileId, profileType) {
+  if (!AUTO_RECONNECT.enabled) return;
+  if (AUTO_RECONNECT.retryCount >= AUTO_RECONNECT.maxRetries) {
+    console.log(`⛔ [RF010] Máximo de tentativas (${AUTO_RECONNECT.maxRetries}) atingido para ${profileId}`);
+    AUTO_RECONNECT.retryCount = 0;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-reconnect-failed', { profileId, maxRetries: AUTO_RECONNECT.maxRetries });
+    }
+    return;
+  }
+
+  const delay = Math.min(AUTO_RECONNECT.baseDelay * Math.pow(2, AUTO_RECONNECT.retryCount), AUTO_RECONNECT.maxDelay);
+  AUTO_RECONNECT.retryCount++;
+  console.log(`🔄 [RF010] Tentativa ${AUTO_RECONNECT.retryCount}/${AUTO_RECONNECT.maxRetries} em ${delay / 1000}s para ${profileId}`);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('vpn-reconnecting', {
+      profileId,
+      attempt: AUTO_RECONNECT.retryCount,
+      maxRetries: AUTO_RECONNECT.maxRetries,
+      delaySeconds: Math.round(delay / 1000)
+    });
+  }
+
+  AUTO_RECONNECT.retryTimer = setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-reconnect-attempt', { profileId, attempt: AUTO_RECONNECT.retryCount });
+    }
+    // Dispara reconexão via IPC interno
+    ipcMain.emit('internal-reconnect', profileId, profileType);
+  }, delay);
+}
+
+function cancelReconnect() {
+  if (AUTO_RECONNECT.retryTimer) {
+    clearTimeout(AUTO_RECONNECT.retryTimer);
+    AUTO_RECONNECT.retryTimer = null;
+  }
+  AUTO_RECONNECT.retryCount = 0;
+  AUTO_RECONNECT.lastProfileId = null;
+  AUTO_RECONNECT.lastProfileType = null;
+}
+
 // Caminhos dos arquivos
 const cachePath = path.join(os.tmpdir(), 'electron_token_cache.json');
 const authPath = path.join(os.tmpdir(), 'openvpn_auth.txt');
@@ -618,75 +707,90 @@ function ensurePolicyFile() {
 }
 
 function createTray() {
-  // Suporte a tray em todas as plataformas
-  let iconPath;
-  if (process.platform === 'win32') {
-    // No build do Electron, o ícone está na pasta app/
-    if (app.isPackaged) {
-      iconPath = path.join(__dirname, 'icon.ico');
-    } else {
-      iconPath = path.join(__dirname, 'icon.ico');
-    }
-  } else {
-    if (app.isPackaged) {
-      iconPath = path.join(__dirname, 'icon.png');
-    } else {
-      iconPath = path.join(__dirname, 'icon.png');
-    }
+  // IS001: evitar criação dupla do tray (race condition Linux)
+  if (tray && !tray.isDestroyed()) {
+    console.log('⚠️ Tray já existe, ignorando criação duplicada');
+    return;
   }
 
-  try {
-    tray = new Tray(iconPath);
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Mostrar',
-        click: () => {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-      {
-        label: 'Minimizar para Tray',
-        click: () => {
-          mainWindow.hide();
-        }
-      },
-      {
-        label: 'Sair',
-        click: () => {
-          if (isVpnSessionActive()) {
+  // Suporte a tray em todas as plataformas
+  const iconExt = process.platform === 'win32' ? 'ico' : 'png';
+  const iconPath = path.join(__dirname, `icon.${iconExt}`);
+
+  // IS001: no Linux, aguardar que o display esteja estável antes de criar o tray
+  const doCreate = () => {
+    try {
+      tray = new Tray(iconPath);
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: 'Mostrar',
+          click: () => {
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.show();
               mainWindow.focus();
-              mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
             }
-            logger.log('SYSTEM', 'TRAY_QUIT_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
-            return;
           }
-
-          app.quit();
+        },
+        {
+          label: 'Minimizar para Tray',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.hide();
+            }
+          }
+        },
+        {
+          label: 'Sair',
+          click: () => {
+            if (isVpnSessionActive()) {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.show();
+                mainWindow.focus();
+                mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
+              }
+              logger.log('SYSTEM', 'TRAY_QUIT_BLOCKED_VPN_ACTIVE', { trackedPid: getTrackedVpnPid() });
+              return;
+            }
+            app.quit();
+          }
         }
-      }
-    ]);
-    tray.setToolTip('BluePex VPN');
-    tray.setContextMenu(contextMenu);
+      ]);
+      tray.setToolTip('BluePex VPN');
+      tray.setContextMenu(contextMenu);
 
-    tray.on('click', () => {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
+      // IS001: clique no tray — verifica mainWindow antes de agir
+      tray.on('click', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+
+      // IS001: double-click também restaura (Linux/Windows)
+      tray.on('double-click', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
         mainWindow.show();
         mainWindow.focus();
-      }
-    });
+      });
 
-    console.log('Tray criado com sucesso para plataforma:', process.platform);
-  } catch (error) {
-    console.error('Erro ao criar tray:', error);
-    logger.logSystemError('TRAY_CREATION_FAILED', error, {
-      platform: process.platform,
-      iconPath: iconPath
-    });
+      console.log('✅ Tray criado com sucesso para plataforma:', process.platform);
+    } catch (error) {
+      console.error('Erro ao criar tray:', error);
+      logger.logSystemError('TRAY_CREATION_FAILED', error, {
+        platform: process.platform,
+        iconPath: iconPath
+      });
+    }
+  };
+
+  // IS001: no Linux, pequeno delay evita race condition com o sistema de tray (appindicator)
+  if (process.platform === 'linux') {
+    setTimeout(doCreate, 500);
+  } else {
+    doCreate();
   }
 }
 
@@ -1406,7 +1510,13 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                 searchedPaths: possiblePaths,
                 error: 'OpenVPN executable not found'
               }, 'ERROR');
-              reject(new Error('OpenVPN não encontrado. Verifique se está instalado corretamente.'));
+              // IS003: notifica o renderer para exibir link de download
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('openvpn-not-found', {
+                  downloadUrl: 'https://openvpn.net/community-downloads/'
+                });
+              }
+              reject(new Error('OpenVPN não encontrado. Baixe em: https://openvpn.net/community-downloads/'));
               return;
             }
           }
@@ -1578,8 +1688,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          }
        });
 
-        vpnProcess.on('close', (code) => {
+         vpnProcess.on('close', (code) => {
            console.log(`OpenVPN encerrado com código ${code}`);
+           const wasEstablished = connectionEstablished;
            vpnConnectionActive = false;
            vpnProcess = null;
            ipcMain.removeAllListeners('send-challenge-response');
@@ -1596,6 +1707,13 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
             currentElevationMethod = null;
             currentOvpnPath = null;
+
+           // RF010: reagendar conexão se caiu inesperadamente (não foi desconexão manual)
+           if (wasEstablished && code !== 0 && AUTO_RECONNECT.enabled && !authFailed) {
+             AUTO_RECONNECT.lastProfileId = profileId;
+             AUTO_RECONNECT.lastProfileType = 'user';
+             scheduleReconnect(profileId, 'user');
+           }
 
            try {
              if (authFilePath && fs.existsSync(authFilePath)) {
@@ -2051,6 +2169,43 @@ ipcMain.handle('load-user-credentials', async (event, profileId) => {
   }
 });
 
+// ============ LOGOUT E LIMPEZA DE SESSÃO ============
+
+ipcMain.handle('logout', async () => {
+  try {
+    const results = [];
+
+    // 1. Remove token Azure em cache
+    if (fs.existsSync(cachePath)) {
+      fs.unlinkSync(cachePath);
+      results.push('token Azure removido');
+    }
+
+    // 2. Limpa estado da aplicação (PID, vpnConnected, etc.) mas preserva perfis selecionados
+    if (fs.existsSync(APP_STATE_PATH)) {
+      const state = JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'));
+      const cleanState = {
+        selectedProfileId: state.selectedProfileId || null,
+        selectedProfileType: state.selectedProfileType || null,
+        lastSaved: new Date().toISOString()
+      };
+      fs.writeFileSync(APP_STATE_PATH, JSON.stringify(cleanState, null, 2));
+      results.push('estado da sessão limpo');
+    }
+
+    // 3. Notifica o renderer para limpar UI
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('session-cleared');
+    }
+
+    logger.log('AUTH', 'LOGOUT', { cleared: results });
+    return { success: true, cleared: results };
+  } catch (error) {
+    logger.logSystemError('LOGOUT', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ============ DETECÇÃO DE 2FA ============
 
 ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
@@ -2195,6 +2350,40 @@ ipcMain.handle('load-app-state', async () => {
   try {
     if (await fileExists(statePath)) {
       const state = JSON.parse(await fsAsync.readFile(statePath, 'utf-8'));
+
+      // IS002: validar se o PID salvo ainda corresponde a um processo OpenVPN real
+      if (state.vpnPid) {
+        const pid = Number(state.vpnPid);
+        let processAlive = false;
+        try {
+          process.kill(pid, 0); // sinal 0 = apenas verificação de existência
+          // No Linux/Mac confirma também que é openvpn
+          if (process.platform !== 'win32') {
+            const { execSync } = require('child_process');
+            try {
+              const cmdline = execSync(`cat /proc/${pid}/comm 2>/dev/null`, { encoding: 'utf8' }).trim();
+              processAlive = cmdline === 'openvpn';
+            } catch (_) {
+              processAlive = false;
+            }
+          } else {
+            processAlive = true; // no Windows confia no kill(0) + hasAnyOpenVpnProcess()
+          }
+        } catch (_) {
+          processAlive = false;
+        }
+
+        if (!processAlive) {
+          console.log(`⚠️ [IS002] PID ${pid} salvo não corresponde a processo OpenVPN ativo — limpando estado`);
+          state.vpnPid = null;
+          state.vpnConnected = false;
+          // Persiste o estado limpo para evitar reincidência
+          try {
+            await fsAsync.writeFile(statePath, JSON.stringify({ ...state, lastSaved: new Date().toISOString() }, null, 2));
+          } catch (_) {}
+        }
+      }
+
       return { success: true, state };
     }
     return { success: true, state: {} };
@@ -2502,20 +2691,27 @@ ipcMain.handle('connect-openvpn', async () => {
       reject(new Error(`Erro ao iniciar OpenVPN Azure: ${error.message}`));
     });
 
-    vpnProcess.on('close', (code) => {
-      console.log(`OpenVPN Azure encerrado com código ${code}`);
-      vpnConnectionActive = false;
-      cleanup();
-      vpnProcess = null;
+     vpnProcess.on('close', (code) => {
+       console.log(`OpenVPN Azure encerrado com código ${code}`);
+       const wasEstablished = connectionEstablished;
+       vpnConnectionActive = false;
+       cleanup();
+       vpnProcess = null;
 
-      if (connectionEstablished && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('vpn-disconnected');
-      }
+       if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
+         mainWindow.webContents.send('vpn-disconnected');
+         // RF010: reagendar reconexão se caiu inesperadamente
+         if (code !== 0 && AUTO_RECONNECT.enabled) {
+           AUTO_RECONNECT.lastProfileId = 'azure';
+           AUTO_RECONNECT.lastProfileType = 'azure';
+           scheduleReconnect('azure', 'azure');
+         }
+       }
 
-      if (!connectionEstablished) {
-        reject(new Error(`OpenVPN Azure encerrou antes de conectar (código ${code}). ${lastErrorOutput || ''}`.trim()));
-      }
-    });
+       if (!wasEstablished) {
+         reject(new Error(`OpenVPN Azure encerrou antes de conectar (código ${code}). ${lastErrorOutput || ''}`.trim()));
+       }
+     });
   });
 });
 
@@ -2614,7 +2810,22 @@ ipcMain.handle('kill-vpn-connection', async () => {
 
 ipcMain.handle('disconnect-openvpn', async (event, pid) => {
   console.log(`🔌 [MAIN] Desconexão solicitada via disconnect-openvpn - PID: ${pid}`);
+  // RF010: cancelar reconexão automática quando usuário desconectar manualmente
+  cancelReconnect();
   return await killVPNConnection();
+});
+
+// RF010: handler interno de reconexão automática
+ipcMain.on('internal-reconnect', (profileId, profileType) => {
+  console.log(`🔄 [RF010] Tentando reconexão para perfil ${profileId} (tipo: ${profileType})`);
+  if (profileType === 'azure') {
+    ipcMain.emit('internal-invoke', 'connect-openvpn');
+  } else {
+    // Para perfis de usuário, emite sinal para o renderer iniciar o connect novamente
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-auto-reconnect', { profileId, profileType });
+    }
+  }
 });
 
 // ============ VERIFICAÇÃO DE STATUS VPN ============

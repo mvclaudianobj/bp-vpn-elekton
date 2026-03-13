@@ -133,6 +133,18 @@ globalThis.electronAPI = {
 
    // Abrir URL externa no navegador padrão
    openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
+   // IS003: notificação de OpenVPN não encontrado
+   onOpenVpnNotFound: (callback) => ipcRenderer.on('openvpn-not-found', (_, data) => callback(data)),
+
+   // RF004: logout e limpeza de sessão
+   logout: () => ipcRenderer.invoke('logout'),
+   onSessionCleared: (callback) => ipcRenderer.on('session-cleared', callback),
+
+   // RF010: reconexão automática
+   onVpnReconnecting: (callback) => ipcRenderer.on('vpn-reconnecting', (_, data) => callback(data)),
+   onVpnReconnectFailed: (callback) => ipcRenderer.on('vpn-reconnect-failed', (_, data) => callback(data)),
+   onVpnAutoReconnect: (callback) => ipcRenderer.on('vpn-auto-reconnect', (_, data) => callback(data)),
 };
 
 // Send success log

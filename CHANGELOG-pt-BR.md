@@ -53,64 +53,64 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.6] - PLANEJADO — Fase 1: Alta Prioridade / Correções Críticas
+## [0.1.6] - 2026-03-13
 
-### 🐛 IS007: Ícones ausentes no pacote `.deb`
-- Corrigir carregamento de ícones no aplicativo empacotado
-- Substituir caminhos relativos simples no `index.html` pelo protocolo `local-resource://` já implementado no `main.js`
+### 🐛 IS007: Ícones corrigidos no pacote `.deb`
+- Substituídos todos os caminhos relativos de ícones no `index.html` pelo protocolo `local-resource://` de forma estática, garantindo carregamento correto no app empacotado
+- Corrigido ícone inserido dinamicamente no `renderer.js` (botão de download de atualização)
 
-### 🐛 IS006: Senha não limpa ao trocar de perfil
-- Limpar campos de usuário e senha antes de carregar credenciais do novo perfil
-- Garantir que perfis sem senha salva exibam campos vazios
+### 🐛 IS006: Senha limpa ao trocar de perfil
+- Campos de usuário, senha e "Lembrar credenciais" são zerados antes de carregar credenciais do novo perfil selecionado
+- Perfis sem senha salva agora exibem campos vazios (sem vazamento do perfil anterior)
 
-### 🐛 IS002: Falso estado "conectado" após reiniciar
-- Reforçar validação de PID no `restoreApplicationState` para verificar processo real no SO antes de exibir status conectado
-- Limpar `app_state.json` quando PID não corresponder a processo ativo
+### 🐛 IS002: Falso estado "conectado" corrigido
+- `load-app-state` agora valida o PID salvo via `process.kill(pid, 0)` e, no Linux, confirma que o processo é `openvpn` via `/proc/<pid>/comm`
+- Se o PID não corresponde a processo ativo, `vpnPid` e `vpnConnected` são limpos e o arquivo `app_state.json` é persistido imediatamente
 
-### 🐛 IS001: Tray icon — app desaparece ao minimizar
-- Corrigir race condition na criação do tray no Linux
-- Garantir que clicar no ícone do tray restaure a janela corretamente em todas as plataformas
+### 🐛 IS001: Tray icon corrigido no Linux
+- Adicionada guarda contra criação dupla do tray (`tray.isDestroyed()`)
+- No Linux, a criação do `Tray` é feita com delay de 500ms para evitar race condition com o `appindicator`
+- Clique e double-clique no tray verificam se `mainWindow` existe antes de agir
+- Todos os handlers do menu contextual do tray protegidos com verificação de `mainWindow`
 
-### 🐛 IS003: Windows — OpenVPN não instalado automaticamente
-- Validar existência do executável OpenVPN antes de tentar conectar
-- Exibir mensagem clara e link de download caso o executável não seja encontrado
-- Verificar silenciosamente se o MSI foi instalado pelo NSIS pós-instalação
+### 🐛 IS003: Link de download do OpenVPN no Windows
+- Quando o executável OpenVPN não é encontrado nos caminhos padrão nem via `where`, o renderer recebe evento `openvpn-not-found` com link direto para `openvpn.net/community-downloads/`
+- Link clicável exibido na barra de status do app
 
-### 🔐 IS004 / RF003 / RNF006: Segurança de Credenciais
-- Remover `MASTER_PASSWORD` e `SALT` hardcoded do `main.js`
-- Implementar derivação de chave a partir de `machine-id` do sistema ou keychain nativo (`keytar`)
+### 🔐 IS004: Segurança de Credenciais
+- `MASTER_PASSWORD` e `SALT` hardcoded removidos do `main.js`
+- Chave de criptografia agora derivada do `machine-id` do sistema (Windows: registro `MachineGuid`; Linux: `/etc/machine-id`)
+- Fallback seguro via hash SHA-256 do caminho de dados do app
+- Compatibilidade retroativa: `decrypt()` tenta a nova chave primeiro e faz fallback para a chave legada, re-criptografando na próxima gravação
 
-### 🔐 RF004 / RNF006: Logout e Limpeza de Credenciais
-- Validar que logout apaga todos os tokens Azure, credenciais de perfil e cache de sessão
+### 🔐 RF004: Logout com limpeza completa de sessão
+- Implementado handler IPC `logout` que remove o token Azure em cache e limpa o `app_state.json` (PID, estado de conexão)
+- Renderer recebe evento `session-cleared` e limpa campos de usuário/senha e estado de UI
+- Exposto em `preload.js` como `window.electronAPI.logout()`
 
-### 🔄 RF010: Reconexão Automática em Caso de Queda
-- Implementar lógica de retry com backoff exponencial no evento `close` do `vpnProcess`
-- Configuração do número de tentativas e intervalo na tela de preferências
-
----
-
-## [0.1.6] - 2026-03-12 _(atual — aguardando recompilação e publicação)_
+### 🔄 RF010: Reconexão automática com backoff exponencial
+- Implementado `scheduleReconnect()` com até 3 tentativas, delay inicial de 5s e backoff exponencial (máx 60s)
+- Reconexão disparada automaticamente quando VPN cai com `code !== 0` após conexão estabelecida
+- Reconexão cancelada automaticamente quando usuário desconecta manualmente
+- Renderer notificado via `vpn-reconnecting` (tentativa em andamento) e `vpn-reconnect-failed` (esgotado)
 
 ### 🔄 IS005: Auto-Update
 
 - **Campo `repository` adicionado ao `package.json`**: O `electron-builder 26.x` requer o campo `repository` para gerar o arquivo `package-type` dentro do `.deb`, sem o qual o `electron-updater` não ativa o `DebUpdater` e o auto-update não funciona.
 - **`checkForUpdates` aguarda evento real**: Corrigido retorno falso imediato que reportava "versão mais recente" sem verificar o GitHub.
 - **`openExternal` exposto no `preload.js`**: Permite que o renderer abra URLs externas com segurança via `shell.openExternal`.
-- **Versão corrigida**: Campo `version` corrigido de `1.0.5` para `0.1.5` na branch anterior e de `0.1.6` para `0.1.6` nesta branch (consistência semântica restaurada).
 
 ### 🔧 Correções de Conexão Entra ID (Azure AD)
 
 - **Conexão OpenVPN Azure robusta**: O fluxo `connect-openvpn` foi refatorado para usar Promise explícita e só resolve após detecção real de túnel estabelecido (`Initialization Sequence Completed` / `CONNECTED,SUCCESS`), eliminando falso positivo por PID.
-- **Timeout de conexão**: Adicionado timeout explícito de 60 segundos; se o túnel não for estabelecido dentro do prazo, o processo é encerrado com `SIGTERM` e a Promise é rejeitada com mensagem descritiva.
+- **Timeout de conexão**: Adicionado timeout explícito de 60 segundos.
 - **Diagnóstico de falhas ampliado**: Captura e classificação de erros de `stdout`/`stderr` com mensagens específicas para falha de sudo, permissão TUN/TAP e `AUTH_FAILED`.
-- **Limpeza garantida do arquivo de auth**: O arquivo temporário de autenticação (`authPath`) é removido em todos os caminhos de encerramento (sucesso, falha e timeout).
-- **Erro de spawn tratado**: Adicionado bloco `try/catch` ao `spawn()` do OpenVPN com rejeição limpa da Promise em caso de falha no início do processo.
-- **Tratamento de desconexão ajustado**: O evento `vpn-disconnected` não é mais disparado quando o processo cai antes de estabelecer túnel, evitando estado inconsistente na UI.
-- **Validação de config antes de conectar**: Adicionada verificação da existência de `config.openvpn_config` antes de tentar iniciar o processo OpenVPN.
+- **Limpeza garantida do arquivo de auth**: O arquivo temporário de autenticação (`authPath`) é removido em todos os caminhos de encerramento.
+- **Tratamento de desconexão ajustado**: `vpn-disconnected` não é disparado quando o processo cai antes de estabelecer túnel.
 
 ### 🛡️ Correções de Sessão e Fechamento
 
-- **Bloqueio reforçado de saída com VPN ativa**: Melhorada detecção de sessão ativa via `isVpnSessionActive()` para impedir fechamento da aplicação enquanto houver túnel VPN em execução.
+- **Bloqueio reforçado de saída com VPN ativa**: Melhorada detecção de sessão ativa via `isVpnSessionActive()`.
 
 ### 🔐 Correção de Token Azure
 

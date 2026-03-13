@@ -749,6 +749,11 @@ function handleProfileSelection() {
         currentProfile = profile;
         console.log(`🎯 Perfil selecionado: ${profile.name} (${profile.typeLabel})`);
 
+        // Limpar campos antes de carregar credenciais do novo perfil (IS006)
+        if (userUsername) userUsername.value = '';
+        if (userPassword) userPassword.value = '';
+        if (rememberCredentials) rememberCredentials.checked = false;
+
         // Carregar credenciais salvas para perfis de usuário
         if (profile.type === 'user') {
             loadSavedCredentials(profile.id);
@@ -1710,7 +1715,7 @@ if (window.electronAPI) {
         console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
-            updateBtn.innerHTML = `<img src="icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
+            updateBtn.innerHTML = `<img src="local-resource://icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
         }
         // Atualizar modal com nova versão
         const updateVersionEl = document.getElementById('updateVersion');
@@ -1774,6 +1779,53 @@ if (window.electronAPI) {
         if (data.available === false) {
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         }
+    });
+
+    // IS003: OpenVPN não encontrado no Windows — exibe link de download
+    window.electronAPI.onOpenVpnNotFound((data) => {
+        const url = data?.downloadUrl || 'https://openvpn.net/community-downloads/';
+        showStatus(
+            `OpenVPN não encontrado. <a href="#" onclick="window.electronAPI.openExternal('${url}');return false;" style="color:inherit;text-decoration:underline;">Baixar OpenVPN</a>`,
+            'alert'
+        );
+    });
+
+    // RF010: notificação de reconexão automática em andamento
+    window.electronAPI.onVpnReconnecting((data) => {
+        showStatus(
+            `Conexão perdida. Reconectando... (tentativa ${data.attempt}/${data.maxRetries} em ${data.delaySeconds}s)`,
+            'alert'
+        );
+        console.log('🔄 [RF010] Reconexão agendada:', data);
+    });
+
+    window.electronAPI.onVpnReconnectFailed((data) => {
+        showStatus(`Reconexão automática falhou após ${data.maxRetries} tentativas.`, 'alert');
+        console.log('⛔ [RF010] Reconexão falhou:', data);
+        updateConnectionButtons();
+    });
+
+    // RF010: reconexão automática de perfis de usuário — dispara connect novamente
+    window.electronAPI.onVpnAutoReconnect(async (data) => {
+        console.log('🔄 [RF010] Iniciando reconexão automática para perfil:', data.profileId);
+        try {
+            await connectVPN();
+        } catch (err) {
+            console.error('❌ [RF010] Falha na reconexão:', err.message);
+        }
+    });
+
+    // RF004: sessão limpa pelo processo principal (após logout)
+    window.electronAPI.onSessionCleared(() => {
+        vpnPid = null;
+        currentProfile = null;
+        if (userUsername) userUsername.value = '';
+        if (userPassword) userPassword.value = '';
+        if (rememberCredentials) rememberCredentials.checked = false;
+        updateConnectionButtons();
+        updateProfileDisplay();
+        showStatus('Sessão encerrada com sucesso.', 'success');
+        console.log('🔓 Sessão limpa pelo processo principal');
     });
 }
 
