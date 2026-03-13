@@ -1453,34 +1453,47 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
              });
            });
 
-           if (process.env.DISPLAY && pkexecAvailable) {
-             openvpnCommand = 'pkexec';
-             currentElevationMethod = 'pkexec';
-             openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
-             logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-               connectionId,
-               strategy: 'pkexec',
-               command: openvpnCommand,
-               args: openvpnArgsFinal.slice(0, 3),
-               reason: 'display_and_pkexec_available',
-               elevationMethodStored: currentElevationMethod
-             });
-             console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
-             console.log(`🔐 Método de elevação armazenado: ${currentElevationMethod}`);
-           } else {
-             openvpnCommand = 'sudo';
-             currentElevationMethod = 'sudo';
-             openvpnArgsFinal = [openvpnPath, ...openvpnArgs];
-             logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-               connectionId,
-               strategy: 'sudo',
-               command: openvpnCommand,
-               reason: process.env.DISPLAY ? 'pkexec_not_available' : 'no_display',
-               elevationMethodStored: currentElevationMethod
-             });
-             console.log(`🔐 Usando sudo com ${openvpnPath} para elevação`);
-             console.log(`🔐 Método de elevação armazenado: ${currentElevationMethod}`);
-           }
+           // Se já rodando como root (uid=0), sudo/pkexec são desnecessários e causam falha interativa
+           const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+           if (isRoot) {
+              openvpnCommand = openvpnPath;
+              currentElevationMethod = 'direct';
+              openvpnArgsFinal = openvpnArgs;
+              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                connectionId,
+                strategy: 'direct_root',
+                command: openvpnCommand,
+                reason: 'process_already_root',
+                elevationMethodStored: currentElevationMethod
+              });
+              console.log(`🔐 Processo já é root — invocando ${openvpnPath} diretamente`);
+            } else if (process.env.DISPLAY && pkexecAvailable) {
+              openvpnCommand = 'pkexec';
+              currentElevationMethod = 'pkexec';
+              openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
+              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                connectionId,
+                strategy: 'pkexec',
+                command: openvpnCommand,
+                args: openvpnArgsFinal.slice(0, 3),
+                reason: 'display_and_pkexec_available',
+                elevationMethodStored: currentElevationMethod
+              });
+              console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
+            } else {
+              openvpnCommand = 'sudo';
+              currentElevationMethod = 'sudo';
+              openvpnArgsFinal = ['-n', openvpnPath, ...openvpnArgs];
+              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                connectionId,
+                strategy: 'sudo',
+                command: openvpnCommand,
+                reason: process.env.DISPLAY ? 'pkexec_not_available' : 'no_display',
+                elevationMethodStored: currentElevationMethod
+              });
+              console.log(`🔐 Usando sudo -n com ${openvpnPath} para elevação`);
+            }
         } else if (process.platform === 'win32') {
           // Detect OpenVPN installation path on Windows
           const possiblePaths = [
@@ -2600,8 +2613,19 @@ ipcMain.handle('connect-openvpn', async () => {
       openvpnCommand = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
       openvpnArgsFinal = openvpnArgs;
     } else {
-      openvpnCommand = 'sudo';
-      openvpnArgsFinal = ['openvpn', ...openvpnArgs];
+      // Se já rodando como root (uid=0), sudo é desnecessário e causa falha interativa
+      const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+      if (isRoot) {
+        openvpnCommand = 'openvpn';
+        openvpnArgsFinal = openvpnArgs;
+        currentElevationMethod = 'direct';
+        console.log('🔐 [Azure] Processo já é root — invocando openvpn diretamente');
+      } else {
+        openvpnCommand = 'sudo';
+        openvpnArgsFinal = ['-n', 'openvpn', ...openvpnArgs];
+        currentElevationMethod = 'sudo';
+        console.log('🔐 [Azure] Usando sudo -n openvpn para elevação');
+      }
     }
 
     let connectionEstablished = false;
