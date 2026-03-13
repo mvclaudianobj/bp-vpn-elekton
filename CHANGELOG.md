@@ -5,6 +5,129 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## [0.1.8] - PLANNED — Phase 3: Low Priority / Code Quality
+
+### 🔀 RF012: Split Tunneling
+- Allow configuring specific routes per `.ovpn` profile directly in the interface
+
+### 🍎 RNF011-012: macOS + ARM Support
+- Test and validate build for macOS 10.15+
+- ARM architecture support (Apple Silicon / Linux ARM)
+
+### 🧱 RNF021: `main.js` Modularization
+- Split ~3,000-line file into independent modules: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
+- Apply CommonJS module pattern with clean interfaces between processes
+
+### ⚙️ CI/CD: GitHub Actions
+- Create workflow for automatic build on push to `beta-*` branches
+- Automatic release publishing to GitHub Releases
+
+### 🧹 Repository Cleanup
+- Remove committed debug files: `debug.js`, `debug.js.backup`, `index_backup.html`, `index_debug.html`
+- Update version badge in `README.md`
+
+---
+
+## [0.1.7] - PLANNED — Phase 2: Medium Priority / Features
+
+### 🔔 RF021/RNF016: System Notifications
+- Implement Electron `Notification` API for events: connection established, disconnection, error, and update available
+
+### 📊 RF022-RF024: Real-Time Monitoring
+- Display real-time upload/download speed on the dashboard
+- Total traffic counter for current session
+- Active connection timer
+
+### 📋 RF025: Connection History
+- Persist and display log of previous sessions (profile, duration, date, status)
+
+### 🔒 RF011: Kill Switch
+- Block all network traffic outside the VPN interface when connection drops
+- Implementation via `iptables` (Linux) and `netsh` (Windows)
+
+### 🛡️ RNF008: DNS Leak Protection
+- Force DNS resolution exclusively through VPN interface
+- Automatic leak-absence validation on the diagnostics screen
+
+---
+
+## [0.1.6] - PLANNED — Phase 1: High Priority / Critical Fixes
+
+### 🐛 IS007: Missing icons in `.deb` package
+- Fix icon loading in the packaged application
+- Replace simple relative paths in `index.html` with the `local-resource://` protocol already implemented in `main.js`
+
+### 🐛 IS006: Password not cleared when switching profiles
+- Clear username and password fields before loading new profile credentials
+- Ensure profiles without saved passwords show empty fields
+
+### 🐛 IS002: False "connected" state after restart
+- Strengthen PID validation in `restoreApplicationState` to verify real OS process before showing connected status
+- Clear `app_state.json` when PID does not match an active process
+
+### 🐛 IS001: Tray icon — app disappears when minimized
+- Fix race condition in tray creation on Linux
+- Ensure clicking the tray icon restores the window correctly on all platforms
+
+### 🐛 IS003: Windows — OpenVPN not installed automatically
+- Validate OpenVPN executable existence before attempting to connect
+- Display a clear message and download link if executable is not found
+- Silently check if MSI was installed by NSIS post-install
+
+### 🔐 IS004 / RF003 / RNF006: Credential Security
+- Remove hardcoded `MASTER_PASSWORD` and `SALT` from `main.js`
+- Implement key derivation from system `machine-id` or native keychain (`keytar`)
+
+### 🔐 RF004 / RNF006: Logout and Credential Cleanup
+- Validate that logout deletes all Azure tokens, profile credentials, and session cache
+
+### 🔄 RF010: Automatic Reconnection on Drop
+- Implement retry logic with exponential backoff on `vpnProcess` `close` event
+- Number of retries and interval configurable in preferences screen
+
+---
+
+## [0.1.5] - 2026-03-12
+
+### 🔧 Entra ID (Azure AD) Connection Fixes
+
+- **Robust Azure OpenVPN connection**: The `connect-openvpn` flow was refactored to use an explicit Promise that only resolves after real tunnel detection (`Initialization Sequence Completed` / `CONNECTED,SUCCESS`), eliminating false positives from PID alone.
+- **Connection timeout**: Added explicit 60-second timeout; if tunnel is not established in time, the process is killed with `SIGTERM` and the Promise is rejected with a descriptive message.
+- **Expanded failure diagnostics**: Capture and classification of `stdout`/`stderr` errors with specific messages for sudo failure, TUN/TAP permission and `AUTH_FAILED`.
+- **Guaranteed auth file cleanup**: The temporary authentication file (`authPath`) is removed on all exit paths (success, failure, and timeout).
+- **Spawn error handled**: Added `try/catch` to OpenVPN `spawn()` with clean Promise rejection on process start failure.
+- **Adjusted disconnection handling**: `vpn-disconnected` event is no longer emitted when the process dies before establishing a tunnel, avoiding inconsistent UI state.
+- **Config validation before connecting**: Added verification of `config.openvpn_config` existence before attempting to start the OpenVPN process.
+
+### 🛡️ Session and Close Fixes
+
+- **Reinforced exit block with active VPN**: Improved active session detection via `isVpnSessionActive()` to prevent closing the app while a VPN tunnel is running.
+
+### 🔐 Azure Token Fix
+
+- **Token expiration corrected**: Fixed `expires_at` calculation to handle all possible formats of the `expiresOn` field returned by MSAL: `Date` object, Unix timestamp (seconds), or missing field (fallback +1 hour).
+
+### 🔄 IS005: Auto-Update
+
+- **`repository` field added to `package.json`**: `electron-builder 26.x` requires the `repository` field to generate the `package-type` file inside the `.deb`, without which `electron-updater` does not activate `DebUpdater` and auto-update does not work.
+- **`checkForUpdates` awaits real event**: Fixed false immediate return that reported "latest version" without checking GitHub. The function now awaits `update-available` or `update-not-available` before responding to the renderer.
+- **`openExternal` exposed in `preload.js`**: Allows the renderer to safely open external URLs via `shell.openExternal`.
+- **Version corrected**: `version` field corrected from `1.0.5` to `0.1.5` for semantic auto-update compatibility.
+
+### 🔧 Bug Fixes (accumulated)
+
+- **Credential Save Fix**: Fixed bug where passwords were not saved when checking "Remember credentials".
+- **Packaged App Icon Fix**: Implemented custom `local-resource://` protocol to serve icons correctly in the packaged app.
+- **Duplicate HTML Fix**: Removed duplicate HTML sections from `index.html`.
+- **Duplicate Event Listeners Fix**: Removed duplicate `setupEventListeners()` call.
+- **Password persistence fixed**: Adjusted use of state keys (`selectedProfileId`/`selectedProfileType`).
+- **Credential encryption fixed**: Replaced invalid GCM APIs with `createCipheriv`/`createDecipheriv` with AES-256-GCM.
+- **VPN tunnel state validated on startup**: Validates PID + real OpenVPN process to avoid connected UI with dropped tunnel.
+
+---
+
 ## [0.1.4] - 2026-01-15
 
 ### 🔒 Security Improvements
@@ -46,8 +169,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2026-01-15
 
-## [0.1.2] - 2026-01-15
-
 ### Added
 - **Windows Domain Support**: Improved compatibility with domain-joined Windows machines
 - **Automatic Elevation**: OpenVPN runs with admin privileges when needed on Windows
@@ -67,6 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Security**: Proper privilege separation between app and VPN processes
 - **Compatibility**: Better support for enterprise/domain environments
 - **Process Control**: Improved argument passing and execution control
+
+---
 
 ## [0.1.1] - 2026-01-14
 
@@ -97,6 +220,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Build Process**: Enhanced NSIS installer with bundled dependencies
 - **Error Handling**: Better fallback messages for various failure scenarios
 
+---
+
 ## [0.1.0] - 2025-12-18
 
 ### Added
@@ -106,5 +231,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - User profile management
 - Basic logging system
 - Electron-based desktop application
-- Windows and Linux support</content>
-<parameter name="filePath">/home/marcos/projetos/BluePexVPN/CHANGELOG.md
+- Windows and Linux support
