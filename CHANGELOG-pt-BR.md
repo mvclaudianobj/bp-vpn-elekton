@@ -7,7 +7,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.9] - PLANEJADO — Fase 3: Baixa Prioridade / Qualidade de Código
+## [0.1.8] - PLANEJADO — Fase 3: Baixa Prioridade / Qualidade de Código
 
 ### 🔀 RF012: Split Tunneling
 - Permitir configurar rotas específicas por perfil `.ovpn` diretamente na interface
@@ -17,7 +17,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - Suporte a arquitetura ARM (Apple Silicon / Linux ARM)
 
 ### 🧱 RNF021: Modularização do `main.js`
-- Separar arquivo de 2.876 linhas em módulos independentes: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
+- Separar arquivo de ~3.000 linhas em módulos independentes: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
 - Aplicar padrão de módulos CommonJS com interfaces claras entre processos
 
 ### ⚙️ CI/CD: GitHub Actions
@@ -30,7 +30,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.8] - PLANEJADO — Fase 2: Média Prioridade / Features
+## [0.1.7] - PLANEJADO — Fase 2: Média Prioridade / Features
 
 ### 🔔 RF021/RNF016: Notificações de Sistema
 - Implementar `Notification` API do Electron para eventos: conexão estabelecida, desconexão, erro e atualização disponível
@@ -53,7 +53,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.7] - PLANEJADO — Fase 1: Alta Prioridade / Correções Críticas
+## [0.1.6] - PLANEJADO — Fase 1: Alta Prioridade / Correções Críticas
 
 ### 🐛 IS007: Ícones ausentes no pacote `.deb`
 - Corrigir carregamento de ícones no aplicativo empacotado
@@ -70,10 +70,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 ### 🐛 IS001: Tray icon — app desaparece ao minimizar
 - Corrigir race condition na criação do tray no Linux
 - Garantir que clicar no ícone do tray restaure a janela corretamente em todas as plataformas
-
-### 🐛 IS005: Verificação de updates reporta versão errada
-- Corrigir lógica de comparação de versão no auto-updater
-- Garantir que a versão atual seja lida corretamente de `app.getVersion()`
 
 ### 🐛 IS003: Windows — OpenVPN não instalado automaticamente
 - Validar existência do executável OpenVPN antes de tentar conectar
@@ -93,7 +89,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.6] - 2026-03-06
+## [0.1.6] - 2026-03-12 _(atual — aguardando recompilação e publicação)_
+
+### 🔄 IS005: Auto-Update
+
+- **Campo `repository` adicionado ao `package.json`**: O `electron-builder 26.x` requer o campo `repository` para gerar o arquivo `package-type` dentro do `.deb`, sem o qual o `electron-updater` não ativa o `DebUpdater` e o auto-update não funciona.
+- **`checkForUpdates` aguarda evento real**: Corrigido retorno falso imediato que reportava "versão mais recente" sem verificar o GitHub.
+- **`openExternal` exposto no `preload.js`**: Permite que o renderer abra URLs externas com segurança via `shell.openExternal`.
+- **Versão corrigida**: Campo `version` corrigido de `1.0.5` para `0.1.5` na branch anterior e de `0.1.6` para `0.1.6` nesta branch (consistência semântica restaurada).
 
 ### 🔧 Correções de Conexão Entra ID (Azure AD)
 
@@ -113,35 +116,30 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - **Expiração do token corrigida**: Ajustado cálculo de `expires_at` para tratar todos os formatos possíveis do campo `expiresOn` retornado pelo MSAL: objeto `Date`, número Unix timestamp (segundos) ou ausência do campo (fallback de +1 hora).
 
-## [1.0.5] - 2026-02-27
+---
+
+## [0.1.5] - 2026-03-02
 
 ### 🔧 Correções de Bugs
 
 - **Correção de Salvamento de Credenciais**: Corrigido bug onde senhas não eram salvas ao marcar "Lembrar credenciais". Agora o perfil é automaticamente selecionado após criação e o ID do perfil é corretamente utilizado para salvar/carregar credenciais.
-
 - **Correção de Ícones no App Packaged**: Corrigido problema onde ícones do menu não carregavam no aplicativo compilado. Implementado protocolo customizado `local-resource://` para servir ícones corretamente tanto em desenvolvimento quanto em produção.
+- **Correção de HTML Duplicado**: Removidas seções HTML duplicadas no `index.html` que causavam comportamento estranho na interface.
+- **Correção de Event Listeners Duplicados**: Removida chamada duplicada de `setupEventListeners()` no `renderer.js` que podia causar múltiplas execuções de eventos.
+- **Correção de Configuração Desktop**: Removida configuração `desktop` incompatível com `electron-builder 26.x`.
 
-- **Correção de HTML Duplicado**: Removidas seções HTML duplicadas no index.html que causavam comportamento estranho na interface.
-
-- **Correção de Event Listeners Duplicados**: Removida chamada duplicada de `setupEventListeners()` no renderer.js que podia causar múltiplas execuções de eventos.
-
-- **Correção de Configuração Desktop**: Removida configuração `desktop` incompatível com electron-builder 26.x.
-
-### ✅ Correções de Persistência e Estado (hotfix)
+### ✅ Correções de Persistência e Estado
 
 - **Persistência de senha corrigida**: Ajustado uso de chaves de estado (`selectedProfileId`/`selectedProfileType`) e removida gravação parcial inconsistente com `lastProfileId`.
-
 - **Criptografia de credenciais corrigida**: Substituídas APIs inválidas de criptografia GCM por `createCipheriv`/`createDecipheriv` com AES-256-GCM, restaurando gravação/leitura de senha.
-
 - **Estado do túnel VPN validado na inicialização**: A checagem passou a validar PID + processo OpenVPN real, evitando UI conectada com túnel já caído.
-
 - **Bloqueio de fechamento com VPN ativa**: Fechamento da janela/aplicação agora é bloqueado enquanto houver túnel ativo, exigindo desconexão explícita.
 
 ### 🐛 Melhorias Técnicas
 
 - Adicionado tratamento de erro mais robusto para salvar credenciais
 - Adicionado logging para debug de problemas com credenciais
-- Configurado asarUnpack para permitir acesso a recursos estáticos (ícones)
+- Configurado `asarUnpack` para permitir acesso a recursos estáticos (ícones)
 - Atualizado dependências npm (axios, msal-node, electron, electron-builder, electron-updater)
 
 ---
@@ -187,8 +185,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [0.1.2] - 2026-01-15
 
-## [0.1.2] - 2026-01-15
-
 ### Adicionado
 - **Suporte a Domínios Windows**: Compatibilidade aprimorada com máquinas Windows ingressadas em domínio
 - **Elevação Automática**: OpenVPN executa com privilégios de admin quando necessário no Windows
@@ -208,6 +204,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Segurança**: Separação adequada de privilégios entre app e processos VPN
 - **Compatibilidade**: Melhor suporte para ambientes corporativos/domínio
 - **Controle de Processos**: Passagem de argumentos e controle de execução aprimorados
+
+---
 
 ## [0.1.1] - 2026-01-14
 
@@ -237,6 +235,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Multiplataforma**: Tratamento aprimorado de diretórios de log para Windows e Linux
 - **Processo de Build**: Instalador NSIS aprimorado com dependências incluídas
 - **Tratamento de Erros**: Melhores mensagens de fallback para diversos cenários de falha
+
+---
 
 ## [0.1.0] - 2025-12-18
 

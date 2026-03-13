@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.9] - PLANNED — Phase 3: Low Priority / Code Quality
+## [0.1.8] - PLANNED — Phase 3: Low Priority / Code Quality
 
 ### 🔀 RF012: Split Tunneling
 - Allow configuring specific routes per `.ovpn` profile from the UI
@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ARM architecture support (Apple Silicon / Linux ARM)
 
 ### 🧱 RNF021: `main.js` Modularization
-- Split 2,876-line file into independent modules: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
+- Split ~3,000-line file into independent modules: `vpn-manager`, `auth-manager`, `profile-manager`, `updater`
 - Apply CommonJS module pattern with clear inter-process interfaces
 
 ### ⚙️ CI/CD: GitHub Actions
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.8] - PLANNED — Phase 2: Medium Priority / Features
+## [0.1.7] - PLANNED — Phase 2: Medium Priority / Features
 
 ### 🔔 RF021/RNF016: System Notifications
 - Implement Electron `Notification` API for events: connection established, disconnection, error, update available
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.7] - PLANNED — Phase 1: High Priority / Critical Fixes
+## [0.1.6] - PLANNED — Phase 1: High Priority / Critical Fixes
 
 ### 🐛 IS007: Missing icons in `.deb` package
 - Fix icon loading in packaged application
@@ -70,10 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 IS001: Tray icon — app disappears when minimized
 - Fix race condition in tray creation on Linux
 - Ensure clicking the tray icon correctly restores the window on all platforms
-
-### 🐛 IS005: Update check reports wrong version
-- Fix version comparison logic in auto-updater
-- Ensure current version is correctly read from `app.getVersion()`
 
 ### 🐛 IS003: Windows — OpenVPN not installed automatically
 - Validate OpenVPN executable existence before attempting to connect
@@ -93,7 +89,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.6] - 2026-03-06
+## [0.1.6] - 2026-03-12 _(current — pending recompilation and publishing)_
+
+### 🔄 IS005: Auto-Update
+
+- **`repository` field added to `package.json`**: `electron-builder 26.x` requires the `repository` field to generate the `package-type` file inside the `.deb`; without it, `electron-updater` does not activate `DebUpdater` and auto-update does not work.
+- **`checkForUpdates` awaits real event**: Fixed false immediate return that reported "latest version" without checking GitHub.
+- **`openExternal` exposed in `preload.js`**: Allows the renderer to safely open external URLs via `shell.openExternal`.
+- **Version corrected**: `version` field in `package.json` corrected for semantic auto-update compatibility across branches.
 
 ### 🔧 Entra ID (Azure AD) Connection Fixes
 
@@ -112,6 +115,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔐 Azure Token Fix
 
 - **Token expiration corrected**: Adjusted `expires_at` calculation to handle all possible formats of the `expiresOn` field returned by MSAL: `Date` object, Unix timestamp (seconds), or missing field (fallback +1 hour).
+
+---
+
+## [0.1.5] - 2026-03-02
+
+### 🔧 Bug Fixes
+
+- **Credential Save Fix**: Fixed bug where passwords were not saved when checking "Remember credentials". Profile is now automatically selected after creation and profile ID is correctly used to save/load credentials.
+- **Packaged App Icon Fix**: Fixed issue where menu icons did not load in the packaged application. Implemented custom `local-resource://` protocol to serve icons correctly in both development and production.
+- **Duplicate HTML Fix**: Removed duplicate HTML sections from `index.html` causing strange UI behavior.
+- **Duplicate Event Listeners Fix**: Removed duplicate `setupEventListeners()` call in `renderer.js` that could cause multiple event executions.
+- **Desktop Config Fix**: Removed `desktop` configuration incompatible with `electron-builder 26.x`.
+
+### ✅ Persistence and State Fixes
+
+- **Password persistence fixed**: Adjusted use of state keys (`selectedProfileId`/`selectedProfileType`) and removed inconsistent partial writes with `lastProfileId`.
+- **Credential encryption fixed**: Replaced invalid GCM APIs with `createCipheriv`/`createDecipheriv` with AES-256-GCM, restoring password save/load.
+- **VPN tunnel state validated on startup**: Validates PID + real OpenVPN process to avoid connected UI with a dropped tunnel.
+- **Exit blocked while VPN active**: App close is now blocked while a VPN tunnel is active, requiring explicit disconnection.
+
+### 🐛 Technical Improvements
+
+- Added more robust error handling for credential saving
+- Added logging for credential debugging
+- Configured `asarUnpack` to allow access to static assets (icons)
+- Updated npm dependencies (axios, msal-node, electron, electron-builder, electron-updater)
 
 ---
 
@@ -156,8 +185,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2026-01-15
 
-## [0.1.2] - 2026-01-15
-
 ### Added
 - **Windows Domain Support**: Improved compatibility with domain-joined Windows machines
 - **Automatic Elevation**: OpenVPN runs with admin privileges when needed on Windows
@@ -177,6 +204,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Security**: Proper privilege separation between app and VPN processes
 - **Compatibility**: Better support for enterprise/domain environments
 - **Process Control**: Improved argument passing and execution control
+
+---
 
 ## [0.1.1] - 2026-01-14
 
@@ -206,6 +235,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cross-Platform**: Improved log directory handling for Windows and Linux
 - **Build Process**: Enhanced NSIS installer with bundled dependencies
 - **Error Handling**: Better fallback messages for various failure scenarios
+
+---
 
 ## [0.1.0] - 2025-12-18
 
