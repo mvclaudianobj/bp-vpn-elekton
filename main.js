@@ -2522,8 +2522,14 @@ ipcMain.handle('login-azure', async () => {
         verification_uri: deviceCodeResponse.verificationUri,
         user_code: deviceCodeResponse.userCode,
       };
-      mainWindow.webContents.send('device-code-response', messageData);
-      shell.openExternal(deviceCodeResponse.verificationUri);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('device-code-response', messageData);
+      }
+      try {
+        shell.openExternal(deviceCodeResponse.verificationUri);
+      } catch (e) {
+        console.log('⚠️ shell.openExternal falhou:', e.message);
+      }
     }
   };
 

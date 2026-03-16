@@ -915,25 +915,45 @@ async function handleConnect() {
             hideConnectionElements();
 
         } else if (currentProfile.type === 'azure') {
-            // Conexão Azure AD
-            const { token, username } = await window.electronAPI.loginAzure();
-            showStatus(`Login realizado: ${username}`, 'status');
+            try {
+                // Conexão Azure AD
+                console.log('🔐 [RENDERER] Iniciando login Azure...');
+                const authResult = await window.electronAPI.loginAzure();
+                console.log('🔐 [RENDERER] Login Azure retornou:', authResult);
+                
+                if (!authResult || !authResult.token) {
+                    throw new Error('Login Azure não retornou token');
+                }
+                
+                const { token, username } = authResult;
+                showStatus(`Login realizado: ${username}`, 'status');
 
-            await window.electronAPI.publishToken(username, token);
-            showStatus('Token publicado. Conectando...', 'status');
+                const publishResult = await window.electronAPI.publishToken(username, token);
+                if (!publishResult || !publishResult.success) {
+                    throw new Error('Falha ao publicar token no servidor');
+                }
+                showStatus('Token publicado. Conectando...', 'status');
 
-            const { pid, shortID } = await window.electronAPI.connectOpenVPN();
-            vpnPid = pid;
-            showStatus(`Conectado com sucesso! PID: ${pid}`, 'success');
+                const connectResult = await window.electronAPI.connectOpenVPN();
+                if (!connectResult || !connectResult.pid) {
+                    throw new Error('Falha ao conectar OpenVPN');
+                }
+                
+                vpnPid = connectResult.pid;
+                showStatus(`Conectado com sucesso! PID: ${vpnPid}`, 'success');
 
-            // Salvar estado do perfil atual
-            await window.electronAPI.saveAppState({
-                selectedProfileId: currentProfile.id,
-                selectedProfileType: currentProfile.type
-            });
+                // Salvar estado do perfil atual
+                await window.electronAPI.saveAppState({
+                    selectedProfileId: currentProfile.id,
+                    selectedProfileType: currentProfile.type
+                });
 
-            // Esconder elementos desnecessários quando conectado
-            hideConnectionElements();
+                // Esconder elementos desnecessários quando conectado
+                hideConnectionElements();
+            } catch (azureErr) {
+                console.error('❌ [RENDERER] Erro no fluxo Azure:', azureErr);
+                throw azureErr;
+            }
         }
 
         saveApplicationState();
@@ -1599,6 +1619,7 @@ function closeUpdateModal() {
 if (window.electronAPI) {
     // Device Code Response (Azure Login)
     window.electronAPI.onDeviceCodeResponse((event, deviceCodeData) => {
+        try {
         console.log('🔐 Device code recebido:', deviceCodeData);
         logToMain('RENDERER', 'DEVICE_CODE_RECEIVED', {
             hasUri: !!deviceCodeData.verification_uri,
@@ -1628,6 +1649,10 @@ if (window.electronAPI) {
         }
 
         showStatus('Código de verificação gerado. Copie e use no navegador.', 'success');
+        } catch (err) {
+            console.error('❌ Erro ao processar device code:', err);
+            showStatus('Erro ao processar autenticação: ' + err.message, 'alert');
+        }
     });
 
     // Evento de desconexão externa
