@@ -624,6 +624,7 @@ let currentElevationMethod = null;
 let currentOvpnPath = null;
 let vpnProcess = null;
 let vpnConnectionActive = false;
+let suppressNextReconnect = false;
 
 // RF010: controle de reconexão automática
 const AUTO_RECONNECT = {
@@ -1351,6 +1352,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
     let challengeTimeout = null;
 
     const connectionId = `conn_${profileId}_${Date.now()}`;
+    suppressNextReconnect = false;
 
     try {
       logger.log('CONNECTION', 'START', {
@@ -1721,8 +1723,14 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             currentElevationMethod = null;
             currentOvpnPath = null;
 
-           // RF010: reagendar conexão se caiu inesperadamente (não foi desconexão manual)
-           if (wasEstablished && code !== 0 && AUTO_RECONNECT.enabled && !authFailed) {
+           const manualDisconnect = suppressNextReconnect;
+           if (manualDisconnect) {
+             console.log('🛑 [RF010] Reconexão automática ignorada: desconexão manual solicitada');
+             suppressNextReconnect = false;
+           }
+
+           // RF010: reagendar conexão se caiu inesperadamente
+           if (wasEstablished && code !== 0 && AUTO_RECONNECT.enabled && !authFailed && !manualDisconnect) {
              AUTO_RECONNECT.lastProfileId = profileId;
              AUTO_RECONNECT.lastProfileType = 'user';
              scheduleReconnect(profileId, 'user');
@@ -2569,10 +2577,37 @@ ipcMain.handle('publish-token', async (event, username, token) => {
   try {
     logger.log('AZURE', 'TOKEN_PUBLISH_START', { username, serverApi: config.server_api });
 
-    await axios.post(config.server_api, { username, jwt_token: token });
+    const response = await axios.post(config.server_api, { username, jwt_token: token });
+    const shortId =
+      response?.data?.short_id ||
+      response?.data?.shortID ||
+      response?.data?.id ||
+      response?.data?.data?.short_id ||
+      response?.data?.data?.shortID ||
+      null;
 
-    logger.logAzureTokenPublish(username, true, { serverApi: config.server_api });
-    return { success: true };
+    // Persiste short_id para o próximo connect-openvpn
+    try {
+      const existing = fs.existsSync(cachePath)
+        ? JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+        : {};
+
+      existing.short_id = shortId;
+      existing.shortID = shortId;
+      existing.short_id_generated_at = new Date().toISOString();
+      fs.writeFileSync(cachePath, JSON.stringify(existing, null, 2));
+    } catch (persistErr) {
+      logger.log('AZURE', 'TOKEN_PUBLISH_CACHE_WARN', {
+        username,
+        error: persistErr.message
+      });
+    }
+
+    logger.logAzureTokenPublish(username, true, {
+      serverApi: config.server_api,
+      hasShortId: !!shortId
+    });
+    return { success: true, short_id: shortId };
   } catch (err) {
     logger.logAzureTokenPublish(username, false, {
       serverApi: config.server_api,
@@ -2583,6 +2618,8 @@ ipcMain.handle('publish-token', async (event, username, token) => {
 });
 
 ipcMain.handle('connect-openvpn', async () => {
+  suppressNextReconnect = false;
+  const pkexecAvailableGlobal = await checkPkexecAvailable();
   return new Promise((resolve, reject) => {
     console.log(`🔗 [MAIN] connect-openvpn chamado - Timestamp: ${new Date().toISOString()}`);
 
@@ -2605,32 +2642,55 @@ ipcMain.handle('connect-openvpn', async () => {
       return;
     }
 
-    const shortID = cache.access_token.substring(0, 16);
-    fs.writeFileSync(authPath, `user\n${shortID}`, 'utf-8');
+    // Exigir short_id retornado pelo backend no publish-token
+    const shortID = (cache.short_id && String(cache.short_id).trim())
+      ? String(cache.short_id).trim()
+      : ((cache.shortID && String(cache.shortID).trim()) ? String(cache.shortID).trim() : '');
+
+    if (!shortID) {
+      reject(new Error('short_id do Entra ID não encontrado. Faça login novamente para publicar o token antes de conectar.'));
+      return;
+    }
+    const azureUpn = String(cache.username || '').trim().replace(/[\r\n]/g, '');
+
+    if (!azureUpn || !azureUpn.includes('@')) {
+      reject(new Error('UPN do Entra ID inválido ou ausente no cache. Faça login novamente.'));
+      return;
+    }
+
+    fs.writeFileSync(authPath, `${azureUpn}\n${shortID}`, 'utf-8');
+    console.log(`🔐 [Azure] auth-user-pass preparado com UPN: ${azureUpn}`);
 
     const openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
     let openvpnCommand;
     let openvpnArgsFinal;
 
     currentOvpnPath = config.openvpn_config;
-    currentElevationMethod = 'sudo';
+    currentElevationMethod = 'direct';
 
     if (process.platform === 'win32') {
       openvpnCommand = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
       openvpnArgsFinal = openvpnArgs;
     } else {
-      // Se já rodando como root (uid=0), sudo é desnecessário e causa falha interativa
+      // Linux/Unix: escolher estratégia de elevação compatível
       const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+      const pkexecAvailable = pkexecAvailableGlobal;
+
       if (isRoot) {
         openvpnCommand = 'openvpn';
         openvpnArgsFinal = openvpnArgs;
         currentElevationMethod = 'direct';
         console.log('🔐 [Azure] Processo já é root — invocando openvpn diretamente');
+      } else if (process.env.DISPLAY && pkexecAvailable) {
+        openvpnCommand = 'pkexec';
+        openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', 'openvpn', ...openvpnArgs];
+        currentElevationMethod = 'pkexec';
+        console.log('🔐 [Azure] Usando pkexec para elevação interativa via GUI');
       } else {
         openvpnCommand = 'sudo';
         openvpnArgsFinal = ['-n', 'openvpn', ...openvpnArgs];
         currentElevationMethod = 'sudo';
-        console.log('🔐 [Azure] Usando sudo -n openvpn para elevação');
+        console.log('🔐 [Azure] Usando sudo -n openvpn para elevação não interativa');
       }
     }
 
@@ -2704,7 +2764,9 @@ ipcMain.handle('connect-openvpn', async () => {
       }
 
       if (errorText.includes('sudo:') || errorText.includes('a password is required')) {
-        lastErrorOutput = 'Sudo requer senha/interação para iniciar OpenVPN.';
+        lastErrorOutput = 'Sudo requer senha/interação para iniciar OpenVPN (configure NOPASSWD ou use pkexec).';
+      } else if (errorText.includes('pkexec') || errorText.includes('Not authorized')) {
+        lastErrorOutput = 'pkexec negou a elevação para iniciar OpenVPN.';
       } else if (errorText.includes('Cannot open TUN/TAP dev')) {
         lastErrorOutput = 'Sem permissão para abrir TUN/TAP.';
       } else if (errorText.includes('AUTH_FAILED')) {
@@ -2730,8 +2792,13 @@ ipcMain.handle('connect-openvpn', async () => {
 
        if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
          mainWindow.webContents.send('vpn-disconnected');
+         const manualDisconnect = suppressNextReconnect;
+         if (manualDisconnect) {
+           console.log('🛑 [RF010] Reconexão automática Azure ignorada: desconexão manual solicitada');
+           suppressNextReconnect = false;
+         }
          // RF010: reagendar reconexão se caiu inesperadamente
-         if (code !== 0 && AUTO_RECONNECT.enabled) {
+         if (code !== 0 && AUTO_RECONNECT.enabled && !manualDisconnect) {
            AUTO_RECONNECT.lastProfileId = 'azure';
            AUTO_RECONNECT.lastProfileType = 'azure';
            scheduleReconnect('azure', 'azure');
@@ -2750,6 +2817,7 @@ ipcMain.handle('connect-openvpn', async () => {
 // Função para matar a conexão VPN (MESMA DO FECHAR)
 async function killVPNConnection() {
   console.log('🔌 MATANDO CONEXÃO VPN (MÉTODO DO FECHAR)...');
+  suppressNextReconnect = true;
   
   try {
     // Método 1: Matar processo vpnProcess se existir

@@ -1,0 +1,103 @@
+/* --- Cores Base --- */
+html { height: 100%; box-sizing: border-box; }
+
+body {
+	position: relative;
+	margin: 0;
+	min-height: 100%;
+	background-image: url("../../../../images/bg-login.jpg");
+	background-size: cover;
+	background-position: center center;
+	background-repeat: no-repeat;
+	background-attachment: fixed;
+	background-color: #001f34;
+	color: #ffffff;
+}
+
+/* --- MUDANÇA #1: WRAP --- */
+#wrap {
+	min-height: 100%;
+	position: relative;
+	padding-bottom: 100px;
+	/* background-color: rgba(0, 31, 52, 0.7); -> COR REMOVIDA DAQUI */
+
+	/* --- NOVAS REGRAS PARA CENTRALIZAR O WRAP --- */
+	max-width: 900px; /* Define um tamanho máximo (ex: 900px) */
+	margin: 0 auto;   /* Centraliza o #wrap na horizontal */
+}
+
+#img-cloud { display: none; }
+
+/* --- MUDANÇA #2: CONTENT --- */
+#content {
+	/* O 'wrap' agora tem 900px, então o 'content' pode ser 100% *dentro* dele */
+	width: 100%;
+	margin: 50px auto 0 auto;
+	font-size: 16px;
+	padding: 40px 50px 50px 50px; /* Adiciona padding (espaço interno) */
+	position: relative;
+	z-index: 2;
+	box-sizing: border-box; /* Garante que o padding não quebre o layout */
+
+	/* --- COR MOVIDA PARA CÁ --- */
+	background-color: rgba(0, 31, 52, 0.7); /* Fundo 'bg' semi-transparente */
+}
+
+#error { 
+	/* O 'wrap' agora tem 900px, então o 'content' pode ser 100% *dentro* dele */
+	width: 100%;
+	margin: 50px auto 0 auto;
+	font-size: 16px;
+	padding: 40px 50px 50px 50px; /* Adiciona padding (espaço interno) */
+	position: relative;
+	z-index: 2;
+	box-sizing: border-box; /* Garante que o padding não quebre o layout */
+
+	/* --- COR MOVIDA PARA CÁ --- */
+	background-color: rgba(168, 30, 6, 0.6); /* Fundo 'bg' semi-transparente */
+}
+
+/* --- Elementos com Novas Cores --- */
+#content h1 {
+	color: #5abef7; /* highlight */
+}
+#content p {
+	text-align: justify;
+	text-justify: inter-word;
+}
+#content button a {
+	color: #08343f; /* highlight */
+	font-weight: bold;
+	font-size: 1.1em;
+}
+#content button a:hover {
+	color: #ffffff; /* default */
+}
+
+/* --- Footer (Mantido) --- */
+#footer {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	padding: 25px;
+	background-color: #032642; /* section */
+	text-align: center;
+	margin-top: 10px;
+	min-height: 80px;
+	z-index: 3;
+}
+
+/* --- Media Queries (Ajustadas) --- */
+@media only screen and (max-width : 768px) {
+	/* Em telas pequenas, o wrap volta a ser 100% (ou quase) */
+	#wrap {
+		max-width: 95%; /* Um pouco de margem nas laterais */
+	}
+
+	#content {
+		/* Remove o padding lateral excessivo em telas pequenas */
+		padding: 30px 20px 30px 20px;
+		margin-top: 30px;
+	}
+}

@@ -1,0 +1,37 @@
+Projeto: Integracao BluePexVPN com BluePexUTM6 (cpack customizado)
+
+Escopo tecnico:
+- Pacote cpack deve instalar arquivos de /etc/inc, /usr/local/www, /usr/local/pkg, /usr/local/bin e /usr/local/sbin.
+- Fluxo Entra ID usa Device Flow no app e short_id no backend para validacao no UTM.
+
+Contratos de integracao:
+1) App -> Backend:
+   - POST /publish { username, jwt_token }
+   - resposta: { short_id, expires_in }
+
+2) UTM -> Backend:
+   - GET /validate/<short_id>
+   - retorno esperado contem username correspondente
+
+3) OpenVPN auth script:
+   - script unificado: /usr/local/sbin/ovpn_auth_verify_unificado.sh
+   - para UPN (username com @) usa verify_saml.py
+   - para usuario local delega para ovpn_auth_verify_async
+
+Pontos criticos conhecidos:
+- Instalador original nao copiava scripts runtime em /usr/local/bin e /usr/local/sbin (corrigido nesta branch).
+- Instalador original tambem nao copiava arquivos de wizard OpenVPN em /usr/local/www/wizards e /usr/local/www/vpn_openvpn_server.php (corrigido nesta branch).
+- Instalador original nao copiava /etc/inc/openvpn.inc, o que fazia o runtime voltar para plugin legado (ovpn_auth_verify_async) apos update.
+- Alguns builds UTM/pfSense nao expõem config_get_path/config_set_path/config_del_path no wizard runtime; openvpn_wizard.inc agora inclui compat layer.
+- /usr/local/bin/.env e obrigatorio para configuracoes EntraID no frontend PHP.
+- Servidor OpenVPN precisa estar realmente configurado para usar auth-user-pass-verify; sem isso o ciclo nao fecha.
+
+Checklist de validacao:
+- python3.8 + requests presentes no UTM
+- verify_saml.py retorna RC 0 para short_id valido
+- ovpn_auth_verify_unificado.sh retorna RC 0 para UPN + short_id valido
+- logs: /var/log/ovpn_auth_unificado.log
+
+Observacao operacional:
+- Em ambiente de teste, usar staging (/tmp/cpack_test) antes de aplicar em /
+- Sempre manter backup em /etc/bkp-<versao>-cpack_<id>
