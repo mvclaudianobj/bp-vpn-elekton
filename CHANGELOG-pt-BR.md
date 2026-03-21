@@ -107,6 +107,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Diagnóstico de falhas ampliado**: Captura e classificação de erros de `stdout`/`stderr` com mensagens específicas para falha de sudo, permissão TUN/TAP e `AUTH_FAILED`.
 - **Limpeza garantida do arquivo de auth**: O arquivo temporário de autenticação (`authPath`) é removido em todos os caminhos de encerramento.
 - **Tratamento de desconexão ajustado**: `vpn-disconnected` não é disparado quando o processo cai antes de estabelecer túnel.
+- **UPN real no auth-user-pass**: o cliente passou a enviar o usuário Entra ID real (`marcos@...`) em vez de `user` fixo, permitindo correlação correta no UTM.
+- **`short_id` obrigatório no connect**: o `publish-token` agora persiste o `short_id` retornado pelo backend e o `connect-openvpn` exige esse valor para autenticação Entra ID.
+- **Compatibilidade de resposta do backend**: suporte a formatos `short_id`, `shortID` e variantes em `data` na resposta da API de publish.
+- **Reconexão manual corrigida**: ao clicar em desconectar, o app não exibe mais "conexão perdida/tentando reconectar" (reconexão automática suprimida para desconexão manual).
+- **Elevação Linux no fluxo Azure**: fallback por estratégia (`direct` se root, `pkexec` com GUI, `sudo -n` como último recurso) para reduzir falhas de interação de senha.
 
 ### 🛡️ Correções de Sessão e Fechamento
 

@@ -107,6 +107,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spawn error handling**: Added `try/catch` around `spawn()` with clean Promise rejection if process fails to start.
 - **Disconnection event fix**: `vpn-disconnected` event is no longer emitted when the process exits before the tunnel is established, preventing inconsistent UI state.
 - **Config validation before connect**: Added check for `config.openvpn_config` file existence before attempting to start OpenVPN.
+- **Real UPN in auth-user-pass**: client now sends the real Entra ID UPN (`user@domain`) instead of static `user`, enabling proper identity correlation on UTM logs.
+- **Mandatory `short_id` on connect**: `publish-token` persists backend `short_id`, and `connect-openvpn` now requires it for Entra ID authentication.
+- **Publish API response compatibility**: supports `short_id`, `shortID`, and nested `data` variants from backend responses.
+- **Manual disconnect vs auto-reconnect fix**: disconnect button no longer triggers "connection lost/reconnecting" behavior; auto-reconnect is suppressed for manual disconnects.
+- **Linux elevation strategy for Azure flow**: fallback chain (`direct` if root, GUI `pkexec`, then `sudo -n`) to reduce interactive sudo failures.
 
 ### 🛡️ Session and Close Fixes
 
