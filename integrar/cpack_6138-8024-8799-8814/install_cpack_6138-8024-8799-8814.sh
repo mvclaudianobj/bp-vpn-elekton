@@ -8,14 +8,17 @@
 #    exit 1
 #fi
 
-# Checa versão anterior do cpack instalada
-#if [ "$(cat /etc/cpack_install | cut -c1-7)" != "0.3.1.0" ]; then
-#    rm -rf /etc/cpack_6138-8024-8799-8814.sha256 
-#    rm -rf /etc/cpack_6138-8024-8799-8814.zip
-#    rm -rf /usr/local/share/BluePexUTM/cpack_6138-8024-8799-8814.sh
-#    echo "Required version not applied, failed to install current version"
-#    exit 1
-#fi
+#---------------------------------------------------------------------------
+# Check version CP - only check if >= 0.3.3.0
+#---------------------------------------------------------------------------
+current_ver=$(cat /etc/cpack_install | cut -c1-7)
+required_ver="0.3.3.0"
+
+if [ "$(echo -e "$current_ver\n$required_ver" | sort -V | head -n1)" != "$required_ver" ]; then
+    echo "Current cpack version: $current_ver (required >= $required_ver)"
+fi
+#---------------------------------------------------------------------------
+
 
 # Prepara diretório do bkp
 dir_update="/usr/local/share/BluePexUTM/tmp_pack/cpack_6138-8024-8799-8814"
