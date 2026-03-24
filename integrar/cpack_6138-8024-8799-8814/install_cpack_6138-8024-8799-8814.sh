@@ -202,9 +202,26 @@ install_cpack "/usr/local/sbin/test_azure_token.sh" "bk"
 install_cpack "/usr/local/sbin/ovpn_auth_verify_unificado.sh" "bk"
 
 ### Run the installation files
+### Patch Hash #entraid-runtime-bin
+### Patch Desc #8799/8814 -> fix. Ensure runtime auth scripts are actually installed (not only chmod). Fix
+install_cpack "/usr/local/bin/on_connect.sh" "bk"
+install_cpack "/usr/local/bin/on_disconnect.sh" "bk"
+install_cpack "/usr/local/bin/verify_saml.sh" "bk"
+install_cpack "/usr/local/bin/verify_saml.py" "bk"
+install_cpack "/usr/local/sbin/test_azure_token.sh" "bk"
+install_cpack "/usr/local/sbin/ovpn_auth_verify_unificado.sh" "bk"
+
+### Patch Hash #totp-2fa
+### Patch Desc #8814 -> feat. Add TOTP 2FA validation scripts
+install_cpack "/usr/local/bin/totp/verify_totp.py" "bk"
+install_cpack "/usr/local/bin/totp/verify_totp.sh" "bk"
+install_cpack "/usr/local/sbin/mfa_manage.sh" "bk"
+
+### Run the installation files
 ### Patch Hash #eb1db4a92
 ### Patch Desc #8814 -> chore. Entry permissions. Fix
 install_shell_action "/extra/permissions.sh"
 
-### Pack installation complete - 6138-8024-8799-8814
-echo "Pack installation complete - 6138-8024-8799-8814"
+### Patch Hash #totp-permissions
+### Patch Desc #8814 -> chore. Set TOTP directory and Python dependencies
+install_shell_action "/extra/totp_setup.sh"

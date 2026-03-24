@@ -2,8 +2,11 @@
 # /usr/local/sbin/ovpn_auth_verify_unificado.sh
 LOG="/var/log/ovpn_auth_unificado.log"
 PYTHON="/usr/local/bin/python3.8"
-VERIFY_PY="/usr/local/bin/verify_saml.py"
+VERIFY_SAML_PY="/usr/local/bin/verify_saml.py"
+VERIFY_TOTP_SH="/usr/local/bin/totp/verify_totp.sh"
+VERIFY_TOTP_PY="/usr/local/bin/totp/verify_totp.py"
 PLUGIN="/usr/local/sbin/ovpn_auth_verify_async"
+MFA_DB="/var/db/openvpn/mfa_users"
 
 # predictable env
 export TMPDIR=/tmp
@@ -36,30 +39,102 @@ if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
   exit 1
 fi
 
+check_mfa_enabled() {
+  local user="$1"
+  if [ -f "$MFA_DB" ]; then
+    grep -q "^${user}$" "$MFA_DB" 2>/dev/null
+    return $?
+  fi
+  return 1
+}
+
+extract_totp_code() {
+  local password="$1"
+  echo "$password" | cut -d'|' -f2 | tr -d ' '
+}
+
+extract_password() {
+  local password="$1"
+  echo "$password" | cut -d'|' -f1
+}
+
+is_totp_format() {
+  local password="$1"
+  echo "$password" | grep -q '|'
+  return $?
+}
+
 case "$USERNAME" in
   *@*)
     log "Azure UPN detected -> calling verify_saml.py"
-    if [ -x "$PYTHON" ] && [ -f "$VERIFY_PY" ]; then
-      "$PYTHON" "$VERIFY_PY" "$USERNAME" "$PASSWORD" >> "$LOG" 2>&1
+    if [ -x "$PYTHON" ] && [ -f "$VERIFY_SAML_PY" ]; then
+      "$PYTHON" "$VERIFY_SAML_PY" "$USERNAME" "$PASSWORD" >> "$LOG" 2>&1
       RC=$?
       log "verify_saml.py exit code: $RC"
       exit $RC
     else
-      log "ERROR: python or verify_saml.py missing ($PYTHON, $VERIFY_PY)"
+      log "ERROR: python or verify_saml.py missing ($PYTHON, $VERIFY_SAML_PY)"
       exit 1
     fi
     ;;
   *)
-    log "Local user -> calling ovpn_auth_verify_async"
-    if [ -x "$PLUGIN" ]; then
-      # plugin expects particular args; preserve original behavior by forwarding args
-      "$PLUGIN" "$USERNAME" "$PASSWORD" >> "$LOG" 2>&1
-      RC=$?
-      log "ovpn_auth_verify_async exit code: $RC"
-      exit $RC
+    log "Local user detected"
+    
+    if is_totp_format "$PASSWORD"; then
+      log "TOTP format detected (password|TOTP)"
+      REAL_PASS=$(extract_password "$PASSWORD")
+      TOTP_CODE=$(extract_totp_code "$PASSWORD")
+      
+      if [ -z "$REAL_PASS" ] || [ -z "$TOTP_CODE" ]; then
+        log "DENIED: invalid TOTP format (expected password|TOTP)"
+        exit 1
+      fi
+      
+      if check_mfa_enabled "$USERNAME"; then
+        log "MFA enabled for user '$USERNAME' -> validating TOTP"
+        if [ -x "$VERIFY_TOTP_SH" ]; then
+          "$VERIFY_TOTP_SH" "$USERNAME" "$TOTP_CODE" >> "$LOG" 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            log "TOTP validation FAILED for: $USERNAME"
+            exit 1
+          fi
+          log "TOTP validation SUCCESS"
+        else
+          log "ERROR: TOTP verification script not found"
+          exit 1
+        fi
+      else
+        log "MFA not enabled for user '$USERNAME', skipping TOTP"
+      fi
+      
+      log "Validating password for user '$USERNAME'"
+      if [ -x "$PLUGIN" ]; then
+        "$PLUGIN" "$USERNAME" "$REAL_PASS" >> "$LOG" 2>&1
+        RC=$?
+        log "ovpn_auth_verify_async exit code: $RC"
+        exit $RC
+      else
+        log "ERROR: plugin missing ($PLUGIN)"
+        exit 1
+      fi
     else
-      log "ERROR: plugin missing ($PLUGIN)"
-      exit 1
+      log "Standard password format (no TOTP)"
+      if check_mfa_enabled "$USERNAME"; then
+        log "MFA is REQUIRED for user '$USERNAME', but no TOTP code provided"
+        exit 1
+      fi
+      
+      log "Calling ovpn_auth_verify_async for user '$USERNAME'"
+      if [ -x "$PLUGIN" ]; then
+        "$PLUGIN" "$USERNAME" "$PASSWORD" >> "$LOG" 2>&1
+        RC=$?
+        log "ovpn_auth_verify_async exit code: $RC"
+        exit $RC
+      else
+        log "ERROR: plugin missing ($PLUGIN)"
+        exit 1
+      fi
     fi
     ;;
 esac

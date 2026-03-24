@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.7] - PLANNED — Phase 2: Medium Priority / Features
 
+### 🔐 RNF017: 2FA Local Authentication
+- Implementar validação TOTP para usuários locais (não EntraID)
+- Usuário cadastra chave secreta no UTM
+- App exibe modal para input do código TOTP
+- Servidor valida código via script Python (PyOTP)
+
 ### 🔔 RF021/RNF016: System Notifications
 - Implement Electron `Notification` API for events: connection established, disconnection, error, update available
 
