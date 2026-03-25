@@ -2669,7 +2669,31 @@ ipcMain.handle('connect-openvpn', async () => {
     currentElevationMethod = 'direct';
 
     if (process.platform === 'win32') {
-      openvpnCommand = 'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe';
+      // Detectar caminho real do OpenVPN no Windows (igual ao handler userpass)
+      const possibleWinPaths = [
+        'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe',
+        'C:\\Program Files (x86)\\OpenVPN\\bin\\openvpn.exe',
+        'C:\\Program Files\\OpenVPN Connect\\openvpn.exe',
+        'C:\\Program Files (x86)\\OpenVPN Connect\\openvpn.exe'
+      ];
+      let winOpenvpnPath = null;
+      for (const p of possibleWinPaths) {
+        if (fs.existsSync(p)) { winOpenvpnPath = p; break; }
+      }
+      if (!winOpenvpnPath) {
+        try {
+          const { execSync } = require('child_process');
+          const r = execSync('where openvpn.exe 2>nul', { encoding: 'utf8' });
+          winOpenvpnPath = r.trim().split('\n')[0].trim();
+        } catch (_) {}
+      }
+      if (!winOpenvpnPath) {
+        cleanup();
+        reject(new Error('OpenVPN não encontrado. Instale o OpenVPN e tente novamente.'));
+        return;
+      }
+      console.log(`🔐 [Azure/Win] OpenVPN encontrado: ${winOpenvpnPath}`);
+      openvpnCommand = winOpenvpnPath;
       openvpnArgsFinal = openvpnArgs;
     } else {
       // Linux/Unix: escolher estratégia de elevação compatível
@@ -2733,7 +2757,7 @@ ipcMain.handle('connect-openvpn', async () => {
         }
         reject(new Error(`Timeout na conexão OpenVPN Azure. ${lastErrorOutput || ''}`.trim()));
       }
-    }, 60000);
+    }, 120000);
 
     vpnProcess.stdout.on('data', (data) => {
       const output = data.toString();
