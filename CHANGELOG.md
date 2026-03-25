@@ -30,13 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.7] - PLANNED — Phase 2: Medium Priority / Features
+## [0.1.7] - IN PROGRESS — (current — pending recompilation and publishing)
 
 ### 🔐 RNF017: 2FA Local Authentication
 - Implementar validação TOTP para usuários locais (não EntraID)
-- Usuário cadastra chave secreta no UTM
-- App exibe modal para input do código TOTP
-- Servidor valida código via script Python (PyOTP)
+- Usuário cadastra chave secreta no UTM (via system_usermanager.php)
+- App exibe modal para input do código TOTP ao detectar `static-challenge`
+- Servidor valida código via PyOTP lendo segredo do pfSense (`/usr/local/www/openvpn/google-auth/<user>`)
+- Formato de envio: `senha|TOTP` via stdin do processo OpenVPN
+- Scripts: `verify_totp.py`, `verify_totp.sh`, `mfa_manage.sh`, `ovpn_auth_verify_unificado.sh`
 
 ### 🔔 RF021/RNF016: System Notifications
 - Implement Electron `Notification` API for events: connection established, disconnection, error, update available
