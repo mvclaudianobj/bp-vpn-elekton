@@ -1497,13 +1497,17 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
               console.log(`🔐 Usando sudo -n com ${openvpnPath} para elevação`);
             }
         } else if (process.platform === 'win32') {
-          // Detect OpenVPN installation path on Windows
-          const possiblePaths = [
-            'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe',
-            'C:\\Program Files (x86)\\OpenVPN\\bin\\openvpn.exe',
-            'C:\\Program Files\\OpenVPN Connect\\openvpn.exe',
-            'C:\\Program Files (x86)\\OpenVPN Connect\\openvpn.exe'
-          ];
+           // Detect OpenVPN installation path on Windows
+           const pf64 = process.env['ProgramFiles'] || 'C:\\Program Files';
+           const pf32 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+           const possiblePaths = [
+             `${pf64}\\OpenVPN\\bin\\openvpn.exe`,
+             `${pf32}\\OpenVPN\\bin\\openvpn.exe`,
+             `${pf64}\\OpenVPN Connect\\openvpn.exe`,
+             `${pf32}\\OpenVPN Connect\\openvpn.exe`,
+             'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe',
+             'C:\\Program Files (x86)\\OpenVPN\\bin\\openvpn.exe',
+           ];
 
           let openvpnPath = null;
           for (const path of possiblePaths) {
@@ -2670,11 +2674,15 @@ ipcMain.handle('connect-openvpn', async () => {
 
     if (process.platform === 'win32') {
       // Detectar caminho real do OpenVPN no Windows (igual ao handler userpass)
+      const pf64Az = process.env['ProgramFiles'] || 'C:\\Program Files';
+      const pf32Az = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
       const possibleWinPaths = [
+        `${pf64Az}\\OpenVPN\\bin\\openvpn.exe`,
+        `${pf32Az}\\OpenVPN\\bin\\openvpn.exe`,
+        `${pf64Az}\\OpenVPN Connect\\openvpn.exe`,
+        `${pf32Az}\\OpenVPN Connect\\openvpn.exe`,
         'C:\\Program Files\\OpenVPN\\bin\\openvpn.exe',
         'C:\\Program Files (x86)\\OpenVPN\\bin\\openvpn.exe',
-        'C:\\Program Files\\OpenVPN Connect\\openvpn.exe',
-        'C:\\Program Files (x86)\\OpenVPN Connect\\openvpn.exe'
       ];
       let winOpenvpnPath = null;
       for (const p of possibleWinPaths) {
