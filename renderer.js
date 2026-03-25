@@ -1698,11 +1698,87 @@ if (window.electronAPI) {
         }
     });
 
-    // Desafio 2FA
+    // Desafio 2FA - abrir modal real
     window.electronAPI.onVpnChallenge((event, data) => {
         console.log('🔐 Desafio VPN recebido:', data);
-        // Implementar modal de desafio 2FA
-        showStatus(`Desafio 2FA: ${data.message}`, 'alert');
+
+        const modal = document.getElementById('challengeModal');
+        const msgEl = document.getElementById('challengeMessage');
+        const inputEl = document.getElementById('challengeResponse');
+        const timerEl = document.getElementById('challengeTimer');
+        const submitBtn = document.getElementById('submitChallengeBtn');
+        const cancelBtn = document.getElementById('cancelChallengeBtn');
+
+        if (!modal) {
+            console.error('challengeModal não encontrado no DOM');
+            showStatus(`Desafio 2FA: ${data.message}`, 'alert');
+            return;
+        }
+
+        // Preencher mensagem e limpar input
+        msgEl.textContent = data.message || 'Digite o token do Google Authenticator:';
+        inputEl.value = '';
+
+        // Mostrar modal
+        modal.style.display = 'flex';
+        setTimeout(() => inputEl.focus(), 100);
+
+        // Timer regressivo
+        let secondsLeft = 120;
+        timerEl.textContent = `Tempo restante: ${secondsLeft} segundos`;
+        const timerInterval = setInterval(() => {
+            secondsLeft--;
+            timerEl.textContent = `Tempo restante: ${secondsLeft} segundos`;
+            if (secondsLeft <= 0) {
+                clearInterval(timerInterval);
+                modal.style.display = 'none';
+                showStatus('Tempo esgotado para o token 2FA', 'error');
+            }
+        }, 1000);
+
+        const closeModal = () => {
+            clearInterval(timerInterval);
+            modal.style.display = 'none';
+            inputEl.value = '';
+        };
+
+        // Enviar token
+        const onSubmit = async () => {
+            const token = inputEl.value.trim();
+            if (!token || token.length < 6) {
+                showStatus('Digite um token válido de 6 dígitos', 'alert');
+                return;
+            }
+            closeModal();
+            console.log('📤 Enviando token 2FA');
+            try {
+                await window.electronAPI.sendChallengeResponse(token);
+            } catch (err) {
+                console.error('Erro ao enviar token 2FA:', err);
+                showStatus('Erro ao enviar token 2FA', 'error');
+            }
+        };
+
+        // Cancelar
+        const onCancel = () => {
+            closeModal();
+            showStatus('Autenticação 2FA cancelada', 'alert');
+        };
+
+        // Enter no input também submete
+        const onKeyDown = (e) => {
+            if (e.key === 'Enter') onSubmit();
+            if (e.key === 'Escape') onCancel();
+        };
+
+        // Limpar listeners anteriores e registrar novos
+        submitBtn.replaceWith(submitBtn.cloneNode(true));
+        cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+        inputEl.removeEventListener('keydown', onKeyDown);
+
+        document.getElementById('submitChallengeBtn').addEventListener('click', onSubmit);
+        document.getElementById('cancelChallengeBtn').addEventListener('click', onCancel);
+        inputEl.addEventListener('keydown', onKeyDown);
     });
 
     // Função para extrair versão do update info (centralizada como app.getVersion())
