@@ -41,10 +41,19 @@ fi
 
 check_mfa_enabled() {
   local user="$1"
+  local short_user=$(echo "$user" | cut -d'@' -f1)
+
+  # 1. checar nosso MFA_DB
   if [ -f "$MFA_DB" ]; then
-    grep -q "^${user}$" "$MFA_DB" 2>/dev/null
-    return $?
+    grep -qE "^${user}$|^${short_user}$" "$MFA_DB" 2>/dev/null && return 0
   fi
+
+  # 2. fallback: checar diretório nativo do pfSense
+  if [ -f "/usr/local/www/openvpn/google-auth/${short_user}" ] || \
+     [ -f "/usr/local/www/openvpn/google-auth/${user}" ]; then
+    return 0
+  fi
+
   return 1
 }
 
