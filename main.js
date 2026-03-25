@@ -1471,31 +1471,51 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
               });
               console.log(`🔐 Processo já é root — invocando ${openvpnPath} diretamente`);
             } else if (process.env.DISPLAY && pkexecAvailable) {
-              openvpnCommand = 'pkexec';
-              currentElevationMethod = 'pkexec';
-              openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
-              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-                connectionId,
-                strategy: 'pkexec',
-                command: openvpnCommand,
-                args: openvpnArgsFinal.slice(0, 3),
-                reason: 'display_and_pkexec_available',
-                elevationMethodStored: currentElevationMethod
-              });
-              console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
-            } else {
-              openvpnCommand = 'sudo';
-              currentElevationMethod = 'sudo';
-              openvpnArgsFinal = ['-n', openvpnPath, ...openvpnArgs];
-              logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-                connectionId,
-                strategy: 'sudo',
-                command: openvpnCommand,
-                reason: process.env.DISPLAY ? 'pkexec_not_available' : 'no_display',
-                elevationMethodStored: currentElevationMethod
-              });
-              console.log(`🔐 Usando sudo -n com ${openvpnPath} para elevação`);
-            }
+               // Verificar se perfil tem static-challenge (2FA) — pkexec intercepta stdin e quebra o challenge
+               const ovpnContent = ovpnResult.content || '';
+               const hasStaticChallenge = /static-challenge/i.test(ovpnContent);
+
+               if (hasStaticChallenge) {
+                 // 2FA detectado: pkexec bloqueia stdin — usar sudo para preservar challenge flow
+                 openvpnCommand = 'sudo';
+                 currentElevationMethod = 'sudo';
+                 openvpnArgsFinal = ['-n', openvpnPath, ...openvpnArgs];
+                 logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                   connectionId,
+                   strategy: 'sudo',
+                   command: openvpnCommand,
+                   args: openvpnArgsFinal.slice(0, 2),
+                   reason: 'static_challenge_detected_pkexec_incompatible',
+                   elevationMethodStored: currentElevationMethod
+                 });
+                 console.log(`🔐 2FA detectado (static-challenge) — usando sudo para preservar stdin`);
+               } else {
+                 openvpnCommand = 'pkexec';
+                 currentElevationMethod = 'pkexec';
+                 openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
+                 logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                   connectionId,
+                   strategy: 'pkexec',
+                   command: openvpnCommand,
+                   args: openvpnArgsFinal.slice(0, 3),
+                   reason: 'display_and_pkexec_available',
+                   elevationMethodStored: currentElevationMethod
+                 });
+                 console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
+               }
+             } else {
+               openvpnCommand = 'sudo';
+               currentElevationMethod = 'sudo';
+               openvpnArgsFinal = ['-n', openvpnPath, ...openvpnArgs];
+               logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                 connectionId,
+                 strategy: 'sudo',
+                 command: openvpnCommand,
+                 reason: process.env.DISPLAY ? 'pkexec_not_available' : 'no_display',
+                 elevationMethodStored: currentElevationMethod
+               });
+               console.log(`🔐 Usando sudo -n com ${openvpnPath} para elevação`);
+             }
         } else if (process.platform === 'win32') {
           // Detect OpenVPN installation path on Windows
           const possiblePaths = [
