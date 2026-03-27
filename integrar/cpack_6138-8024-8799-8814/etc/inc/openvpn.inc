@@ -2796,7 +2796,7 @@ function openvpn_authscript_string($authmode, $strictusercn, $mode_id, $local_po
 }
 
 function openvpn_authscriptE_string($authmode, $strictusercn, $mode_id, $local_port) {
-	return "plugin /usr/local/lib/openvpn/plugins/openvpn-plugin-auth-script.so /usr/local/sbin/ovpn_auth_verify_async_entraid user " . base64_encode($authmode) . " {$strictusercn} {$mode_id} {$local_port}\n";
+	return "auth-user-pass-verify /usr/local/sbin/ovpn_auth_verify_unificado.sh via-env \n";
 }
 
 function openvpn_inuse($id, $mode) {
