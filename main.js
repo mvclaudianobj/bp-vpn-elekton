@@ -998,7 +998,7 @@ app.whenReady().then(async () => {
         config = {
           client_id: "",
           tenant_id: "",
-          scope: "https://graph.microsoft.com/.default",
+          scope: "openid profile offline_access User.Read",
           server_api: "",
           openvpn_config: ""
         };
@@ -1011,7 +1011,7 @@ app.whenReady().then(async () => {
     config = {
       client_id: "",
       tenant_id: "",
-      scope: "https://graph.microsoft.com/.default",
+      scope: "openid profile offline_access User.Read",
       server_api: "",
       openvpn_config: ""
     };
@@ -1215,6 +1215,57 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
           }
         }
         continue;
+      }
+
+      // Fallback: extrair também de diretivas setenv (quando export não tiver #AZURE:)
+      const setenvMatch = line.match(/^setenv\s+([A-Za-z0-9_]+)\s+(.+)$/i);
+      if (setenvMatch) {
+        const key = String(setenvMatch[1] || '').trim().toLowerCase();
+        let value = String(setenvMatch[2] || '').trim();
+        value = value.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+
+        if (key && value) {
+          switch (key) {
+            case 'client_id':
+            case 'entraid_client_id':
+              azureConfig.client_id = value;
+              console.log(`🔧 Configuração Azure extraída (setenv): client_id = ${value}`);
+              break;
+            case 'tenant_id':
+            case 'entraid_tenant_id':
+              azureConfig.tenant_id = value;
+              console.log(`🔧 Configuração Azure extraída (setenv): tenant_id = ${value}`);
+              break;
+            case 'scope':
+            case 'entraid_scope':
+              azureConfig.scope = value;
+              console.log(`🔧 Configuração Azure extraída (setenv): scope = ${value}`);
+              break;
+            case 'server_api':
+            case 'entraid_server_api':
+              azureConfig.server_api = value;
+              console.log(`🔧 Configuração Azure extraída (setenv): server_api = ${value}`);
+              break;
+            case 'authority':
+            case 'entraid_authority': {
+              if (!azureConfig.tenant_id) {
+                const parts = value.replace(/\/$/, '').split('/');
+                const tenant = parts[parts.length - 1] || '';
+                if (tenant) {
+                  azureConfig.tenant_id = tenant;
+                  console.log(`🔧 Configuração Azure extraída (setenv): tenant_id = ${tenant}`);
+                }
+              }
+              break;
+            }
+            case 'fastapi_server':
+              if (!azureConfig.server_api) {
+                azureConfig.server_api = value.replace(/\/$/, '') + '/publish';
+                console.log(`🔧 Configuração Azure extraída (setenv): server_api = ${azureConfig.server_api}`);
+              }
+              break;
+          }
+        }
       }
 
       if (!line || line.startsWith('#')) {
@@ -2281,9 +2332,10 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       return { success: false, error: processResult.error };
     }
 
+    let currentConfig = config;
     if (processResult.azureConfig) {
       const configPath = CONFIG_PATH;
-      const currentConfig = JSON.parse(await fsAsync.readFile(configPath, 'utf-8'));
+      currentConfig = JSON.parse(await fsAsync.readFile(configPath, 'utf-8'));
 
       if (processResult.azureConfig.client_id) {
         currentConfig.client_id = processResult.azureConfig.client_id;
@@ -2299,11 +2351,21 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       }
       if (processResult.azureConfig.server_api) {
         currentConfig.server_api = processResult.azureConfig.server_api;
-        console.log(`💾 Server API salvo: ${processResult.server_api}`);
+        console.log(`💾 Server API salvo: ${processResult.azureConfig.server_api}`);
       }
 
-      await fsAsync.writeFile(configPath, JSON.stringify(currentConfig, null, 2));
-      console.log(`✅ Configurações Azure salvas no config.json`);
+      // Atualiza config em memória para evitar uso de valores antigos no login imediato
+      config = { ...config, ...currentConfig };
+
+      // Recria o cliente MSAL com os novos parâmetros
+      pca = new PublicClientApplication({
+        auth: {
+          clientId: config.client_id,
+          authority: `https://login.microsoftonline.com/${config.tenant_id}`,
+        }
+      });
+
+      console.log('✅ Configurações Azure atualizadas em memória (MSAL reconfigurado)');
     }
 
     console.log(`✅ Perfil Azure salvo: ${profileId}`);
@@ -2334,8 +2396,10 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 
     await fsAsync.writeFile(azureProfilesPath, JSON.stringify(azureProfiles, null, 2));
 
-    config.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
+    currentConfig.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
+    config = { ...config, ...currentConfig };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    console.log('✅ Configuração final persistida (incluindo openvpn_config)');
 
     return {
       success: true,
@@ -2521,56 +2585,300 @@ ipcMain.handle('delete-azure-profile', async (event, profileId) => {
 // ============ FUNÇÕES AZURE EXISTENTES ============
 
 ipcMain.handle('login-azure', async () => {
-  logger.log('AZURE', 'LOGIN_START', { scopes: config.scope });
+  const normalizeGuid = (value) => {
+    const raw = String(value || '').trim();
+    const m = raw.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+    return m ? m[0] : raw;
+  };
+  const tryHydrateAzureConfigFromOvpn = async () => {
+    const parseAzureTags = (content) => {
+      const parsed = {};
+      const lines = String(content || '').split('\n');
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (line === '') continue;
 
-  const request = {
-    scopes: config.scope.split(' '),
-    deviceCodeCallback: (deviceCodeResponse) => {
-      logger.log('AZURE', 'DEVICE_CODE_GENERATED', {
-        verificationUri: deviceCodeResponse.verificationUri,
-        userCode: deviceCodeResponse.userCode
-      });
-      const messageData = {
-        verification_uri: deviceCodeResponse.verificationUri,
-        user_code: deviceCodeResponse.userCode,
-      };
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('device-code-response', messageData);
+        // Formato 1: #AZURE:key=value
+        if (line.startsWith('#AZURE:')) {
+          const tag = line.substring(7).trim();
+          const idx = tag.indexOf('=');
+          if (idx <= 0) continue;
+          const key = tag.substring(0, idx).trim().toLowerCase();
+          const value = tag.substring(idx + 1).trim();
+          if (!value) continue;
+          if (key === 'client_id') parsed.client_id = value;
+          if (key === 'tenant_id') parsed.tenant_id = value;
+          if (key === 'scope') parsed.scope = value;
+          if (key === 'server_api') parsed.server_api = value;
+          continue;
+        }
+
+        // Formato 2: setenv KEY VALUE
+        const m = line.match(/^setenv\s+([A-Za-z0-9_]+)\s+(.+)$/i);
+        if (!m) continue;
+        const rawKey = String(m[1] || '').trim().toLowerCase();
+        let value = String(m[2] || '').trim();
+        value = value.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+        if (!value) continue;
+
+        if (rawKey === 'client_id' || rawKey === 'entraid_client_id') parsed.client_id = value;
+        if (rawKey === 'tenant_id' || rawKey === 'entraid_tenant_id') parsed.tenant_id = value;
+        if (rawKey === 'scope' || rawKey === 'entraid_scope') parsed.scope = value;
+        if (rawKey === 'server_api' || rawKey === 'entraid_server_api') parsed.server_api = value;
+
+        if ((rawKey === 'authority' || rawKey === 'entraid_authority') && !parsed.tenant_id) {
+          const parts = value.replace(/\/$/, '').split('/');
+          const tenant = parts[parts.length - 1] || '';
+          if (tenant) parsed.tenant_id = tenant;
+        }
+
+        if (rawKey === 'fastapi_server' && !parsed.server_api) {
+          parsed.server_api = value.replace(/\/$/, '') + '/publish';
+        }
       }
+      return parsed;
+    };
+
+    const candidates = [];
+    if (config?.openvpn_config && fs.existsSync(config.openvpn_config)) {
+      candidates.push(config.openvpn_config);
+    }
+
+    try {
+      if (fs.existsSync(AZURE_PROFILES_PATH)) {
+        const azureProfiles = JSON.parse(fs.readFileSync(AZURE_PROFILES_PATH, 'utf-8'));
+        for (const p of azureProfiles || []) {
+          if (p?.ovpnFile && fs.existsSync(p.ovpnFile)) {
+            candidates.push(p.ovpnFile);
+          }
+        }
+      }
+    } catch (e) {
+      logger.log('AZURE', 'HYDRATE_CANDIDATES_FAILED', { error: e.message }, 'ERROR');
+    }
+
+    for (const ovpnPath of candidates) {
       try {
-        shell.openExternal(deviceCodeResponse.verificationUri);
+        const content = fs.readFileSync(ovpnPath, 'utf-8');
+        const parsed = parseAzureTags(content);
+        if (parsed.client_id && parsed.tenant_id) {
+          config = {
+            ...config,
+            ...parsed,
+            openvpn_config: config.openvpn_config || ovpnPath,
+          };
+          fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+          pca = new PublicClientApplication({
+            auth: {
+              clientId: config.client_id,
+              authority: `https://login.microsoftonline.com/${config.tenant_id}`,
+            }
+          });
+          logger.log('AZURE', 'CONFIG_HYDRATED_FROM_OVPN', {
+            ovpnPath,
+            hasClientId: !!config.client_id,
+            hasTenantId: !!config.tenant_id
+          });
+          return true;
+        }
       } catch (e) {
-        console.log('⚠️ shell.openExternal falhou:', e.message);
+        logger.log('AZURE', 'HYDRATE_FROM_OVPN_FAILED', { ovpnPath, error: e.message }, 'ERROR');
       }
     }
+
+    return false;
   };
 
+  if (!config.client_id || !config.tenant_id) {
+    await tryHydrateAzureConfigFromOvpn();
+  }
+
+  if (!config.client_id || !config.tenant_id) {
+    const errMsg = 'Configuração Entra ID incompleta: client_id/tenant_id ausentes. Reimporte o perfil .ovpn Azure.';
+    logger.log('AZURE', 'LOGIN_BLOCKED_MISSING_CONFIG', {
+      hasClientId: !!config.client_id,
+      hasTenantId: !!config.tenant_id,
+      hasScope: !!config.scope,
+      hasServerApi: !!config.server_api
+    }, 'ERROR');
+    throw new Error(errMsg);
+  }
+
+  // Recria cliente MSAL a cada login para evitar uso de estado antigo em memória
+  const clientId = normalizeGuid(config.client_id);
+  const tenantId = normalizeGuid(config.tenant_id);
+  let scopeText = String(config.scope || 'openid profile offline_access User.Read').trim();
+
+  // Device Flow com cliente público pode falhar com .default em alguns tenants/apps.
+  // Fallback seguro para escopo delegado explícito.
+  if (/https:\/\/graph\.microsoft\.com\/\.default/i.test(scopeText)) {
+    logger.log('AZURE', 'SCOPE_FALLBACK_APPLIED', {
+      originalScope: scopeText,
+      fallbackScope: 'openid profile offline_access User.Read'
+    });
+    scopeText = 'openid profile offline_access User.Read';
+  }
+
+  logger.log('AZURE', 'LOGIN_INPUT_NORMALIZED', {
+    clientIdPreview: clientId ? `${clientId.substring(0, 8)}...` : 'missing',
+    tenantIdPreview: tenantId ? `${tenantId.substring(0, 8)}...` : 'missing',
+    scopeText
+  });
+
+  pca = new PublicClientApplication({
+    auth: {
+      clientId,
+      authority: `https://login.microsoftonline.com/${tenantId}`,
+    }
+  });
+
+  logger.log('AZURE', 'LOGIN_START', {
+    scopes: scopeText,
+    authority: `https://login.microsoftonline.com/${tenantId}`,
+    hasClientId: !!clientId,
+    hasTenantId: !!tenantId
+  });
+
   try {
-    const response = await pca.acquireTokenByDeviceCode(request);
-    const { accessToken, account } = response;
+    const tokenBaseUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0`;
+
+    const deviceBody = new URLSearchParams({
+      client_id: clientId,
+      scope: scopeText
+    }).toString();
+
+    const deviceResp = await axios.post(`${tokenBaseUrl}/devicecode`, deviceBody, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 30000
+    });
+
+    const verificationUri = deviceResp?.data?.verification_uri || deviceResp?.data?.verificationUri || '';
+    const userCode = deviceResp?.data?.user_code || deviceResp?.data?.userCode || '';
+    const deviceCode = deviceResp?.data?.device_code || deviceResp?.data?.deviceCode || '';
+    const intervalSec = Number(deviceResp?.data?.interval || 5);
+    const expiresInSec = Number(deviceResp?.data?.expires_in || 900);
+
+    logger.log('AZURE', 'DEVICE_CODE_GENERATED', { verificationUri, userCode });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('device-code-response', {
+        verification_uri: verificationUri,
+        user_code: userCode,
+      });
+    }
+
+    try {
+      if (verificationUri) {
+        shell.openExternal(verificationUri);
+      }
+    } catch (e) {
+      console.log('⚠️ shell.openExternal falhou:', e.message);
+    }
+
+    if (!deviceCode) {
+      throw new Error('device_code ausente na resposta do Entra ID');
+    }
+
+    const startedAt = Date.now();
+    let pollInterval = Math.max(2, intervalSec);
+    let tokenData = null;
+
+    while ((Date.now() - startedAt) < (expiresInSec * 1000)) {
+      await new Promise(r => setTimeout(r, pollInterval * 1000));
+
+      const tokenBody = new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        client_id: clientId,
+        device_code: deviceCode
+      }).toString();
+
+      try {
+        const tokenResp = await axios.post(`${tokenBaseUrl}/token`, tokenBody, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 30000
+        });
+        tokenData = tokenResp?.data || null;
+        if (tokenData?.access_token) {
+          break;
+        }
+      } catch (pollErr) {
+        const eData = pollErr?.response?.data || {};
+        const eCode = String(eData.error || '').toLowerCase();
+
+        logger.log('AZURE', 'TOKEN_POLL_ERROR', {
+          error: eData.error || pollErr.message,
+          errorDescription: eData.error_description || '',
+          httpStatus: pollErr?.response?.status || null,
+          clientIdPreview: clientId ? `${clientId.substring(0, 8)}...` : 'missing',
+          tenantIdPreview: tenantId ? `${tenantId.substring(0, 8)}...` : 'missing'
+        }, 'ERROR');
+
+        if (eCode === 'authorization_pending') {
+          continue;
+        }
+
+        if (eCode === 'slow_down') {
+          pollInterval += 2;
+          continue;
+        }
+
+        if (eCode === 'invalid_grant' && String(eData.error_description || '').toLowerCase().includes('authorization is pending')) {
+          continue;
+        }
+
+        throw new Error(`post_request_failed: ${eData.error || pollErr.message}`);
+      }
+    }
+
+    if (!tokenData?.access_token) {
+      throw new Error('Timeout aguardando autorização do device code');
+    }
+
+    const accessToken = tokenData.access_token;
+
+    let username = '';
+    if (tokenData.id_token) {
+      try {
+        const parts = tokenData.id_token.split('.');
+        if (parts.length >= 2) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+          username = payload.preferred_username || payload.upn || payload.email || '';
+        }
+      } catch (_) {}
+    }
+
+    if (!username) {
+      try {
+        const me = await axios.get('https://graph.microsoft.com/v1.0/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 15000
+        });
+        username = me?.data?.userPrincipalName || me?.data?.mail || me?.data?.id || 'unknown';
+      } catch (_) {
+        username = 'unknown';
+      }
+    }
 
     let expiresAtIso;
-    if (response.expiresOn instanceof Date) {
-      expiresAtIso = response.expiresOn.toISOString();
-    } else if (typeof response.expiresOn === 'number') {
-      expiresAtIso = new Date(response.expiresOn * 1000).toISOString();
+    if (typeof tokenData.expires_in === 'number') {
+      expiresAtIso = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
     } else {
       expiresAtIso = new Date(Date.now() + 3600 * 1000).toISOString();
     }
 
     const cache = {
       access_token: accessToken,
-      username: account.username,
+      username,
       expires_at: expiresAtIso
     };
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
 
     logger.logAuthSuccess('azure_device_code', 'azure_ad', {
-      username: account.username,
+      username,
       expiresAt: cache.expires_at
     });
 
-    return { token: accessToken, username: account.username };
+    return { token: accessToken, username };
   } catch (err) {
     logger.logAuthFailure('azure_device_code', 'azure_ad', err);
     throw new Error(err.message);

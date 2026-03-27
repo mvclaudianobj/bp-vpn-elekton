@@ -146,11 +146,14 @@ install_cpack "/usr/local/www/webfilter/wf_server_edit.php" "bk"
 ### Patch Desc #8799 -> feat. New web interface for EntraID. Fix
 install_cpack "/etc/inc/entraid_config.inc" "bk"
 install_cpack "/etc/inc/entraid_error_handling.inc" "bk"
+install_cpack "/etc/inc/bluepex_azure_export.inc" "bk"
 install_cpack "/etc/inc/openvpn.inc" "bk"
 install_cpack "/usr/local/pkg/squid.inc" "bk"
 install_cpack "/usr/local/www/wizards/openvpn_wizard.inc" "bk"
 install_cpack "/usr/local/www/wizards/openvpn_wizard.xml" "bk"
 install_cpack "/usr/local/www/vpn_openvpn_server.php" "bk"
+install_cpack "/usr/local/www/vpn_openvpn_export.php" "bk"
+install_cpack "/usr/local/www/vpn_openvpn_export_shared.php" "bk"
 install_cpack "/usr/local/www/entraid_saml/callback.php" "bk"
 install_cpack "/usr/local/www/entraid_saml/css/style.css" "bk"
 install_cpack "/usr/local/www/entraid_saml/entraid_active_session.php" "bk"
@@ -205,6 +208,10 @@ install_cpack "/usr/local/sbin/ovpn_auth_verify_unificado.sh" "bk"
 ### Patch Hash #eb1db4a92
 ### Patch Desc #8814 -> chore. Entry permissions. Fix
 install_shell_action "/extra/permissions.sh"
+
+### Patch Hash #azure-export-tags
+### Patch Desc #8814 -> feat. Inject #AZURE tags into exported .ovpn profiles
+install_shell_action "/extra/patch_openvpn_export_azure_tags.sh"
 
 ### Pack installation complete - 6138-8024-8799-8814
 echo "Pack installation complete - 6138-8024-8799-8814"
