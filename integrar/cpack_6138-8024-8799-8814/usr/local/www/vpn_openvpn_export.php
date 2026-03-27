@@ -305,7 +305,12 @@ if (!function_exists('bluepex_append_azure_tags_to_zip')) {
 			$zipOut = $zipPath . '.bluepex';
 			$rc2 = 127;
 
-			if (@is_executable('/usr/bin/zip')) {
+			if (@is_executable('/usr/local/bin/zip')) {
+				$zipCmd = '/usr/local/bin/zip -rq ' . escapeshellarg($zipOut) . ' .';
+				exec($zipCmd, $out2, $rc2);
+			}
+
+			if ($rc2 !== 0 && @is_executable('/usr/bin/zip')) {
 				$zipCmd = '/usr/bin/zip -rq ' . escapeshellarg($zipOut) . ' .';
 				exec($zipCmd, $out2, $rc2);
 			}
