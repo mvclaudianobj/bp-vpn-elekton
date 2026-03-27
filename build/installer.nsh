@@ -18,14 +18,21 @@
 
   DoInstall:
     # Instalar OpenVPN com privilegios elevados e aguardar conclusao
-    ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
+    # Nao fixa ADDLOCAL para evitar falha quando nomes de features mudam entre versoes do MSI.
+    ExecWait '"$SYSDIR\msiexec.exe" /i "$TEMP\OpenVPN.msi" /qn /norestart /L*V "$TEMP\bluepex-openvpn-msi.log"' $0
 
     ${If} $0 != 0
       ${If} $0 == 1638
         # Codigo 1638 = versao mais nova ja instalada - OK
         Goto CleanupMSI
       ${EndIf}
-      MessageBox MB_OK "Falha na instalacao do OpenVPN (codigo: $0). Por favor, instale manualmente a partir de https://openvpn.net/community-downloads/"
+
+      # Fallback: tentar modo passive (alguns ambientes bloqueiam /qn)
+      ExecWait '"$SYSDIR\msiexec.exe" /i "$TEMP\OpenVPN.msi" /passive /norestart /L*V "$TEMP\bluepex-openvpn-msi.log"' $1
+
+      ${If} $1 != 0
+        MessageBox MB_OK "Falha na instalacao do OpenVPN (codigos: qn=$0, passive=$1). Verifique o log em %TEMP%\\bluepex-openvpn-msi.log ou instale manualmente: https://openvpn.net/community-downloads/"
+      ${EndIf}
     ${EndIf}
 
   CleanupMSI:
