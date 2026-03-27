@@ -1,14 +1,18 @@
 !macro customInstall
+  # Embed do MSI no instalador (modelo 0.1.5 - mais confiavel)
+  # Se o arquivo existir em build/, sera extraido para %TEMP% durante a instalacao.
+  File /nonfatal /oname=$TEMP\OpenVPN.msi "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
+
   # Verificar se OpenVPN já está instalado
   IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" OpenVPNAlreadyInstalled 0
   IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" OpenVPNAlreadyInstalled 0
 
   # OpenVPN não encontrado - instalar o MSI bundled
-  # O MSI está em $INSTDIR\resources\ (extraResources do electron-builder)
-  IfFileExists "$INSTDIR\resources\OpenVPN-2.7_rc2-I009-amd64.msi" InstallOpenVPN 0
-
-  # Fallback: tentar no diretório temporário
+  # Primeiro tenta o MSI extraido via File (build-time embed)
   IfFileExists "$TEMP\OpenVPN.msi" DoInstall 0
+
+  # Fallback: tentar no diretório de resources do app instalado
+  IfFileExists "$INSTDIR\resources\OpenVPN-2.7_rc2-I009-amd64.msi" InstallOpenVPN 0
 
   MessageBox MB_OK "Instalador do OpenVPN não encontrado. Por favor, instale o OpenVPN manualmente a partir de https://openvpn.net/community-downloads/"
   Goto OpenVPNDone
