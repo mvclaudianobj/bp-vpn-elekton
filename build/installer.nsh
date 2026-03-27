@@ -14,6 +14,16 @@
   # Fallback: tentar no diretório de resources do app instalado
   IfFileExists "$INSTDIR\resources\OpenVPN-2.7_rc2-I009-amd64.msi" InstallOpenVPN 0
 
+  # Fallback final: baixar da internet quando o MSI não foi incorporado
+  Goto DownloadOpenVPN
+
+  DownloadOpenVPN:
+    DetailPrint "OpenVPN MSI nao encontrado localmente. Tentando download..."
+    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri ''https://swupdate.openvpn.org/community/releases/OpenVPN-2.7_rc2-I009-amd64.msi'' -OutFile ''$env:TEMP\\OpenVPN.msi'' -UseBasicParsing; exit 0 } catch { exit 1 }"' $2
+    ${If} $2 == 0
+      IfFileExists "$TEMP\OpenVPN.msi" DoInstall 0
+    ${EndIf}
+
   MessageBox MB_OK "Instalador do OpenVPN não encontrado. Por favor, instale o OpenVPN manualmente a partir de https://openvpn.net/community-downloads/"
   Goto OpenVPNDone
 
