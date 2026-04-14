@@ -2870,6 +2870,27 @@ ipcMain.handle('connect-openvpn', async () => {
 async function killVPNConnection() {
   console.log('🔌 MATANDO CONEXÃO VPN (MÉTODO DO FECHAR)...');
   suppressNextReconnect = true;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const execCommand = (command) => new Promise((resolve) => {
+    exec(command, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error ? error.code : 0,
+        stdout: (stdout || '').trim(),
+        stderr: (stderr || '').trim(),
+        error: error ? error.message : null
+      });
+    });
+  });
+
+  const verifyDisconnected = () => {
+    const trackedPid = getTrackedVpnPid();
+    if (trackedPid && isVpnPidRunning(trackedPid)) {
+      return false;
+    }
+    return !hasAnyOpenVpnProcess();
+  };
   
   try {
     // Método 1: Matar processo vpnProcess se existir
@@ -2896,44 +2917,57 @@ async function killVPNConnection() {
       }
       
       vpnProcess = null;
-      vpnConnectionActive = false;
-      currentOvpnPath = null;
-      currentElevationMethod = null;
     }
     
-    // Método 2: Matar TODOS os processos openvpn no sistema
+    // Método 2: Matar TODOS os processos openvpn no sistema (com validação)
     console.log('🔌 Matando TODOS os processos OpenVPN no sistema...');
     
     if (process.platform === 'linux') {
       try {
-        exec('pkexec pkill -9 openvpn', (error) => {
-          if (!error) {
-            console.log('✅ Todos os processos OpenVPN mortos com pkexec');
+        const attempts = [
+          'pkexec pkill -TERM -x openvpn',
+          'sudo -n pkill -TERM -x openvpn',
+          'pkill -TERM -x openvpn',
+          'pkexec pkill -9 -x openvpn',
+          'sudo -n pkill -9 -x openvpn',
+          'pkill -9 -x openvpn'
+        ];
+
+        for (const command of attempts) {
+          const result = await execCommand(command);
+          if (result.ok) {
+            console.log(`✅ Comando de desconexão executado: ${command}`);
           } else {
-            console.log(`⚠️ pkexec falhou: ${error.message}`);
-            exec('sudo pkill -9 openvpn', (sudoError) => {
-              if (!sudoError) {
-                console.log('✅ Todos os processos OpenVPN mortos com sudo');
-              } else {
-                console.log(`⚠️ sudo também falhou: ${sudoError.message}`);
-                exec('pkill -9 openvpn', (userError) => {
-                  if (!userError) {
-                    console.log('✅ Processos OpenVPN mortos como usuário');
-                  }
-                });
-              }
-            });
+            console.log(`⚠️ Comando falhou (${command}): ${result.error}`);
           }
-        });
+
+          await sleep(400);
+          if (verifyDisconnected()) {
+            console.log('✅ Sessão OpenVPN finalizada após comando de desconexão');
+            break;
+          }
+        }
       } catch (err) {
         console.log(`❌ Erro ao tentar matar processos: ${err.message}`);
       }
     } else if (process.platform === 'win32') {
-      exec('taskkill /F /IM openvpn.exe', (error) => {
-        if (!error) {
-          console.log('✅ OpenVPN terminado no Windows');
-        }
-      });
+      const result = await execCommand('taskkill /F /IM openvpn.exe');
+      if (result.ok) {
+        console.log('✅ OpenVPN terminado no Windows');
+      } else {
+        console.log(`⚠️ taskkill falhou: ${result.error}`);
+      }
+    }
+
+    await sleep(500);
+    const disconnected = verifyDisconnected();
+
+    if (!disconnected) {
+      console.log('❌ Desconexão não confirmada: processo OpenVPN ainda ativo');
+      return {
+        success: false,
+        error: 'Não foi possível confirmar a desconexão da VPN. Processo OpenVPN ainda ativo.'
+      };
     }
     
     // Notificar desconexão
@@ -2941,7 +2975,10 @@ async function killVPNConnection() {
       mainWindow.webContents.send('vpn-disconnected');
     }
 
+    vpnProcess = null;
     vpnConnectionActive = false;
+    currentOvpnPath = null;
+    currentElevationMethod = null;
     
     console.log('✅ Conexão VPN finalizada (MÉTODO DO FECHAR)');
     return { success: true };

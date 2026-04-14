@@ -124,6 +124,7 @@ let selectedAzureOvpnFile = null;
 // Elementos da Interface Unificada
 const statusEl = document.getElementById('status');
 const profileSelect = document.getElementById('profileSelect');
+const configureProfilesLink = document.getElementById('configureProfilesLink');
 const selectedProfileInfo = document.getElementById('selectedProfileInfo');
 const profileIcon = document.getElementById('profileIcon');
 const profileName = document.getElementById('profileName');
@@ -253,6 +254,12 @@ function setupEventListeners() {
     // Seleção de perfil unificado
     if (profileSelect) {
         profileSelect.addEventListener('change', handleProfileSelection);
+    }
+    if (configureProfilesLink) {
+        configureProfilesLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            toggleConfigModal();
+        });
     }
 
     // Conexões unificadas
@@ -972,8 +979,7 @@ async function handleDisconnect() {
   console.log(`🔌 [RENDERER] Botão desconectar clicado. VPN PID atual: ${vpnPid}`);
 
   try {
-    btnDesconectar.disabled = true; // Desabilitar botão imediatamente
-    btnConectar.disabled = false;   // Habilitar botão conectar
+    btnDesconectar.disabled = true; // Evita clique duplo durante desconexão
     
     console.log(`🔌 [RENDERER] Chamando killVPNConnection()...`);
     
@@ -997,8 +1003,6 @@ async function handleDisconnect() {
         if (statusEl) statusEl.style.display = 'none';
       }, 3000);
     } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
       throw new Error(result.error || 'Falha na desconexão');
     }
 
@@ -1008,7 +1012,8 @@ async function handleDisconnect() {
   } catch (err) {
     console.error('❌ Erro na desconexão:', err);
     showStatus(`Erro na desconexão: ${err.message}`, 'alert');
-    btnDesconectar.disabled = false; // Re-habilitar se falhar
+    btnDesconectar.disabled = false; // Re-habilitar para nova tentativa
+    updateConnectionButtons();
   }
 }
 
