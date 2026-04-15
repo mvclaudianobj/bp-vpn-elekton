@@ -64,7 +64,7 @@
     IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" CleanupMSI 0
     IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" CleanupMSI 0
 
-    MessageBox MB_OK "Falha na instalação do OpenVPN. Codigos retornados: tentativa 1 = $0, tentativa 2 = $1. Por favor, instale manualmente a partir de https://openvpn.net/community-downloads/"
+    MessageBox MB_OK "Falha na instalacao offline do OpenVPN embutido. Codigos retornados: tentativa 1 = $0, tentativa 2 = $1."
 
   CleanupMSI:
     Delete "$PLUGINSDIR\OpenVPN.msi"
