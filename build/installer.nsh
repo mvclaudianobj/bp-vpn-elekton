@@ -3,22 +3,17 @@
   IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" OpenVPNAlreadyInstalled 0
   IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" OpenVPNAlreadyInstalled 0
 
-  # OpenVPN não encontrado - instalar o MSI bundled
-  # O MSI está em $INSTDIR\resources\ (extraResources do electron-builder)
-  IfFileExists "$INSTDIR\resources\OpenVPN.msi" InstallOpenVPN 0
-
-  # Fallback: tentar no diretório temporário
-  IfFileExists "$TEMP\OpenVPN.msi" DoInstall 0
-
-  MessageBox MB_OK "Instalador do OpenVPN não encontrado. Por favor, instale o OpenVPN manualmente a partir de https://openvpn.net/community-downloads/"
-  Goto OpenVPNDone
+  # OpenVPN não encontrado - extrair MSI embutido no próprio instalador
+  # Isso garante que o arquivo faça parte do EXE final do NSIS.
+  Goto InstallOpenVPN
 
   InstallOpenVPN:
-    CopyFiles "$INSTDIR\resources\OpenVPN.msi" "$TEMP\OpenVPN.msi"
+    SetOutPath "$PLUGINSDIR"
+    File "/oname=OpenVPN.msi" "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
 
   DoInstall:
     # Instalar OpenVPN com privilégios elevados e aguardar conclusão
-    ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
+    ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
 
     ${If} $0 != 0
       ${If} $0 == 1638
@@ -29,7 +24,7 @@
     ${EndIf}
 
   CleanupMSI:
-    Delete "$TEMP\OpenVPN.msi"
+    Delete "$PLUGINSDIR\OpenVPN.msi"
     Goto OpenVPNDone
 
   OpenVPNAlreadyInstalled:
