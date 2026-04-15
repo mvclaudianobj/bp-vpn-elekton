@@ -12,7 +12,7 @@
     File "/oname=OpenVPN.msi" "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
 
   # Instalar OpenVPN com privilégios elevados e aguardar conclusão
-  ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
+  ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6' $0
   DetailPrint "OpenVPN MSI (tentativa 1) retornou código: $0"
 
     ${If} $0 == 0
@@ -36,6 +36,9 @@
       Goto CleanupMSI
     ${EndIf}
 
+    IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" CleanupMSI 0
+    IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" CleanupMSI 0
+
     # Fallback técnico: tentar instalação sem ADDLOCAL para MSI com árvore de features diferente
     ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart' $1
     DetailPrint "OpenVPN MSI (tentativa 2, sem ADDLOCAL) retornou código: $1"
@@ -57,6 +60,9 @@
       DetailPrint "OpenVPN instalado com sucesso na tentativa 2 (reinicialização iniciada/necessária)."
       Goto CleanupMSI
     ${EndIf}
+
+    IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" CleanupMSI 0
+    IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" CleanupMSI 0
 
     MessageBox MB_OK "Falha na instalação do OpenVPN. Codigos retornados: tentativa 1 = $0, tentativa 2 = $1. Por favor, instale manualmente a partir de https://openvpn.net/community-downloads/"
 
