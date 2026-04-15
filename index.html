@@ -124,6 +124,26 @@
             border-color: #007BFF;
             box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
         }
+        .password-input-group {
+            max-width: 390px;
+        }
+        .password-toggle-btn {
+            background-color: #4e5971;
+            border-color: #061c2e;
+            color: white;
+            min-width: 44px;
+        }
+        .password-toggle-btn:hover,
+        .password-toggle-btn:focus {
+            background-color: #5b6884;
+            color: white;
+            border-color: #007BFF;
+            box-shadow: none;
+        }
+        .password-toggle-icon {
+            font-size: 1.05rem;
+            line-height: 1;
+        }
         .form-select {
             background-color: #4e5971;
             border-color: #061c2e;
@@ -1291,7 +1311,12 @@
                     </div>
                     <div class="mb-1">
                         <label for="userPassword" class="form-label"><img src="local-resource://icon-password.png" alt="Icon Password" class="mg-top-icon">  Senha</label>
-                        <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
+                        <div class="input-group password-input-group">
+                            <input type="password" class="form-control" id="userPassword" placeholder="Digite sua senha OpenVPN">
+                            <button type="button" class="btn password-toggle-btn" id="toggleUserPassword" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+                                <span class="password-toggle-icon" id="toggleUserPasswordIcon">&#128065;</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="mb-3 form-check">
                         <input class="form-check-input" type="checkbox" id="rememberCredentials">

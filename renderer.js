@@ -143,6 +143,8 @@ const configCloseBtn = document.getElementById('configCloseBtn');
 // Elementos de Credenciais
 const userUsername = document.getElementById('userUsername');
 const userPassword = document.getElementById('userPassword');
+const toggleUserPassword = document.getElementById('toggleUserPassword');
+const toggleUserPasswordIcon = document.getElementById('toggleUserPasswordIcon');
 const rememberCredentials = document.getElementById('rememberCredentials');
 
 // Elementos de Configuração
@@ -279,6 +281,18 @@ function setupEventListeners() {
     }
     if (userPassword) {
         userPassword.addEventListener('input', updateConnectionButtons);
+    }
+    if (toggleUserPassword && userPassword) {
+        toggleUserPassword.addEventListener('click', () => {
+            const isPasswordHidden = userPassword.type === 'password';
+            userPassword.type = isPasswordHidden ? 'text' : 'password';
+            toggleUserPassword.setAttribute('aria-pressed', String(isPasswordHidden));
+            toggleUserPassword.setAttribute('aria-label', isPasswordHidden ? 'Ocultar senha' : 'Mostrar senha');
+            toggleUserPassword.title = isPasswordHidden ? 'Ocultar senha' : 'Mostrar senha';
+            if (toggleUserPasswordIcon) {
+                toggleUserPasswordIcon.innerHTML = isPasswordHidden ? '&#128584;' : '&#128065;';
+            }
+        });
     }
 
     // Menu e configurações
