@@ -11,9 +11,8 @@
     SetOutPath "$PLUGINSDIR"
     File "/oname=OpenVPN.msi" "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
 
-  DoInstall:
-    # Instalar OpenVPN com privilégios elevados e aguardar conclusão
-    ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
+  # Instalar OpenVPN com privilégios elevados e aguardar conclusão
+  ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6,Drivers.Wintun' $0
 
     ${If} $0 != 0
       ${If} $0 == 1638
