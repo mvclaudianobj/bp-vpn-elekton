@@ -1391,12 +1391,39 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       const profileDir = ovpnResult.profileDir;
       const configPath = ovpnResult.path;
+
+      const normalizeCredentialValue = (value, { trim = false } = {}) => {
+        let normalized = String(value ?? '');
+        normalized = normalized.replace(/\0/g, '');
+        normalized = normalized.replace(/[\r\n]+/g, '');
+        return trim ? normalized.trim() : normalized;
+      };
+
+      const normalizedUsername = normalizeCredentialValue(username, { trim: true });
+      const normalizedPassword = normalizeCredentialValue(password, { trim: false });
+
+      if (!normalizedUsername || !normalizedPassword) {
+        reject(new Error('Usuário e senha são obrigatórios'));
+        return;
+      }
+
+      logger.log('CONNECTION', 'CREDENTIALS_NORMALIZED', {
+        connectionId,
+        profileId,
+        platform: process.platform,
+        usernameChanged: normalizedUsername !== String(username ?? ''),
+        passwordChanged: normalizedPassword !== String(password ?? ''),
+        usernameLength: normalizedUsername.length,
+        passwordLength: normalizedPassword.length
+      });
       
       console.log(`📁 Diretório do perfil: ${profileDir}`);
       console.log(`📄 Configuração: ${configPath}`);
 
         authFilePath = path.join(profileDir, `openvpn_auth_${Date.now()}.txt`);
-       fs.writeFileSync(authFilePath, `${username}\n${password}\n`);
+        const authLineBreak = process.platform === 'win32' ? '\r\n' : '\n';
+        const authFileContent = `${normalizedUsername}${authLineBreak}${normalizedPassword}${authLineBreak}`;
+        fs.writeFileSync(authFilePath, authFileContent, { encoding: 'utf8' });
 
        if (process.platform !== 'win32') {
          fs.chmodSync(authFilePath, 0o600);
@@ -1708,13 +1735,18 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
 
          if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
-           console.error(`❌ Falha na autenticação`);
-           authFailed = true;
-           ipcMain.removeAllListeners('send-challenge-response');
-           if (connectionTimeout) clearTimeout(connectionTimeout);
-           if (challengeTimeout) clearTimeout(challengeTimeout);
-           reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
-         }
+            console.error(`❌ Falha na autenticação`);
+            authFailed = true;
+            ipcMain.removeAllListeners('send-challenge-response');
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            if (challengeTimeout) clearTimeout(challengeTimeout);
+            if (vpnProcess && !vpnProcess.killed) {
+              try {
+                vpnProcess.kill('SIGTERM');
+              } catch (_) {}
+            }
+            reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+          }
 
          if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
             console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
