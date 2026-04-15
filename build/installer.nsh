@@ -5,7 +5,7 @@
 
   # OpenVPN não encontrado - instalar o MSI bundled
   # O MSI está em $INSTDIR\resources\ (extraResources do electron-builder)
-  IfFileExists "$INSTDIR\resources\OpenVPN-2.7_rc2-I009-amd64.msi" InstallOpenVPN 0
+  IfFileExists "$INSTDIR\resources\OpenVPN.msi" InstallOpenVPN 0
 
   # Fallback: tentar no diretório temporário
   IfFileExists "$TEMP\OpenVPN.msi" DoInstall 0
@@ -14,7 +14,7 @@
   Goto OpenVPNDone
 
   InstallOpenVPN:
-    CopyFiles "$INSTDIR\resources\OpenVPN-2.7_rc2-I009-amd64.msi" "$TEMP\OpenVPN.msi"
+    CopyFiles "$INSTDIR\resources\OpenVPN.msi" "$TEMP\OpenVPN.msi"
 
   DoInstall:
     # Instalar OpenVPN com privilégios elevados e aguardar conclusão
