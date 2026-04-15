@@ -1604,6 +1604,28 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         let authFailed = false;
         let stdinReady = false;
 
+        const parseChallengeMessage = (text) => {
+          const challengeMatch = text.match(/CHALLENGE:\s*([^\n\r]+)/);
+          if (challengeMatch && challengeMatch[1]) {
+            return challengeMatch[1].trim();
+          }
+          return 'Enter Google Authenticator Token';
+        };
+
+        const isChallengePrompt = (text) => {
+          if (!text || typeof text !== 'string') return false;
+
+          if (/CHALLENGE:/i.test(text) || /Enter Google Authenticator Token/i.test(text)) {
+            return true;
+          }
+
+          if (process.platform === 'win32') {
+            return /(static[-\s]?challenge|authenticator\s*token|verification\s*code)/i.test(text);
+          }
+
+          return false;
+        };
+
        challengeHandler = (event, response) => {
          console.log('📤 Recebida resposta para desafio:', response);
          if (vpnProcess && !vpnProcess.killed && challengeDetected) {
@@ -1657,15 +1679,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            if (challengeTimeout) clearTimeout(challengeTimeout);
          }
 
-        if ((output.includes('CHALLENGE:') || output.includes('Enter Google Authenticator Token')) && !challengeDetected && !authFailed) {
+        if (isChallengePrompt(output) && !challengeDetected && !authFailed) {
           console.log('🔐 Static challenge detectado!');
           challengeDetected = true;
-
-          let challengeMessage = 'Enter Google Authenticator Token';
-          const challengeMatch = output.match(/CHALLENGE:\s*([^\n\r]+)/);
-          if (challengeMatch && challengeMatch[1]) {
-            challengeMessage = challengeMatch[1].trim();
-          }
+          const challengeMessage = parseChallengeMessage(output);
 
           if (connectionTimeout) clearTimeout(connectionTimeout);
 
@@ -1699,15 +1716,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
          }
 
-         if ((error.includes('CHALLENGE:') || error.includes('Enter Google Authenticator Token') || error.includes('challenge')) && !challengeDetected && !authFailed && stdinReady) {
-           console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
-           challengeDetected = true;
-
-           let challengeMessage = 'Enter Google Authenticator Token';
-           const challengeMatch = error.match(/CHALLENGE:\s*([^\n\r]+)/);
-           if (challengeMatch && challengeMatch[1]) {
-             challengeMessage = challengeMatch[1].trim();
-           }
+         if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
+            console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
+            challengeDetected = true;
+            const challengeMessage = parseChallengeMessage(error);
 
            if (connectionTimeout) clearTimeout(connectionTimeout);
 
