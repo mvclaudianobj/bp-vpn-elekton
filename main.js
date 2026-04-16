@@ -1794,14 +1794,34 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       ipcMain.once('send-challenge-response', challengeHandler);
 
-      let connectionTimeout = setTimeout(() => {
-        if (!connectionEstablished && vpnProcess && !vpnProcess.killed && !challengeDetected) {
-          const errorMsg = 'Timeout na conexão OpenVPN';
-          console.error(`❌ ${errorMsg}`);
-          ipcMain.removeAllListeners('send-challenge-response');
-          rejectOnce(new Error(errorMsg));
-        }
-      }, 60000);
+        const abortPendingConnection = (reason) => {
+          if (!vpnProcess || vpnProcess.killed || connectionEstablished) {
+            return;
+          }
+
+          console.log(`🛑 Encerrando tentativa de conexão pendente: ${reason}`);
+          suppressNextReconnect = true;
+          try {
+            vpnProcess.kill('SIGTERM');
+          } catch (_) {}
+          setTimeout(() => {
+            if (vpnProcess && !vpnProcess.killed) {
+              try {
+                vpnProcess.kill('SIGKILL');
+              } catch (_) {}
+            }
+          }, 1200);
+        };
+
+        let connectionTimeout = setTimeout(() => {
+         if (!connectionEstablished && vpnProcess && !vpnProcess.killed && !challengeDetected) {
+           const errorMsg = 'Timeout na conexão OpenVPN';
+           console.error(`❌ ${errorMsg}`);
+           ipcMain.removeAllListeners('send-challenge-response');
+           abortPendingConnection('timeout_conexao');
+           rejectOnce(new Error(errorMsg));
+         }
+       }, 60000);
 
         vpnProcess.stdout.on('data', (data) => {
           const output = data.toString();
@@ -1855,13 +1875,14 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             requiresInput: true
           });
 
-          challengeTimeout = setTimeout(() => {
-            if (challengeDetected) {
-              console.error('❌ Timeout no desafio 2FA');
-              ipcMain.removeAllListeners('send-challenge-response');
-              rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
-            }
-          }, 120000);
+           challengeTimeout = setTimeout(() => {
+             if (challengeDetected) {
+               console.error('❌ Timeout no desafio 2FA');
+               ipcMain.removeAllListeners('send-challenge-response');
+               abortPendingConnection('timeout_desafio_2fa_stdout');
+               rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+             }
+           }, 120000);
         }
        });
 
@@ -1899,15 +1920,16 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
              requiresInput: true
            });
 
-           challengeTimeout = setTimeout(() => {
-             if (challengeDetected) {
-               console.error('❌ Timeout no desafio 2FA');
-               ipcMain.removeAllListeners('send-challenge-response');
-               rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
-              }
-            }, 120000);
-          }
-        });
+            challengeTimeout = setTimeout(() => {
+              if (challengeDetected) {
+                console.error('❌ Timeout no desafio 2FA');
+                ipcMain.removeAllListeners('send-challenge-response');
+                abortPendingConnection('timeout_desafio_2fa_stderr');
+                rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+               }
+             }, 120000);
+           }
+         });
 
          vpnProcess.on('close', (code) => {
            console.log(`OpenVPN encerrado com código ${code}`);
@@ -1915,7 +1937,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            vpnConnectionActive = false;
            vpnProcess = null;
            ipcMain.removeAllListeners('send-challenge-response');
-           mainWindow.webContents.send('vpn-disconnected');
+           if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
+             mainWindow.webContents.send('vpn-disconnected');
+           }
 
            if (connectionTimeout) clearTimeout(connectionTimeout);
            if (challengeTimeout) clearTimeout(challengeTimeout);

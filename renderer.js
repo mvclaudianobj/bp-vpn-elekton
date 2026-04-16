@@ -1039,9 +1039,9 @@ function toggleConfigModal() {
 
         if (isVisible) {
             configModal.classList.remove('show');
+            configModal.style.display = 'none';
         } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
+            configModal.style.display = 'flex';
             configModal.classList.add('show');
         }
 
@@ -1060,7 +1060,7 @@ function closeConfigModal() {
     if (configModal) {
         console.log('  Modal encontrado, removendo classe show');
         configModal.classList.remove('show');
-        configModal.style.display = 'none'; // Forçar fechamento
+        configModal.style.display = 'none';
         console.log('  Classe show removida, classes atuais:', configModal.className, 'display:', configModal.style.display);
     } else {
         console.log("closeLogsModalBtn não encontrado");
