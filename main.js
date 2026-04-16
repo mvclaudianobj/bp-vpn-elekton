@@ -3104,6 +3104,10 @@ async function killVPNConnection() {
   console.log('🔌 MATANDO CONEXÃO VPN (MÉTODO DO FECHAR)...');
   suppressNextReconnect = true;
 
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('vpn-log', '⚠️ Desconexão solicitada pelo usuário\n');
+  }
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const execCommand = (command) => new Promise((resolve) => {
     exec(command, (error, stdout, stderr) => {
@@ -3197,6 +3201,9 @@ async function killVPNConnection() {
 
     if (!disconnected) {
       console.log('❌ Desconexão não confirmada: processo OpenVPN ainda ativo');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-log', '❌ Falha ao confirmar desconexão: processo OpenVPN ainda ativo\n');
+      }
       return {
         success: false,
         error: 'Não foi possível confirmar a desconexão da VPN. Processo OpenVPN ainda ativo.'
@@ -3205,6 +3212,7 @@ async function killVPNConnection() {
     
     // Notificar desconexão
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-log', '✅ VPN desconectada com sucesso\n');
       mainWindow.webContents.send('vpn-disconnected');
     }
 
@@ -3218,6 +3226,9 @@ async function killVPNConnection() {
     
   } catch (error) {
     console.error('❌ Erro ao matar conexão VPN:', error);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vpn-log', `❌ Erro na desconexão: ${error.message}\n`);
+    }
     return { success: false, error: error.message };
   }
 }

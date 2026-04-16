@@ -1708,15 +1708,6 @@ if (window.electronAPI) {
         currentDeviceCode = null;
     });
 
-    // Logs de VPN
-    window.electronAPI.onVPNLog((log) => {
-        connectionLogsText += log + '\n';
-        // Atualizar modal de logs se estiver aberto
-        if (connLogsModal && connLogsModal.classList.contains('show')) {
-            updateConnLogsModalContent().catch(error => console.error('Erro ao atualizar logs:', error));
-        }
-    });
-
     // Desafio 2FA - abrir modal real
     window.electronAPI.onVpnChallenge((event, data) => {
         console.log('🔐 Desafio VPN recebido:', data);
