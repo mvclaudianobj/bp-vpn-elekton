@@ -1199,13 +1199,49 @@ async function writeJsonWithBackup(filePath, data, context = 'json_file') {
   }
 }
 
-async function loadOvnFromProfile(profileId) {
+async function loadOvnFromProfile(profileId, preferredType = null) {
   console.log(`🔍 Iniciando busca por arquivo OVPN para perfil: ${profileId}`);
+
+  const userProfilesRead = await readJsonWithBackup(USER_PROFILES_PATH, [], 'user_profiles');
+  const azureProfilesRead = await readJsonWithBackup(AZURE_PROFILES_PATH, [], 'azure_profiles');
+
+  const userProfiles = Array.isArray(userProfilesRead.data) ? userProfilesRead.data : [];
+  const azureProfiles = Array.isArray(azureProfilesRead.data) ? azureProfilesRead.data : [];
+
+  const profileCollections = preferredType === 'user'
+    ? [userProfiles, azureProfiles]
+    : preferredType === 'azure'
+      ? [azureProfiles, userProfiles]
+      : [userProfiles, azureProfiles];
+
+  for (const profiles of profileCollections) {
+    const selectedProfile = profiles.find((p) => p && p.id === profileId);
+    if (!selectedProfile?.ovpnFile) {
+      continue;
+    }
+
+    if (await fileExists(selectedProfile.ovpnFile)) {
+      try {
+        const content = await fsAsync.readFile(selectedProfile.ovpnFile, 'utf-8');
+        const profileDir = path.dirname(selectedProfile.ovpnFile);
+        console.log(`✅ Arquivo OVPN encontrado via metadata do perfil: ${selectedProfile.ovpnFile}`);
+        return {
+          success: true,
+          content,
+          path: selectedProfile.ovpnFile,
+          profileDir
+        };
+      } catch (error) {
+        console.log(`⚠️ Falha ao ler OVPN via metadata (${selectedProfile.ovpnFile}): ${error.message}`);
+      }
+    }
+  }
   
-  const searchDirs = [
-    PROFILES_DIR,
-    AZURE_PROFILES_DIR,
-  ];
+  const searchDirs = preferredType === 'user'
+    ? [PROFILES_DIR, AZURE_PROFILES_DIR]
+    : preferredType === 'azure'
+      ? [AZURE_PROFILES_DIR, PROFILES_DIR]
+      : [PROFILES_DIR, AZURE_PROFILES_DIR];
 
   const possibleFilenames = [
     `${profileId}.ovpn`,
@@ -1238,23 +1274,25 @@ async function loadOvnFromProfile(profileId) {
       }
     }
     
-    for (const filename of possibleFilenames) {
-      const filePath = path.join(baseDir, filename);
-      console.log(`   🔎 Tentando: ${filePath}`);
-      
-      try {
-        if (await fileExists(filePath)) {
-          const content = await fsAsync.readFile(filePath, 'utf-8');
-          console.log(`✅ Arquivo OVPN encontrado: ${filePath}`);
-          return { 
-            success: true, 
-            content: content, 
-            path: filePath,
-            profileDir: baseDir 
-          };
+    if (!preferredType) {
+      for (const filename of possibleFilenames) {
+        const filePath = path.join(baseDir, filename);
+        console.log(`   🔎 Tentando: ${filePath}`);
+        
+        try {
+          if (await fileExists(filePath)) {
+            const content = await fsAsync.readFile(filePath, 'utf-8');
+            console.log(`✅ Arquivo OVPN encontrado: ${filePath}`);
+            return { 
+              success: true, 
+              content: content, 
+              path: filePath,
+              profileDir: baseDir 
+            };
+          }
+        } catch (error) {
+          console.log(`   ❌ Erro ao acessar ${filePath}: ${error.message}`);
         }
-      } catch (error) {
-        console.log(`   ❌ Erro ao acessar ${filePath}: ${error.message}`);
       }
     }
   }
@@ -1489,7 +1527,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         timestamp: new Date().toISOString()
       });
 
-      const ovpnResult = await loadOvnFromProfile(profileId);
+      const ovpnResult = await loadOvnFromProfile(profileId, 'user');
       if (!ovpnResult.success) {
         console.error(`❌ Erro ao carregar perfil: ${ovpnResult.error}`);
         logger.log('CONNECTION', 'LOAD_PROFILE_FAILED', {
@@ -2185,7 +2223,11 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
     const profileIndex = profiles.findIndex(p => p.id === profileId);
 
     if (profileIndex >= 0) {
-      profiles[profileIndex].ovpnFile = path.join(processResult.profileDir, `${profileId}.ovpn`);
+      const previousProfile = profiles[profileIndex] || {};
+      const newOvpnPath = path.join(processResult.profileDir, `${profileId}.ovpn`);
+      const previousOvpnPath = previousProfile.ovpnFile;
+
+      profiles[profileIndex].ovpnFile = newOvpnPath;
       profiles[profileIndex].ovpnFileName = ovpnFileName;
       profiles[profileIndex].profileDir = processResult.profileDir;
       profiles[profileIndex].updatedAt = new Date().toISOString();
@@ -2204,6 +2246,26 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
           filesCopied: processResult.filesCopied
         }
       });
+
+      if (previousOvpnPath && previousOvpnPath !== newOvpnPath) {
+        try {
+          const previousDir = path.dirname(previousOvpnPath);
+          if (previousDir !== processResult.profileDir && await fileExists(previousDir)) {
+            await fsAsync.rm(previousDir, { recursive: true, force: true });
+            logger.log('PROFILE', 'OLD_PROFILE_DIR_REMOVED', {
+              profileId,
+              oldDir: previousDir,
+              newDir: processResult.profileDir
+            });
+          }
+        } catch (cleanupError) {
+          logger.logSystemError('PROFILE_PREVIOUS_DIR_CLEANUP_FAILED', cleanupError, {
+            profileId,
+            previousOvpnPath,
+            newOvpnPath
+          });
+        }
+      }
     } else {
       const newProfile = {
         id: profileId,
@@ -2488,7 +2550,7 @@ ipcMain.handle('logout', async () => {
 
 ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
   try {
-    const ovpnResult = await loadOvnFromProfile(profileId);
+    const ovpnResult = await loadOvnFromProfile(profileId, 'user');
     if (!ovpnResult.success) {
       return { success: false, error: ovpnResult.error };
     }
