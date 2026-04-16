@@ -8,40 +8,39 @@
   Goto InstallOpenVPN
 
   InstallOpenVPN:
-    SetOutPath "$PLUGINSDIR"
-    File "/oname=OpenVPN.msi" "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
+    SetOutPath "$TEMP"
+    File "/oname=$TEMP\OpenVPN.msi" "${BUILD_RESOURCES_DIR}\OpenVPN-2.7_rc2-I009-amd64.msi"
 
-  # Instalar OpenVPN com privilégios elevados e aguardar conclusão
-  ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart ADDLOCAL=OpenVPN.Service,Drivers.OvpnDco,Drivers.TAPWindows6' $0
-  DetailPrint "OpenVPN MSI (tentativa 1) retornou código: $0"
+  # Método das versões 0.1.4/0.1.5: instalar MSI bundled em modo passivo
+  # (sem ADDLOCAL), mantendo fluxo totalmente offline.
+  ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /passive /norestart' $0
+  DetailPrint "OpenVPN MSI (metodo legado /passive) retornou codigo: $0"
 
     ${If} $0 == 0
       Goto CleanupMSI
     ${EndIf}
 
     ${If} $0 == 1638
-      # Código 1638 = versão mais nova já instalada — OK
+      # 1638 = versao mais nova ja instalada
       Goto CleanupMSI
     ${EndIf}
 
     ${If} $0 == 3010
-      # Código 3010 = sucesso com reinicialização necessária
-      DetailPrint "OpenVPN instalado com sucesso (reinicialização recomendada)."
+      DetailPrint "OpenVPN instalado com sucesso (reinicializacao recomendada)."
       Goto CleanupMSI
     ${EndIf}
 
     ${If} $0 == 1641
-      # Código 1641 = sucesso e reinicialização iniciada/necessária
-      DetailPrint "OpenVPN instalado com sucesso (reinicialização iniciada/necessária)."
+      DetailPrint "OpenVPN instalado com sucesso (reinicializacao iniciada/necessaria)."
       Goto CleanupMSI
     ${EndIf}
 
     IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" CleanupMSI 0
     IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" CleanupMSI 0
 
-    # Fallback técnico: tentar instalação sem ADDLOCAL para MSI com árvore de features diferente
-    ExecWait '"msiexec" /i "$PLUGINSDIR\OpenVPN.msi" /qn /norestart' $1
-    DetailPrint "OpenVPN MSI (tentativa 2, sem ADDLOCAL) retornou código: $1"
+    # Fallback tecnico offline: repetir em modo silencioso sem UI
+    ExecWait '"msiexec" /i "$TEMP\OpenVPN.msi" /qn /norestart' $1
+    DetailPrint "OpenVPN MSI (tentativa 2 /qn) retornou codigo: $1"
 
     ${If} $1 == 0
       Goto CleanupMSI
@@ -52,22 +51,22 @@
     ${EndIf}
 
     ${If} $1 == 3010
-      DetailPrint "OpenVPN instalado com sucesso na tentativa 2 (reinicialização recomendada)."
+      DetailPrint "OpenVPN instalado com sucesso na tentativa 2 (reinicializacao recomendada)."
       Goto CleanupMSI
     ${EndIf}
 
     ${If} $1 == 1641
-      DetailPrint "OpenVPN instalado com sucesso na tentativa 2 (reinicialização iniciada/necessária)."
+      DetailPrint "OpenVPN instalado com sucesso na tentativa 2 (reinicializacao iniciada/necessaria)."
       Goto CleanupMSI
     ${EndIf}
 
     IfFileExists "$PROGRAMFILES64\OpenVPN\bin\openvpn.exe" CleanupMSI 0
     IfFileExists "$PROGRAMFILES\OpenVPN\bin\openvpn.exe" CleanupMSI 0
 
-    MessageBox MB_OK "Falha na instalacao offline do OpenVPN embutido. Codigos retornados: tentativa 1 = $0, tentativa 2 = $1."
+    MessageBox MB_OK "Falha na instalacao offline do OpenVPN embutido. Metodo legado (/passive) retornou: $0. Tentativa silenciosa (/qn) retornou: $1."
 
   CleanupMSI:
-    Delete "$PLUGINSDIR\OpenVPN.msi"
+    Delete "$TEMP\OpenVPN.msi"
     Goto OpenVPNDone
 
   OpenVPNAlreadyInstalled:
