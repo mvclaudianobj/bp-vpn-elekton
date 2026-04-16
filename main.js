@@ -1350,6 +1350,19 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
     let authFilePath = null;
     let challengeHandler = null;
     let challengeTimeout = null;
+    let promiseSettled = false;
+
+    const resolveOnce = (value) => {
+      if (promiseSettled) return;
+      promiseSettled = true;
+      resolve(value);
+    };
+
+    const rejectOnce = (error) => {
+      if (promiseSettled) return;
+      promiseSettled = true;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
 
     const connectionId = `conn_${profileId}_${Date.now()}`;
     suppressNextReconnect = false;
@@ -1377,7 +1390,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           step: 'load_ovpn_profile',
           profileDir: ovpnResult.profileDir || 'unknown'
         }, 'ERROR');
-        reject(new Error(ovpnResult.error));
+        rejectOnce(new Error(ovpnResult.error));
         return;
       }
 
@@ -1403,7 +1416,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       const normalizedPassword = normalizeCredentialValue(password, { trim: false });
 
       if (!normalizedUsername || !normalizedPassword) {
-        reject(new Error('Usuário e senha são obrigatórios'));
+        rejectOnce(new Error('Usuário e senha são obrigatórios'));
         return;
       }
 
@@ -1411,6 +1424,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         connectionId,
         profileId,
         platform: process.platform,
+        authFileLineEnding: 'LF',
         usernameChanged: normalizedUsername !== String(username ?? ''),
         passwordChanged: normalizedPassword !== String(password ?? ''),
         usernameLength: normalizedUsername.length,
@@ -1421,7 +1435,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       console.log(`📄 Configuração: ${configPath}`);
 
         authFilePath = path.join(profileDir, `openvpn_auth_${Date.now()}.txt`);
-        const authLineBreak = process.platform === 'win32' ? '\r\n' : '\n';
+        const authLineBreak = '\n';
         const authFileContent = `${normalizedUsername}${authLineBreak}${normalizedPassword}${authLineBreak}`;
         fs.writeFileSync(authFilePath, authFileContent, { encoding: 'utf8' });
 
@@ -1582,7 +1596,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                   downloadUrl: 'https://openvpn.net/community-downloads/'
                 });
               }
-              reject(new Error('OpenVPN não encontrado. Baixe em: https://openvpn.net/community-downloads/'));
+              rejectOnce(new Error('OpenVPN não encontrado. Baixe em: https://openvpn.net/community-downloads/'));
               return;
             }
           }
@@ -1624,7 +1638,6 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
         console.log(`🔌 [MAIN] Processo OpenVPN iniciado com PID: ${vpnProcess.pid}`);
         logger.logConnectionStart(profileId, 'user', 'openvpn-userpass');
-        resolve({ pid: vpnProcess.pid });
 
         let connectionEstablished = false;
         let challengeDetected = false;
@@ -1664,9 +1677,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
              if (!connectionEstablished && vpnProcess && !vpnProcess.killed) {
                const errorMsg = 'Timeout na autenticação após token 2FA';
                console.error(`❌ ${errorMsg}`);
-               reject(new Error(errorMsg));
-             }
-           }, 30000);
+                rejectOnce(new Error(errorMsg));
+              }
+            }, 30000);
          }
        };
 
@@ -1677,22 +1690,35 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           const errorMsg = 'Timeout na conexão OpenVPN';
           console.error(`❌ ${errorMsg}`);
           ipcMain.removeAllListeners('send-challenge-response');
-          reject(new Error(errorMsg));
+          rejectOnce(new Error(errorMsg));
         }
       }, 60000);
 
         vpnProcess.stdout.on('data', (data) => {
           const output = data.toString();
           console.log('OpenVPN stdout:', output);
-          mainWindow.webContents.send('vpn-log', output);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('vpn-log', output);
+          }
 
           if (!stdinReady) {
             stdinReady = true;
             console.log('🔄 OpenVPN stdin pronto para entrada');
           }
 
-          if (output.includes('AUTH_FAILED')) {
+          if (output.includes('AUTH_FAILED') && !authFailed) {
+            authFailed = true;
             mainWindow.webContents.send('vpn-status', 'Falha de autenticação (usuário/senha incorretos)');
+            ipcMain.removeAllListeners('send-challenge-response');
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            if (challengeTimeout) clearTimeout(challengeTimeout);
+            if (vpnProcess && !vpnProcess.killed) {
+              try {
+                vpnProcess.kill('SIGTERM');
+              } catch (_) {}
+            }
+            rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+            return;
           }
 
           if ((output.includes('Initialization Sequence Completed') || output.includes('Connected')) && !connectionEstablished) {
@@ -1701,6 +1727,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            console.log('✅ [MAIN] VPN conectada com sucesso!');
            logger.logConnectionSuccess(profileId, 'user', { pid: vpnProcess.pid });
            mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
+           resolveOnce({ pid: vpnProcess.pid });
 
            if (connectionTimeout) clearTimeout(connectionTimeout);
            if (challengeTimeout) clearTimeout(challengeTimeout);
@@ -1723,7 +1750,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             if (challengeDetected) {
               console.error('❌ Timeout no desafio 2FA');
               ipcMain.removeAllListeners('send-challenge-response');
-              reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+              rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
             }
           }, 120000);
         }
@@ -1732,9 +1759,11 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        vpnProcess.stderr.on('data', (data) => {
          const error = data.toString();
          console.error('OpenVPN stderr:', error);
-         mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
+         if (mainWindow && !mainWindow.isDestroyed()) {
+           mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
+         }
 
-         if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
+          if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
             console.error(`❌ Falha na autenticação`);
             authFailed = true;
             ipcMain.removeAllListeners('send-challenge-response');
@@ -1745,7 +1774,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                 vpnProcess.kill('SIGTERM');
               } catch (_) {}
             }
-            reject(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+            rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
           }
 
          if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
@@ -1765,11 +1794,11 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
              if (challengeDetected) {
                console.error('❌ Timeout no desafio 2FA');
                ipcMain.removeAllListeners('send-challenge-response');
-               reject(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
-             }
-           }, 120000);
-         }
-       });
+               rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
+              }
+            }, 120000);
+          }
+        });
 
          vpnProcess.on('close', (code) => {
            console.log(`OpenVPN encerrado com código ${code}`);
@@ -1798,11 +1827,15 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            }
 
            // RF010: reagendar conexão se caiu inesperadamente
-           if (wasEstablished && code !== 0 && AUTO_RECONNECT.enabled && !authFailed && !manualDisconnect) {
-             AUTO_RECONNECT.lastProfileId = profileId;
-             AUTO_RECONNECT.lastProfileType = 'user';
-             scheduleReconnect(profileId, 'user');
-           }
+            if (wasEstablished && code !== 0 && AUTO_RECONNECT.enabled && !authFailed && !manualDisconnect) {
+              AUTO_RECONNECT.lastProfileId = profileId;
+              AUTO_RECONNECT.lastProfileType = 'user';
+              scheduleReconnect(profileId, 'user');
+            }
+
+            if (!wasEstablished && !authFailed) {
+              rejectOnce(new Error(`OpenVPN encerrou antes de conectar (código ${code})`));
+            }
 
            try {
              if (authFilePath && fs.existsSync(authFilePath)) {
@@ -1888,7 +1921,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             }, 'ERROR');
           }
 
-          reject(new Error(userFriendlyError));
+          rejectOnce(new Error(userFriendlyError));
        });
 
    } catch (error) {
@@ -1904,9 +1937,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        console.log('Erro ao limpar arquivo de auth:', e.message);
      }
     
-     reject(error);
-   }
- });
+     rejectOnce(error);
+    }
+  });
 });
 
 // Nova função para enviar resposta de desafio
