@@ -615,6 +615,70 @@ function ensureDirectories() {
   console.log(`📁 Diretório de perfis Azure: ${AZURE_PROFILES_DIR}`);
 }
 
+function migrateLegacyUserDataIfNeeded() {
+  try {
+    const appDataDir = app.getPath('appData');
+    const legacyDirs = [
+      path.join(appDataDir, 'BluePexVPN'),
+      path.join(appDataDir, 'bp-vpn-electron'),
+      path.join(appDataDir, 'BluePex VPN')
+    ].filter((dirPath) => dirPath !== USER_DATA_DIR);
+
+    const jsonFiles = [
+      'user_profiles.json',
+      'azure_profiles.json',
+      'user_credentials.json',
+      'app_state.json',
+      'config.json'
+    ];
+
+    const profileDirs = ['ovpn_profiles', 'azure_ovpn_profiles'];
+
+    for (const legacyDir of legacyDirs) {
+      if (!fs.existsSync(legacyDir)) {
+        continue;
+      }
+
+      let migratedItems = 0;
+
+      for (const fileName of jsonFiles) {
+        const fromPath = path.join(legacyDir, fileName);
+        const toPath = path.join(USER_DATA_DIR, fileName);
+        if (!fs.existsSync(fromPath) || fs.existsSync(toPath)) {
+          continue;
+        }
+
+        fs.copyFileSync(fromPath, toPath);
+        migratedItems++;
+      }
+
+      for (const dirName of profileDirs) {
+        const fromDir = path.join(legacyDir, dirName);
+        const toDir = path.join(USER_DATA_DIR, dirName);
+        if (!fs.existsSync(fromDir)) {
+          continue;
+        }
+
+        fs.mkdirSync(toDir, { recursive: true });
+        fs.cpSync(fromDir, toDir, { recursive: true, force: false, errorOnExist: false });
+        migratedItems++;
+      }
+
+      if (migratedItems > 0) {
+        logger.log('SYSTEM', 'LEGACY_USER_DATA_MIGRATED', {
+          from: legacyDir,
+          to: USER_DATA_DIR,
+          migratedItems
+        });
+      }
+    }
+  } catch (error) {
+    logger.logSystemError('LEGACY_USER_DATA_MIGRATION_FAILED', error, {
+      userDataDir: USER_DATA_DIR
+    });
+  }
+}
+
 let mainWindow;
 let splashWindow;
 let tray;
@@ -968,6 +1032,10 @@ app.whenReady().then(async () => {
     // Inicializar logger após app ready
     logger = new AppLogger();
 
+    if (!app.isPackaged) ensurePolicyFile();
+    ensureDirectories();
+    migrateLegacyUserDataIfNeeded();
+
     // Migrar credenciais antigas para criptografia segura
     await migrateCredentials();
 
@@ -983,9 +1051,6 @@ app.whenReady().then(async () => {
     if (app.isPackaged) {
       createSplashWindow();
     }
-
-    if (!app.isPackaged) ensurePolicyFile();
-    ensureDirectories();
     
     if (fs.existsSync(CONFIG_PATH)) {
       config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -1087,6 +1152,50 @@ async function fileExists(filePath) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function readJsonWithBackup(filePath, fallbackValue, context = 'json_file') {
+  if (!(await fileExists(filePath))) {
+    return { success: true, data: fallbackValue, source: 'default' };
+  }
+
+  try {
+    const raw = await fsAsync.readFile(filePath, 'utf-8');
+    return { success: true, data: JSON.parse(raw), source: 'primary' };
+  } catch (error) {
+    const backupPath = `${filePath}.bak`;
+    logger.logSystemError('JSON_READ_PARSE_FAILED', error, { filePath, context, backupPath });
+
+    if (await fileExists(backupPath)) {
+      try {
+        const backupRaw = await fsAsync.readFile(backupPath, 'utf-8');
+        const backupData = JSON.parse(backupRaw);
+        await fsAsync.writeFile(filePath, JSON.stringify(backupData, null, 2));
+        logger.log('SYSTEM', 'JSON_RECOVERED_FROM_BACKUP', { filePath, backupPath, context });
+        return { success: true, data: backupData, source: 'backup' };
+      } catch (backupError) {
+        logger.logSystemError('JSON_BACKUP_RECOVERY_FAILED', backupError, { filePath, backupPath, context });
+      }
+    }
+
+    return { success: false, error: error.message };
+  }
+}
+
+async function writeJsonWithBackup(filePath, data, context = 'json_file') {
+  const backupPath = `${filePath}.bak`;
+
+  try {
+    if (await fileExists(filePath)) {
+      await fsAsync.copyFile(filePath, backupPath);
+    }
+
+    await fsAsync.writeFile(filePath, JSON.stringify(data, null, 2));
+    return { success: true };
+  } catch (error) {
+    logger.logSystemError('JSON_WRITE_FAILED', error, { filePath, backupPath, context });
+    return { success: false, error: error.message };
   }
 }
 
@@ -2042,13 +2151,11 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
     console.log(`✅ Perfil salvo: ${profileId}`);
     console.log(`📁 Diretório: ${processResult.profileDir}`);
 
-    let profiles = [];
-    const profilesExistBefore = await fileExists(profilesPath);
-
-    if (profilesExistBefore) {
-      const data = await fsAsync.readFile(profilesPath, 'utf-8');
-      profiles = JSON.parse(data);
+    const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: `Falha ao ler perfis de usuário: ${profilesRead.error}` };
     }
+    let profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
 
     const isNew = profiles.findIndex(p => p.id === profileId) === -1;
     const profileIndex = profiles.findIndex(p => p.id === profileId);
@@ -2098,8 +2205,10 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
       });
     }
 
-    const profilesJson = JSON.stringify(profiles, null, 2);
-    await fsAsync.writeFile(profilesPath, profilesJson);
+    const writeResult = await writeJsonWithBackup(profilesPath, profiles, 'user_profiles');
+    if (!writeResult.success) {
+      return { success: false, error: `Falha ao salvar perfis de usuário: ${writeResult.error}` };
+    }
 
     logger.log('PROFILE', 'SAVE_SUCCESS', {
       profileId,
@@ -2134,11 +2243,13 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
 ipcMain.handle('load-user-profiles', async () => {
   const profilesPath = USER_PROFILES_PATH;
   try {
-    if (await fileExists(profilesPath)) {
-      const profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
-      return { success: true, profiles };
+    const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
     }
-    return { success: true, profiles: [] };
+
+    const profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+    return { success: true, profiles };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2147,11 +2258,12 @@ ipcMain.handle('load-user-profiles', async () => {
 ipcMain.handle('save-user-profile', async (event, profile) => {
   const profilesPath = USER_PROFILES_PATH;
   try {
-    let profiles = [];
-
-    if (await fileExists(profilesPath)) {
-      profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
+    const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
     }
+
+    let profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
 
     const existingIndex = profiles.findIndex(p => p.id === profile.id);
     if (existingIndex >= 0) {
@@ -2160,7 +2272,10 @@ ipcMain.handle('save-user-profile', async (event, profile) => {
       profiles.push(profile);
     }
 
-    await fsAsync.writeFile(profilesPath, JSON.stringify(profiles, null, 2));
+    const writeResult = await writeJsonWithBackup(profilesPath, profiles, 'user_profiles');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2176,8 +2291,12 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
 
     let profileName = 'Unknown';
     if (await fileExists(profilesPath)) {
-      const profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
-      const profile = profiles.find(p => p.id === profileId);
+      const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
+      if (!profilesRead.success) {
+        return { success: false, error: profilesRead.error };
+      }
+      const profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+      const profile = profiles.find((p) => p.id === profileId);
       if (profile) profileName = profile.name;
     }
 
@@ -2186,10 +2305,15 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
       logger.log('PROFILE', 'DIR_REMOVED', { profileId, profileDir });
     }
 
-    if (await fileExists(profilesPath)) {
-      let profiles = JSON.parse(await fsAsync.readFile(profilesPath, 'utf-8'));
-      profiles = profiles.filter(p => p.id !== profileId);
-      await fsAsync.writeFile(profilesPath, JSON.stringify(profiles, null, 2));
+    const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
+    }
+    let profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+    profiles = profiles.filter((p) => p.id !== profileId);
+    const writeResult = await writeJsonWithBackup(profilesPath, profiles, 'user_profiles');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
     }
 
     logger.logProfileDelete(profileId, 'user', profileName);
@@ -2205,32 +2329,34 @@ ipcMain.handle('delete-user-profile', async (event, profileId) => {
 // Migração de credenciais antigas (Base64) para criptografia AES
 async function migrateCredentials() {
   try {
-    if (await fileExists(USER_CREDENTIALS_PATH)) {
-      const credentials = JSON.parse(await fsAsync.readFile(USER_CREDENTIALS_PATH, 'utf-8'));
-      let needsMigration = false;
+    const credentialsRead = await readJsonWithBackup(USER_CREDENTIALS_PATH, {}, 'user_credentials');
+    if (!credentialsRead.success) {
+      return;
+    }
 
-      for (const profileId in credentials) {
-        const creds = credentials[profileId];
-        const isLegacyBase64 = creds.password && typeof creds.password === 'string';
-        const isCurrentEncrypted = creds.password && typeof creds.password === 'object' && creds.password.iv && creds.password.authTag && creds.password.encrypted;
+    const credentials = credentialsRead.data && typeof credentialsRead.data === 'object' ? credentialsRead.data : {};
+    let needsMigration = false;
 
-        if (isLegacyBase64 && !isCurrentEncrypted) {
-          // Formato legado em Base64
-          try {
-            const decrypted = Buffer.from(creds.password, 'base64').toString('utf-8');
-            creds.password = encrypt(decrypted);
-            needsMigration = true;
-            console.log(`🔐 Migrando credenciais para ${profileId}`);
-          } catch (error) {
-            console.error(`❌ Erro ao migrar credenciais para ${profileId}:`, error);
-          }
+    for (const profileId in credentials) {
+      const creds = credentials[profileId];
+      const isLegacyBase64 = creds.password && typeof creds.password === 'string';
+      const isCurrentEncrypted = creds.password && typeof creds.password === 'object' && creds.password.iv && creds.password.authTag && creds.password.encrypted;
+
+      if (isLegacyBase64 && !isCurrentEncrypted) {
+        try {
+          const decrypted = Buffer.from(creds.password, 'base64').toString('utf-8');
+          creds.password = encrypt(decrypted);
+          needsMigration = true;
+          console.log(`🔐 Migrando credenciais para ${profileId}`);
+        } catch (error) {
+          console.error(`❌ Erro ao migrar credenciais para ${profileId}:`, error);
         }
       }
+    }
 
-      if (needsMigration) {
-        await fsAsync.writeFile(USER_CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
-        console.log('✅ Migração de credenciais concluída');
-      }
+    if (needsMigration) {
+      await writeJsonWithBackup(USER_CREDENTIALS_PATH, credentials, 'user_credentials');
+      console.log('✅ Migração de credenciais concluída');
     }
   } catch (error) {
     console.error('❌ Erro na migração de credenciais:', error);
@@ -2241,11 +2367,12 @@ ipcMain.handle('save-user-credentials', async (event, profileId, username, passw
   const credentialsPath = USER_CREDENTIALS_PATH;
 
   try {
-    let credentials = {};
-
-    if (await fileExists(credentialsPath)) {
-      credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
+    const credentialsRead = await readJsonWithBackup(credentialsPath, {}, 'user_credentials');
+    if (!credentialsRead.success) {
+      return { success: false, error: credentialsRead.error };
     }
+
+    let credentials = credentialsRead.data && typeof credentialsRead.data === 'object' ? credentialsRead.data : {};
 
     const encryptedPassword = rememberPassword ? encrypt(password) : null;
 
@@ -2256,7 +2383,10 @@ ipcMain.handle('save-user-credentials', async (event, profileId, username, passw
       updatedAt: new Date().toISOString()
     };
 
-    await fsAsync.writeFile(credentialsPath, JSON.stringify(credentials, null, 2));
+    const writeResult = await writeJsonWithBackup(credentialsPath, credentials, 'user_credentials');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
+    }
     return { success: true };
 
   } catch (error) {
@@ -2268,22 +2398,24 @@ ipcMain.handle('load-user-credentials', async (event, profileId) => {
   const credentialsPath = USER_CREDENTIALS_PATH;
 
   try {
-    if (await fileExists(credentialsPath)) {
-      const credentials = JSON.parse(await fsAsync.readFile(credentialsPath, 'utf-8'));
-      if (credentials[profileId]) {
-        const creds = credentials[profileId];
-        if (creds.rememberPassword && creds.password) {
-          creds.password = decrypt(creds.password);
-          if (creds.password === null) {
-            // Falha na descriptografia, limpar credenciais
-            creds.password = '';
-            creds.rememberPassword = false;
-          }
-        } else {
+    const credentialsRead = await readJsonWithBackup(credentialsPath, {}, 'user_credentials');
+    if (!credentialsRead.success) {
+      return { success: false, error: credentialsRead.error };
+    }
+
+    const credentials = credentialsRead.data && typeof credentialsRead.data === 'object' ? credentialsRead.data : {};
+    if (credentials[profileId]) {
+      const creds = credentials[profileId];
+      if (creds.rememberPassword && creds.password) {
+        creds.password = decrypt(creds.password);
+        if (creds.password === null) {
           creds.password = '';
+          creds.rememberPassword = false;
         }
-        return { success: true, credentials: creds };
+      } else {
+        creds.password = '';
       }
+      return { success: true, credentials: creds };
     }
     return { success: true, credentials: null };
   } catch (error) {
@@ -2405,11 +2537,11 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 
     console.log(`✅ Perfil Azure salvo: ${profileId}`);
 
-    let azureProfiles = [];
-    if (await fileExists(azureProfilesPath)) {
-      const data = await fsAsync.readFile(azureProfilesPath, 'utf-8');
-      azureProfiles = JSON.parse(data);
+    const azureProfilesRead = await readJsonWithBackup(azureProfilesPath, [], 'azure_profiles');
+    if (!azureProfilesRead.success) {
+      return { success: false, error: `Falha ao ler perfis Azure: ${azureProfilesRead.error}` };
     }
+    let azureProfiles = Array.isArray(azureProfilesRead.data) ? azureProfilesRead.data : [];
 
     const profileIndex = azureProfiles.findIndex(p => p.id === profileId);
     if (profileIndex >= 0) {
@@ -2429,7 +2561,10 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       });
     }
 
-    await fsAsync.writeFile(azureProfilesPath, JSON.stringify(azureProfiles, null, 2));
+    const azureWriteResult = await writeJsonWithBackup(azureProfilesPath, azureProfiles, 'azure_profiles');
+    if (!azureWriteResult.success) {
+      return { success: false, error: `Falha ao salvar perfis Azure: ${azureWriteResult.error}` };
+    }
 
     config.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
@@ -2449,10 +2584,11 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
 ipcMain.handle('save-app-state', async (event, appState) => {
   const statePath = APP_STATE_PATH;
   try {
-    let currentState = {};
-    if (await fileExists(statePath)) {
-      currentState = JSON.parse(await fsAsync.readFile(statePath, 'utf-8'));
+    const stateRead = await readJsonWithBackup(statePath, {}, 'app_state');
+    if (!stateRead.success) {
+      return { success: false, error: stateRead.error };
     }
+    const currentState = stateRead.data && typeof stateRead.data === 'object' ? stateRead.data : {};
 
     const mergedState = {
       ...currentState,
@@ -2460,7 +2596,10 @@ ipcMain.handle('save-app-state', async (event, appState) => {
       lastSaved: new Date().toISOString()
     };
 
-    await fsAsync.writeFile(statePath, JSON.stringify(mergedState, null, 2));
+    const writeResult = await writeJsonWithBackup(statePath, mergedState, 'app_state');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2470,8 +2609,13 @@ ipcMain.handle('save-app-state', async (event, appState) => {
 ipcMain.handle('load-app-state', async () => {
   const statePath = APP_STATE_PATH;
   try {
-    if (await fileExists(statePath)) {
-      const state = JSON.parse(await fsAsync.readFile(statePath, 'utf-8'));
+    const stateRead = await readJsonWithBackup(statePath, {}, 'app_state');
+    if (!stateRead.success) {
+      return { success: false, error: stateRead.error };
+    }
+
+    if (stateRead.source !== 'default') {
+      const state = stateRead.data && typeof stateRead.data === 'object' ? stateRead.data : {};
 
       // IS002: validar se o PID salvo ainda corresponde a um processo OpenVPN real
       if (state.vpnPid) {
@@ -2501,7 +2645,7 @@ ipcMain.handle('load-app-state', async () => {
           state.vpnConnected = false;
           // Persiste o estado limpo para evitar reincidência
           try {
-            await fsAsync.writeFile(statePath, JSON.stringify({ ...state, lastSaved: new Date().toISOString() }, null, 2));
+            await writeJsonWithBackup(statePath, { ...state, lastSaved: new Date().toISOString() }, 'app_state');
           } catch (_) {}
         }
       }
@@ -2517,11 +2661,13 @@ ipcMain.handle('load-app-state', async () => {
 ipcMain.handle('load-azure-profiles', async () => {
   const azureProfilesPath = AZURE_PROFILES_PATH;
   try {
-    if (await fileExists(azureProfilesPath)) {
-      const profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
-      return { success: true, profiles };
+    const profilesRead = await readJsonWithBackup(azureProfilesPath, [], 'azure_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
     }
-    return { success: true, profiles: [] };
+
+    const profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+    return { success: true, profiles };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2574,11 +2720,12 @@ ipcMain.handle('close-window', () => {
 ipcMain.handle('save-azure-profile', async (event, profile) => {
   const azureProfilesPath = AZURE_PROFILES_PATH;
   try {
-    let profiles = [];
-
-    if (await fileExists(azureProfilesPath)) {
-      profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
+    const profilesRead = await readJsonWithBackup(azureProfilesPath, [], 'azure_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
     }
+
+    let profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
 
     const existingIndex = profiles.findIndex(p => p.id === profile.id);
     if (existingIndex >= 0) {
@@ -2587,7 +2734,10 @@ ipcMain.handle('save-azure-profile', async (event, profile) => {
       profiles.push(profile);
     }
 
-    await fsAsync.writeFile(azureProfilesPath, JSON.stringify(profiles, null, 2));
+    const writeResult = await writeJsonWithBackup(azureProfilesPath, profiles, 'azure_profiles');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -2603,10 +2753,16 @@ ipcMain.handle('delete-azure-profile', async (event, profileId) => {
       await fsAsync.rm(profileDir, { recursive: true, force: true });
     }
 
-    if (await fileExists(azureProfilesPath)) {
-      let profiles = JSON.parse(await fsAsync.readFile(azureProfilesPath, 'utf-8'));
-      profiles = profiles.filter(p => p.id !== profileId);
-      await fsAsync.writeFile(azureProfilesPath, JSON.stringify(profiles, null, 2));
+    const profilesRead = await readJsonWithBackup(azureProfilesPath, [], 'azure_profiles');
+    if (!profilesRead.success) {
+      return { success: false, error: profilesRead.error };
+    }
+
+    let profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+    profiles = profiles.filter((p) => p.id !== profileId);
+    const writeResult = await writeJsonWithBackup(azureProfilesPath, profiles, 'azure_profiles');
+    if (!writeResult.success) {
+      return { success: false, error: writeResult.error };
     }
 
     return { success: true };
