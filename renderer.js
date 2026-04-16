@@ -788,6 +788,11 @@ function handleProfileSelection() {
 async function loadSavedCredentials(profileId) {
     try {
         const result = await window.electronAPI.loadUserCredentials(profileId);
+        if (!currentProfile || currentProfile.type !== 'user' || currentProfile.id !== profileId) {
+            console.log(`ℹ️ Credenciais ignoradas: perfil ativo mudou durante carregamento (${profileId})`);
+            return;
+        }
+
         if (result.success && result.credentials) {
             if (userUsername) userUsername.value = result.credentials.username || '';
             if (userPassword) userPassword.value = result.credentials.password || '';
@@ -902,17 +907,7 @@ async function handleConnect() {
                 throw new Error('Usuário e senha são obrigatórios');
             }
 
-            const result = await window.electronAPI.connectOpenVPNUserPassProfile(
-                currentProfile.id,
-                username,
-                password
-            );
-
-            vpnPid = result.pid;
-            console.log(`🔌 [RENDERER] VPN PID definido: ${vpnPid}`);
-            showStatus(`Conectado com sucesso! PID: ${vpnPid}`, 'success');
-
-            // Salvar credenciais se "Lembrar credenciais" estiver marcado
+            // Persistir credenciais antes da tentativa de conexão para não perder em timeout/falha
             if (rememberCredentials && rememberCredentials.checked) {
                 if (!currentProfile || !currentProfile.id) {
                     console.error('❌ Erro: currentProfile ou currentProfile.id está vazio');
@@ -924,13 +919,24 @@ async function handleConnect() {
                         password,
                         true
                     );
+
                     if (saveResult.success) {
-                        console.log('💾 Credenciais salvas para perfil:', currentProfile.id);
+                        console.log('💾 Credenciais salvas para perfil (pré-conexão):', currentProfile.id);
                     } else {
-                        console.error('❌ Erro ao salvar credenciais:', saveResult.error);
+                        console.error('❌ Erro ao salvar credenciais antes da conexão:', saveResult.error);
                     }
                 }
             }
+
+            const result = await window.electronAPI.connectOpenVPNUserPassProfile(
+                currentProfile.id,
+                username,
+                password
+            );
+
+            vpnPid = result.pid;
+            console.log(`🔌 [RENDERER] VPN PID definido: ${vpnPid}`);
+            showStatus(`Conectado com sucesso! PID: ${vpnPid}`, 'success');
 
             // Esconder elementos desnecessários quando conectado
             hideConnectionElements();
