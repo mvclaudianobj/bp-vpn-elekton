@@ -1199,6 +1199,23 @@ async function writeJsonWithBackup(filePath, data, context = 'json_file') {
   }
 }
 
+function shouldEnableExplicitExitNotify(ovpnContent = '') {
+  const content = String(ovpnContent || '');
+
+  // Evitar duplicidade se já estiver definido no perfil
+  if (/^\s*explicit-exit-notify\b/im.test(content)) {
+    return false;
+  }
+
+  // Se protocolo TCP está explícito, não aplica
+  if (/^\s*proto\s+tcp/i.test(content)) {
+    return false;
+  }
+
+  // Para UDP explícito ou default (sem proto definido), habilitar
+  return true;
+}
+
 async function loadOvnFromProfile(profileId, preferredType = null) {
   console.log(`🔍 Iniciando busca por arquivo OVPN para perfil: ${profileId}`);
 
@@ -1597,6 +1614,15 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          '--auth-user-pass', authFilePath,
          '--auth-retry', 'interact'
        ];
+
+       if (shouldEnableExplicitExitNotify(ovpnResult.content)) {
+         openvpnArgs.push('--explicit-exit-notify', '3');
+         logger.log('CONNECTION', 'EXPLICIT_EXIT_NOTIFY_ENABLED', {
+           connectionId,
+           profileId,
+           mode: 'userpass'
+         });
+       }
 
       console.log('🔐 Executando OpenVPN...');
      
@@ -2977,6 +3003,13 @@ ipcMain.handle('connect-openvpn', async () => {
       return;
     }
 
+    let configContent = '';
+    try {
+      configContent = fs.readFileSync(config.openvpn_config, 'utf-8');
+    } catch (readConfigError) {
+      console.log(`⚠️ Não foi possível ler conteúdo do .ovpn Azure (${config.openvpn_config}): ${readConfigError.message}`);
+    }
+
     let cache;
     try {
       cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
@@ -3005,6 +3038,14 @@ ipcMain.handle('connect-openvpn', async () => {
     console.log(`🔐 [Azure] auth-user-pass preparado com UPN: ${azureUpn}`);
 
     const openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
+    if (shouldEnableExplicitExitNotify(configContent)) {
+      openvpnArgs.push('--explicit-exit-notify', '3');
+      logger.log('CONNECTION', 'EXPLICIT_EXIT_NOTIFY_ENABLED', {
+        profileType: 'azure',
+        profileId: 'azure',
+        mode: 'azure'
+      });
+    }
     let openvpnCommand;
     let openvpnArgsFinal;
 
