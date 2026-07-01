@@ -688,6 +688,7 @@ let currentElevationMethod = null;
 let currentOvpnPath = null;
 let vpnProcess = null;
 let vpnConnectionActive = false;
+let currentConnectionMeta = null;
 let suppressNextReconnect = false;
 
 // RF010: controle de reconexão automática
@@ -960,10 +961,10 @@ function createSplashWindow() {
   mainWindow.on('closed', () => {
     if (tray) tray.destroy();
 
-    // Desconectar VPN de forma mais simples ao fechar (sem pkexec/sudo)
-    console.log("🔌 Fechando janela - desconectando VPN...");
-    if (vpnProcess && !vpnProcess.killed) {
-      console.log("🔌 Matando processo VPN específico...");
+    // Desconectar somente processo rastreado pelo BluePex ao fechar (sem pkill/taskkill global)
+    console.log("🔌 Fechando janela - limpeza de sessão BluePex rastreada...");
+    if (vpnProcess && !vpnProcess.killed && currentConnectionMeta?.connectionOwner === 'bluepex') {
+      console.log("🔌 Matando processo VPN BluePex específico...");
       vpnProcess.kill('SIGTERM');
 
       // Aguardar um pouco e forçar se necessário
@@ -975,6 +976,7 @@ function createSplashWindow() {
     }
 
     vpnConnectionActive = false;
+    clearBluepexConnectionMeta();
 
     // Não usar killVPNConnection() com pkexec ao fechar a aplicação
     console.log("✅ Processo de limpeza ao fechar concluído");
@@ -1155,6 +1157,183 @@ async function fileExists(filePath) {
   }
 }
 
+async function validateOvpnFilePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return { valid: false, error: 'Caminho do arquivo OVPN não informado' };
+  }
+
+  try {
+    const stats = await fsAsync.stat(filePath);
+    if (!stats.isFile()) {
+      return { valid: false, error: `Caminho selecionado não é um arquivo regular: ${filePath}` };
+    }
+
+    if (path.extname(filePath).toLowerCase() !== '.ovpn') {
+      return { valid: false, error: 'Arquivo inválido. Selecione um arquivo com extensão .ovpn' };
+    }
+
+    return { valid: true, stats };
+  } catch (error) {
+    return { valid: false, error: `Arquivo OVPN não encontrado ou inacessível: ${error.message}` };
+  }
+}
+
+function hasInlineBlock(content, blockName) {
+  const escapedName = String(blockName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*<${escapedName}>\\s*$[\\s\\S]*?^\\s*</${escapedName}>\\s*$`, 'im').test(String(content || ''));
+}
+
+function hasDirective(content, directiveName) {
+  const escapedName = String(directiveName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*${escapedName}(?:\\s|$)`, 'im').test(String(content || ''));
+}
+
+function hasClientCertDisabled(content) {
+  return /^\s*setenv\s+CLIENT_CERT\s+0\b/im.test(String(content || ''));
+}
+
+function validateOvpnContent(content) {
+  const ovpnContent = String(content || '');
+  const lineCount = ovpnContent.split(/\r?\n/).length;
+  const hasRemote = hasDirective(ovpnContent, 'remote');
+  const hasClientMode = hasDirective(ovpnContent, 'client') || hasDirective(ovpnContent, 'tls-client') || hasDirective(ovpnContent, 'dev');
+  const hasAuthUserPass = hasDirective(ovpnContent, 'auth-user-pass');
+  const hasCa = hasDirective(ovpnContent, 'ca') || hasInlineBlock(ovpnContent, 'ca');
+  const hasCert = hasDirective(ovpnContent, 'cert') || hasInlineBlock(ovpnContent, 'cert');
+  const hasKey = hasDirective(ovpnContent, 'key') || hasInlineBlock(ovpnContent, 'key');
+  const clientCertDisabled = hasClientCertDisabled(ovpnContent);
+  const hasTlsAuth = hasDirective(ovpnContent, 'tls-auth') || hasInlineBlock(ovpnContent, 'tls-auth');
+
+  if (!hasRemote) {
+    return { valid: false, error: 'Configuração OVPN não possui servidor remoto (remote)' };
+  }
+
+  if (!hasClientMode) {
+    return { valid: false, error: 'Configuração OVPN não possui indicação de modo cliente (client, tls-client ou dev)' };
+  }
+
+  if (!hasCa) {
+    return { valid: false, error: 'Configuração OVPN não possui certificado CA (ca arquivo ou bloco <ca>)' };
+  }
+
+  if (!clientCertDisabled && (hasCert !== hasKey)) {
+    return { valid: false, error: 'Configuração OVPN possui cert/key incompletos. Use cert e key juntos ou setenv CLIENT_CERT 0' };
+  }
+
+  return {
+    valid: true,
+    metadata: {
+      lineCount,
+      size: ovpnContent.length,
+      hasRemote,
+      hasClientMode,
+      hasAuthUserPass,
+      hasCa,
+      hasCert,
+      hasKey,
+      clientCertDisabled,
+      hasTlsAuth
+    }
+  };
+}
+
+async function validateOvpnFileForImport(filePath) {
+  const pathValidation = await validateOvpnFilePath(filePath);
+  if (!pathValidation.valid) {
+    return pathValidation;
+  }
+
+  try {
+    const content = await fsAsync.readFile(filePath, 'utf-8');
+    const contentValidation = validateOvpnContent(content);
+    if (!contentValidation.valid) {
+      return contentValidation;
+    }
+
+    return { valid: true, content, metadata: { ...contentValidation.metadata, fileSize: pathValidation.stats.size } };
+  } catch (error) {
+    return { valid: false, error: `Erro ao ler arquivo OVPN: ${error.message}` };
+  }
+}
+
+function validateAzureOvpnTags(ovpnContent) {
+  const azureTagRegex = /^\s*#AZURE:\s*([^=\s]+)\s*=\s*(.+?)\s*$/gim;
+  const foundTags = new Set();
+  let match;
+
+  while ((match = azureTagRegex.exec(String(ovpnContent || ''))) !== null) {
+    foundTags.add(String(match[1] || '').trim().toLowerCase());
+  }
+
+  if (foundTags.size === 0) {
+    return {
+      valid: false,
+      error: 'Configuração não compatível com perfil Azure/Entra ID. O arquivo .ovpn deve conter tags #AZURE de configuração.'
+    };
+  }
+
+  const requiredTags = ['client_id', 'tenant_id', 'scope', 'server_api'];
+  const missingTags = requiredTags.filter(tag => !foundTags.has(tag));
+
+  return {
+    valid: true,
+    foundTags: Array.from(foundTags),
+    missingTags
+  };
+}
+
+function parseOvpnFileDirective(line, fileDirectives) {
+  const match = String(line || '').match(/^\s*([^\s#;]+)\s+(.+)$/);
+  if (!match) return null;
+
+  const directiveName = match[1];
+  if (!fileDirectives.includes(directiveName)) return null;
+
+  let rest = match[2].trimStart();
+  let fileNamePart = '';
+  let extraParams = '';
+
+  if (rest.startsWith('"') || rest.startsWith("'")) {
+    const quote = rest[0];
+    let escaped = false;
+    let endIndex = -1;
+    for (let i = 1; i < rest.length; i++) {
+      const char = rest[i];
+      if (char === '\\' && !escaped) {
+        escaped = true;
+        continue;
+      }
+      if (char === quote && !escaped) {
+        endIndex = i;
+        break;
+      }
+      escaped = false;
+    }
+
+    if (endIndex === -1) {
+      fileNamePart = rest.slice(1);
+      extraParams = '';
+    } else {
+      fileNamePart = rest.slice(1, endIndex).replace(/\\(["'])/g, '$1');
+      extraParams = rest.slice(endIndex + 1).trim();
+    }
+  } else {
+    const parts = rest.split(/\s+/);
+    fileNamePart = parts[0];
+    extraParams = parts.slice(1).join(' ');
+  }
+
+  return { directiveName, fileNamePart, extraParams };
+}
+
+function formatOvpnDirectivePath(filePath) {
+  const normalizedPath = process.platform === 'win32' ? filePath.replace(/\\/g, '\\\\') : filePath;
+  if (/\s|["']/.test(normalizedPath)) {
+    return `"${normalizedPath.replace(/"/g, '\\"')}"`;
+  }
+  return normalizedPath;
+}
+
 async function readJsonWithBackup(filePath, fallbackValue, context = 'json_file') {
   if (!(await fileExists(filePath))) {
     return { success: true, data: fallbackValue, source: 'default' };
@@ -1330,15 +1509,13 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
   try {
     await fsAsync.mkdir(profileDir, { recursive: true });
 
-    let originalContent = await fsAsync.readFile(originalOvpnPath, 'utf-8');
+    const originalContent = await fsAsync.readFile(originalOvpnPath, 'utf-8');
     const originalDir = path.dirname(originalOvpnPath);
+    const originalLineCount = originalContent.split('\n').length;
 
     console.log(`📂 Processando arquivo OVPN: ${originalOvpnPath}`);
     console.log(`📁 Diretório do perfil: ${profileDir}`);
-    console.log('📄 Conteúdo original (primeiras 20 linhas):');
-    originalContent.split('\n').slice(0, 20).forEach((line, i) => {
-      console.log(`  ${i + 1}: ${line}`);
-    });
+    console.log(`📄 Metadados OVPN original: ${originalLineCount} linhas, ${Buffer.byteLength(originalContent, 'utf8')} bytes`);
 
     const processedLines = [];
     const filesToCopy = new Set();
@@ -1350,12 +1527,34 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
       server_api: null
     };
     
+    const fileDirectives = ['ca', 'cert', 'key', 'tls-auth', 'tls-crypt', 'pkcs12', 'dh', 'extra-certs', 'crl-verify'];
+    const inlineBlockStartRegex = /^\s*<([a-zA-Z0-9_-]+)>\s*$/;
+    const inlineBlockEndRegex = /^\s*<\/([a-zA-Z0-9_-]+)>\s*$/;
+    let currentInlineBlock = null;
+
     const lines = originalContent.split('\n');
     for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].trim();
+      const originalLine = lines[i].replace(/\r$/, '');
+      const trimmedLine = originalLine.trim();
 
-      if (line.startsWith('#AZURE:')) {
-        const azureLine = line.substring(7).trim();
+      if (currentInlineBlock) {
+        processedLines.push(originalLine);
+        const blockEndMatch = trimmedLine.match(inlineBlockEndRegex);
+        if (blockEndMatch && blockEndMatch[1].toLowerCase() === currentInlineBlock.toLowerCase()) {
+          currentInlineBlock = null;
+        }
+        continue;
+      }
+
+      const blockStartMatch = trimmedLine.match(inlineBlockStartRegex);
+      if (blockStartMatch) {
+        currentInlineBlock = blockStartMatch[1];
+        processedLines.push(originalLine);
+        continue;
+      }
+
+      if (trimmedLine.startsWith('#AZURE:')) {
+        const azureLine = trimmedLine.substring(7).trim();
         const [key, value] = azureLine.split('=').map(s => s.trim());
 
         if (key && value) {
@@ -1381,85 +1580,75 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
         continue;
       }
 
-      if (!line || line.startsWith('#')) {
-        processedLines.push(line);
+      if (/^keysize\b/i.test(trimmedLine)) {
+        console.log('ℹ️ Diretiva keysize removida por compatibilidade com OpenVPN 2.6+:', trimmedLine);
+        continue;
+      }
+
+      if (!trimmedLine || trimmedLine.startsWith('#')) {
+        processedLines.push(originalLine);
         continue;
       }
       
-      if (line.startsWith('auth-user-pass')) {
+      if (/^auth-user-pass\b/i.test(trimmedLine)) {
         continue;
       }
-      
-      const fileDirectives = ['ca', 'cert', 'key', 'tls-auth', 'tls-crypt', 'pkcs12', 'dh', 'extra-certs', 'crl-verify'];
-      
-       for (const directive of fileDirectives) {
-         if (line.startsWith(directive + ' ')) {
-           console.log(`🔍 Processando diretiva: ${line}`);
 
-           const parts = line.split(/\s+/);
-           if (parts.length >= 2) {
-             const directiveName = parts[0];
-             let fileNamePart = parts[1];
-             let extraParams = parts.slice(2).join(' ');
+      let outputLine = originalLine;
+      const parsedDirective = parseOvpnFileDirective(trimmedLine, fileDirectives);
 
-             console.log(`   Diretiva: ${directiveName}, Arquivo: ${fileNamePart}, Extra: ${extraParams}`);
-             console.log(`   Parts: ${JSON.stringify(parts)}`);
-            
-            if (fileNamePart) {
-              let absoluteSourcePath;
-              
-              if (path.isAbsolute(fileNamePart)) {
-                absoluteSourcePath = fileNamePart;
-              } else {
-                const possiblePaths = [
-                  path.join(originalDir, fileNamePart),
-                  path.join(originalDir, '..', fileNamePart),
-                  path.join(__dirname, fileNamePart),
-                  fileNamePart
-                ];
-                
-                for (const possiblePath of possiblePaths) {
-                  if (await fileExists(possiblePath)) {
-                    absoluteSourcePath = possiblePath;
-                    break;
-                  }
-                }
-                
-                if (!absoluteSourcePath) {
-                  absoluteSourcePath = path.join(originalDir, fileNamePart);
-                }
-              }
-              
-              if (await fileExists(absoluteSourcePath)) {
-                const fileName = path.basename(absoluteSourcePath);
-                const targetFilePath = path.join(profileDir, fileName);
-                
-                filesToCopy.add({ 
-                  source: absoluteSourcePath, 
-                  target: targetFilePath,
-                  directive: directiveName
-                });
-                
-                // Escape backslashes for Windows OpenVPN config
-                const escapedPath = process.platform === 'win32' ? targetFilePath.replace(/\\/g, '\\\\') : targetFilePath;
-                line = `${directiveName} ${escapedPath}`;
-                if (extraParams) {
-                  line += ` ${extraParams}`;
-                }
-                
-                console.log(`✅ Arquivo identificado: ${fileName} (${directiveName})`);
-                console.log(`   Caminho absoluto: ${targetFilePath}`);
-              } else {
-                console.error(`❌ Arquivo não encontrado: ${absoluteSourcePath}`);
-                throw new Error(`Arquivo obrigatório não encontrado para ${directiveName}: ${fileNamePart}`);
-              }
+      if (parsedDirective?.fileNamePart) {
+        const { directiveName, fileNamePart, extraParams } = parsedDirective;
+        console.log(`🔍 Processando diretiva externa: ${directiveName} (${fileNamePart})`);
+
+        let absoluteSourcePath;
+
+        if (path.isAbsolute(fileNamePart)) {
+          absoluteSourcePath = fileNamePart;
+        } else {
+          const possiblePaths = [
+            path.join(originalDir, fileNamePart),
+            path.join(originalDir, '..', fileNamePart),
+            path.join(__dirname, fileNamePart),
+            fileNamePart
+          ];
+
+          for (const possiblePath of possiblePaths) {
+            if (await fileExists(possiblePath)) {
+              absoluteSourcePath = possiblePath;
+              break;
             }
           }
-          break;
+
+          if (!absoluteSourcePath) {
+            absoluteSourcePath = path.join(originalDir, fileNamePart);
+          }
+        }
+
+        if (await fileExists(absoluteSourcePath)) {
+          const fileName = path.basename(absoluteSourcePath);
+          const targetFilePath = path.join(profileDir, fileName);
+
+          filesToCopy.add({
+            source: absoluteSourcePath,
+            target: targetFilePath,
+            directive: directiveName
+          });
+
+          outputLine = `${directiveName} ${formatOvpnDirectivePath(targetFilePath)}`;
+          if (extraParams) {
+            outputLine += ` ${extraParams}`;
+          }
+
+          console.log(`✅ Arquivo identificado: ${fileName} (${directiveName})`);
+          console.log(`   Destino: ${targetFilePath}`);
+        } else {
+          console.error(`❌ Arquivo não encontrado: ${absoluteSourcePath}`);
+          throw new Error(`Arquivo obrigatório não encontrado para ${directiveName}: ${fileNamePart}`);
         }
       }
       
-      processedLines.push(line);
+      processedLines.push(outputLine);
     }
     
     for (let file of filesToCopy) {
@@ -1472,25 +1661,24 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
       }
     }
     
-    if (!processedLines.some(line => line.startsWith('auth-user-pass'))) {
+    if (!processedLines.some(line => /^\s*auth-user-pass\b/i.test(line))) {
       processedLines.push('auth-user-pass');
     }
+
+    // Garante que 'dev tun' existe — perfis iOS/OpenVPN Connect não incluem essa diretiva
+    // mas ela é obrigatória no Linux CLI. 'dev' pode ser 'dev tun', 'dev tap', 'dev tunX', etc.
+    if (!processedLines.some(line => /^\s*dev\s+/i.test(line.trim()))) {
+      // Insere no início para melhor compatibilidade (OpenVPN lê em ordem, mas dev é uma das primeiras diretivas esperadas)
+      processedLines.unshift('dev tun');
+    }
     
-    const processedContent = processedLines.filter(line => line.trim() !== '').join('\n');
+    const processedContent = processedLines.join('\n');
     const targetOvpnPath = path.join(profileDir, `${profileId}.ovpn`);
     await fsAsync.writeFile(targetOvpnPath, processedContent, 'utf-8');
 
     console.log(`📄 Configuração processada salva em: ${targetOvpnPath}`);
-    console.log('📄 Conteúdo processado (primeiras 20 linhas):');
-    processedContent.split('\n').slice(0, 20).forEach((line, i) => {
-      console.log(`  ${i + 1}: ${line}`);
-    });
-
     console.log(`✅ Perfil OVPN processado salvo em: ${targetOvpnPath}`);
-    console.log('📄 Conteúdo processado (primeiras 20 linhas):');
-    processedContent.split('\n').slice(0, 20).forEach((line, i) => {
-      console.log(`  ${i + 1}: ${line}`);
-    });
+    console.log(`📄 Metadados OVPN processado: ${processedLines.length} linhas, ${Buffer.byteLength(processedContent, 'utf8')} bytes, arquivos externos copiados: ${filesToCopy.size}`);
     
     return {
       success: true,
@@ -1568,6 +1756,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       const profileDir = ovpnResult.profileDir;
       const configPath = ovpnResult.path;
+      const ovpnContent = ovpnResult.content || '';
+      const hasStaticChallenge = /static-challenge/i.test(ovpnContent);
+      const authRetryMode = hasStaticChallenge ? 'interact' : 'nointeract';
 
       const normalizeCredentialValue = (value, { trim = false } = {}) => {
         let normalized = String(value ?? '');
@@ -1609,13 +1800,20 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
        console.log(`🔐 Arquivo de autenticação criado: ${authFilePath}`);
 
-       const openvpnArgs = [
-         '--config', configPath,
-         '--auth-user-pass', authFilePath,
-         '--auth-retry', 'interact'
-       ];
+        const openvpnArgs = [
+          '--config', configPath,
+          '--auth-user-pass', authFilePath,
+          '--auth-retry', authRetryMode
+        ];
 
-       if (shouldEnableExplicitExitNotify(ovpnResult.content)) {
+        logger.log('CONNECTION', 'AUTH_RETRY_MODE', {
+          connectionId,
+          profileId,
+          authRetryMode,
+          hasStaticChallenge
+        });
+
+        if (shouldEnableExplicitExitNotify(ovpnContent)) {
          openvpnArgs.push('--explicit-exit-notify', '3');
          logger.log('CONNECTION', 'EXPLICIT_EXIT_NOTIFY_ENABLED', {
            connectionId,
@@ -1684,12 +1882,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                 elevationMethodStored: currentElevationMethod
               });
               console.log(`🔐 Processo já é root — invocando ${openvpnPath} diretamente`);
-            } else if (process.env.DISPLAY && pkexecAvailable) {
-               // Verificar se perfil tem static-challenge (2FA) — pkexec intercepta stdin e quebra o challenge
-               const ovpnContent = ovpnResult.content || '';
-               const hasStaticChallenge = /static-challenge/i.test(ovpnContent);
-
-               if (hasStaticChallenge) {
+             } else if (process.env.DISPLAY && pkexecAvailable) {
+                // Verificar se perfil tem static-challenge (2FA) — pkexec intercepta stdin e quebra o challenge
+                if (hasStaticChallenge) {
                  // 2FA detectado: pkexec bloqueia stdin — usar sudo para preservar challenge flow
                  openvpnCommand = 'sudo';
                  currentElevationMethod = 'sudo';
@@ -1704,19 +1899,22 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                  });
                  console.log(`🔐 2FA detectado (static-challenge) — usando sudo para preservar stdin`);
                } else {
-                 openvpnCommand = 'pkexec';
-                 currentElevationMethod = 'pkexec';
-                 openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', openvpnPath, ...openvpnArgs];
-                 logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
-                   connectionId,
-                   strategy: 'pkexec',
-                   command: openvpnCommand,
-                   args: openvpnArgsFinal.slice(0, 3),
-                   reason: 'display_and_pkexec_available',
-                   elevationMethodStored: currentElevationMethod
-                 });
-                 console.log(`🔐 Usando pkexec com stdbuf e ${openvpnPath} para isolamento e buffering`);
-               }
+                  // BUG2-FIX: pkexec deve receber openvpnPath diretamente (policy cobre /usr/bin/openvpn,
+                  // não /usr/bin/stdbuf). SYSTEMD_ASK_PASSWORD já está em spawnOptions.env.
+                  openvpnCommand = 'pkexec';
+                  currentElevationMethod = 'pkexec';
+                  openvpnArgsFinal = [openvpnPath, ...openvpnArgs];
+                  logger.log('CONNECTION', 'ELEVATION_STRATEGY', {
+                    connectionId,
+                    strategy: 'pkexec',
+                    command: openvpnCommand,
+                    args: openvpnArgsFinal.slice(0, 2),
+                    reason: 'display_and_pkexec_available',
+                    elevationMethodStored: currentElevationMethod,
+                    stdbufRemoved: true
+                  });
+                  console.log(`🔐 Usando pkexec ${openvpnPath} (SYSTEMD_ASK_PASSWORD via env, sem stdbuf)`);
+                }
              } else {
                openvpnCommand = 'sudo';
                currentElevationMethod = 'sudo';
@@ -1804,18 +2002,60 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          throw new Error('Plataforma não suportada');
        }
      
-        vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
-        vpnConnectionActive = true;
+         vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
+         vpnConnectionActive = true;
 
-        currentOvpnPath = configPath;
+         currentOvpnPath = configPath;
+         currentConnectionMeta = buildBluepexConnectionMeta({
+           connectionId,
+           profileId,
+           profileType: 'user',
+           configPath,
+           authFilePath,
+           vpnPid: vpnProcess.pid,
+           wrapperPid: vpnProcess.pid
+         });
+         persistBluepexConnectionMeta(currentConnectionMeta);
 
-        console.log(`🔌 [MAIN] Processo OpenVPN iniciado com PID: ${vpnProcess.pid}`);
+         console.log(`🔌 [MAIN] Processo OpenVPN iniciado com PID: ${vpnProcess.pid}`);
         logger.logConnectionStart(profileId, 'user', 'openvpn-userpass');
 
         let connectionEstablished = false;
         let challengeDetected = false;
         let authFailed = false;
         let stdinReady = false;
+        let stderrBuffer = '';
+
+        const handleAuthFailure = (source) => {
+          if (authFailed) return;
+          authFailed = true;
+          suppressNextReconnect = true;
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('vpn-status', 'Falha de autenticação (usuário/senha/token incorretos)');
+          }
+
+          ipcMain.removeAllListeners('send-challenge-response');
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+          if (challengeTimeout) clearTimeout(challengeTimeout);
+
+          logger.log('CONNECTION', 'AUTH_FAILED_DETECTED', {
+            connectionId,
+            profileId,
+            source
+          });
+
+          // Mata via rotina BluePex específica/elevada; não usar vpnProcess.kill simples para pkexec/root.
+          killVPNConnection().catch((killError) => {
+            logger.logSystemError('AUTH_FAILED_KILL_FAILED', killError, {
+              connectionId,
+              profileId,
+              source
+            });
+          });
+
+          rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+        };
 
         const parseChallengeMessage = (text) => {
           const challengeMatch = text.match(/CHALLENGE:\s*([^\n\r]+)/);
@@ -1897,30 +2137,23 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           if (!stdinReady) {
             stdinReady = true;
             console.log('🔄 OpenVPN stdin pronto para entrada');
-          }
+           }
 
-          if (output.includes('AUTH_FAILED') && !authFailed) {
-            authFailed = true;
-            mainWindow.webContents.send('vpn-status', 'Falha de autenticação (usuário/senha incorretos)');
-            ipcMain.removeAllListeners('send-challenge-response');
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (challengeTimeout) clearTimeout(challengeTimeout);
-            if (vpnProcess && !vpnProcess.killed) {
-              try {
-                vpnProcess.kill('SIGTERM');
-              } catch (_) {}
-            }
-            rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
-            return;
-          }
+           if (output.includes('AUTH_FAILED') && !authFailed) {
+             handleAuthFailure('stdout');
+             return;
+           }
 
           if ((output.includes('Initialization Sequence Completed') || output.includes('Connected')) && !connectionEstablished) {
            connectionEstablished = true;
-           vpnConnectionActive = true;
-           console.log('✅ [MAIN] VPN conectada com sucesso!');
-           logger.logConnectionSuccess(profileId, 'user', { pid: vpnProcess.pid });
-           mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
-           resolveOnce({ pid: vpnProcess.pid });
+            vpnConnectionActive = true;
+            const bluepexPid = refreshTrackedBluepexPid(currentConnectionMeta) || vpnProcess.pid;
+            currentConnectionMeta = { ...currentConnectionMeta, vpnPid: bluepexPid };
+            persistBluepexConnectionMeta(currentConnectionMeta);
+            console.log('✅ [MAIN] VPN conectada com sucesso!');
+            logger.logConnectionSuccess(profileId, 'user', { pid: bluepexPid, wrapperPid: vpnProcess.pid });
+            mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
+            resolveOnce({ pid: bluepexPid });
 
            if (connectionTimeout) clearTimeout(connectionTimeout);
            if (challengeTimeout) clearTimeout(challengeTimeout);
@@ -1952,24 +2185,17 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
        vpnProcess.stderr.on('data', (data) => {
          const error = data.toString();
+         stderrBuffer += error; // acumula stderr para diagnóstico no close
          console.error('OpenVPN stderr:', error);
          if (mainWindow && !mainWindow.isDestroyed()) {
            mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
          }
 
-          if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
-            console.error(`❌ Falha na autenticação`);
-            authFailed = true;
-            ipcMain.removeAllListeners('send-challenge-response');
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (challengeTimeout) clearTimeout(challengeTimeout);
-            if (vpnProcess && !vpnProcess.killed) {
-              try {
-                vpnProcess.kill('SIGTERM');
-              } catch (_) {}
-            }
-            rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
-          }
+           if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
+             console.error(`❌ Falha na autenticação`);
+             handleAuthFailure('stderr');
+             return;
+           }
 
          if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
             console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
@@ -2016,6 +2242,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
             currentElevationMethod = null;
             currentOvpnPath = null;
+            clearBluepexConnectionMeta();
 
            const manualDisconnect = suppressNextReconnect;
            if (manualDisconnect) {
@@ -2030,7 +2257,15 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
               scheduleReconnect(profileId, 'user');
             }
 
-            if (!wasEstablished && !authFailed) {
+            if (code !== 0 && stderrBuffer) {
+              logger.log('CONNECTION', 'OPENVPN_STDERR_ON_EXIT', {
+                connectionId,
+                exitCode: code,
+                stderr: stderrBuffer.slice(-2000) // últimos 2000 chars
+              }, 'ERROR');
+            }
+
+           if (!wasEstablished && !authFailed) {
               rejectOnce(new Error(`OpenVPN encerrou antes de conectar (código ${code})`));
             }
 
@@ -2047,8 +2282,21 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        });
 
         vpnProcess.on('error', (error) => {
+          // EPERM com syscall 'kill' é falso positivo do Node.js ao verificar PID de processo root.
+          // O pkexec executou normalmente — o openvpn saiu por outro motivo (ver exit_code no 'close').
+          if (error.code === 'EPERM' && error.syscall === 'kill') {
+            console.log('⚠️ [CONN] EPERM kill ignorado (processo root, Node não pode verificar PID) — aguardando evento close para diagnóstico real');
+            logger.log('CONNECTION', 'EPERM_KILL_IGNORED', {
+              connectionId,
+              note: 'EPERM_syscall_kill_is_nodejs_internal_pid_check_not_spawn_failure',
+              pid: vpnProcess?.pid
+            });
+            return; // NÃO rejeitar a promise — aguarda evento 'close' com exit_code real
+          }
+
           console.error('❌ Erro ao executar OpenVPN:', error);
           vpnConnectionActive = false;
+          clearBluepexConnectionMeta();
 
           logger.log('CONNECTION', 'PROCESS_SPAWN_ERROR', {
             connectionId,
@@ -2167,7 +2415,11 @@ ipcMain.handle('select-ovpn-file', async () => {
   console.log('Chamando dialog.showOpenDialog');
   const result = await dialog.showOpenDialog({
     title: 'Selecionar arquivo OVPN',
-    properties: ['openFile']
+    properties: ['openFile'],
+    filters: [
+      { name: 'Arquivos OpenVPN', extensions: ['ovpn'] },
+      { name: 'Todos os arquivos', extensions: ['*'] }
+    ]
   });
   console.log('Dialog result:', result);
 
@@ -2185,10 +2437,16 @@ ipcMain.handle('select-ovpn-file', async () => {
   console.log('Arquivo selecionado:', filePath);
 
   try {
-    const content = await fsAsync.readFile(filePath, 'utf-8');
-    const fileName = path.basename(filePath, '.ovpn');
+    const validation = await validateOvpnFileForImport(filePath);
+    if (!validation.valid) {
+      console.warn('Arquivo OVPN rejeitado:', { filePath, error: validation.error });
+      return { success: false, error: validation.error };
+    }
 
-    console.log('Arquivo lido com sucesso, tamanho:', content.length);
+    const content = validation.content;
+    const fileName = path.parse(filePath).name;
+
+    console.log('Arquivo OVPN validado com sucesso:', { filePath, fileName, metadata: validation.metadata });
     return {
       success: true,
       filePath: filePath,
@@ -2214,14 +2472,15 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
       operation: 'save_ovpn_to_profile'
     });
 
-    if (!fs.existsSync(originalOvpnPath)) {
+    const ovpnValidation = await validateOvpnFileForImport(originalOvpnPath);
+    if (!ovpnValidation.valid) {
       logger.log('PROFILE', 'ORIGINAL_FILE_NOT_FOUND', {
         profileId,
         ovpnFileName,
         originalOvpnPath,
-        exists: false
+        error: ovpnValidation.error
       }, 'ERROR');
-      return { success: false, error: `Arquivo OVPN não encontrado: ${originalOvpnPath}` };
+      return { success: false, error: ovpnValidation.error };
     }
 
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId);
@@ -2617,6 +2876,20 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
   const azureOvpnDir = AZURE_PROFILES_DIR;
 
   try {
+    const ovpnValidation = await validateOvpnFileForImport(originalOvpnPath);
+    if (!ovpnValidation.valid) {
+      return { success: false, error: ovpnValidation.error };
+    }
+
+    const azureTagsValidation = validateAzureOvpnTags(ovpnValidation.content || ovpnContent);
+    if (!azureTagsValidation.valid) {
+      return { success: false, error: azureTagsValidation.error };
+    }
+
+    if (azureTagsValidation.missingTags?.length) {
+      console.warn(`⚠️ Perfil Azure com tags #AZURE incompletas: ${azureTagsValidation.missingTags.join(', ')}`);
+    }
+
     const processResult = await processAndCopyOvpnFiles(originalOvpnPath, profileId, azureOvpnDir);
     if (!processResult.success) {
       return { success: false, error: processResult.error };
@@ -2729,36 +3002,43 @@ ipcMain.handle('load-app-state', async () => {
     if (stateRead.source !== 'default') {
       const state = stateRead.data && typeof stateRead.data === 'object' ? stateRead.data : {};
 
-      // IS002: validar se o PID salvo ainda corresponde a um processo OpenVPN real
-      if (state.vpnPid) {
-        const pid = Number(state.vpnPid);
-        let processAlive = false;
-        try {
-          process.kill(pid, 0); // sinal 0 = apenas verificação de existência
-          // No Linux/Mac confirma também que é openvpn
-          if (process.platform !== 'win32') {
-            const { execSync } = require('child_process');
-            try {
-              const cmdline = execSync(`cat /proc/${pid}/comm 2>/dev/null`, { encoding: 'utf8' }).trim();
-              processAlive = cmdline === 'openvpn';
-            } catch (_) {
-              processAlive = false;
-            }
-          } else {
-            processAlive = true; // no Windows confia no kill(0) + hasAnyOpenVpnProcess()
-          }
-        } catch (_) {
-          processAlive = false;
-        }
+      // IS002: validar se o PID salvo ainda corresponde a sessão BluePex rastreada
+      if (state.vpnPid || state.connectionOwner === 'bluepex') {
+        const meta = state.connectionOwner === 'bluepex' ? {
+          connectionOwner: 'bluepex',
+          connectionId: state.connectionId,
+          profileId: state.profileId,
+          profileType: state.profileType,
+          ovpnPath: state.ovpnPath || state.configPath,
+          configPath: state.configPath || state.ovpnPath,
+          normalizedConfigPath: normalizePathForCompare(state.configPath || state.ovpnPath),
+          authFilePath: state.authFilePath || null,
+          startedAt: state.startedAt || null,
+          vpnPid: state.vpnPid ? Number(state.vpnPid) : null,
+          wrapperPid: state.wrapperPid ? Number(state.wrapperPid) : null
+        } : null;
+        const bluepexPid = meta ? refreshTrackedBluepexPid(meta) : null;
 
-        if (!processAlive) {
-          console.log(`⚠️ [IS002] PID ${pid} salvo não corresponde a processo OpenVPN ativo — limpando estado`);
+        if (!bluepexPid) {
+          console.log(`⚠️ [IS002] Estado salvo não corresponde a sessão BluePex ativa — limpando estado`);
           state.vpnPid = null;
           state.vpnConnected = false;
+          state.wrapperPid = null;
+          state.connectionOwner = null;
+          state.connectionId = null;
+          state.profileId = null;
+          state.profileType = null;
+          state.ovpnPath = null;
+          state.configPath = null;
+          state.authFilePath = null;
+          state.startedAt = null;
           // Persiste o estado limpo para evitar reincidência
           try {
             await writeJsonWithBackup(statePath, { ...state, lastSaved: new Date().toISOString() }, 'app_state');
           } catch (_) {}
+        } else {
+          state.vpnPid = bluepexPid;
+          state.vpnConnected = true;
         }
       }
 
@@ -2947,13 +3227,26 @@ ipcMain.handle('publish-token', async (event, username, token) => {
     logger.log('AZURE', 'TOKEN_PUBLISH_START', { username, serverApi: config.server_api });
 
     const response = await axios.post(config.server_api, { username, jwt_token: token });
-    const shortId =
+    const shortIdRaw =
       response?.data?.short_id ||
       response?.data?.shortID ||
       response?.data?.id ||
       response?.data?.data?.short_id ||
       response?.data?.data?.shortID ||
       null;
+    const shortId = typeof shortIdRaw === 'string' ? shortIdRaw.trim() : (shortIdRaw ? String(shortIdRaw).trim() : '');
+
+    if (!shortId) {
+      const responseData = response?.data && typeof response.data === 'object' ? response.data : {};
+      logger.log('AZURE', 'TOKEN_PUBLISH_FAILURE', {
+        username,
+        serverApi: config.server_api,
+        status: response?.status || null,
+        responseKeys: Object.keys(responseData),
+        nestedDataKeys: responseData.data && typeof responseData.data === 'object' ? Object.keys(responseData.data) : []
+      }, 'WARN');
+      throw new Error('Backend não retornou short_id do Entra ID.');
+    }
 
     // Persiste short_id para o próximo connect-openvpn
     try {
@@ -2988,6 +3281,7 @@ ipcMain.handle('publish-token', async (event, username, token) => {
 
 ipcMain.handle('connect-openvpn', async () => {
   suppressNextReconnect = false;
+  const connectionId = `conn_azure_${Date.now()}`;
   const pkexecAvailableGlobal = await checkPkexecAvailable();
   return new Promise((resolve, reject) => {
     console.log(`🔗 [MAIN] connect-openvpn chamado - Timestamp: ${new Date().toISOString()}`);
@@ -3034,6 +3328,20 @@ ipcMain.handle('connect-openvpn', async () => {
       return;
     }
 
+    logger.log('CONNECTION', 'START', {
+      connectionId,
+      profileId: 'azure',
+      profileType: 'azure',
+      connectionType: 'openvpn-azure',
+      platform: process.platform,
+      user: process.env.USER || process.env.USERNAME || 'unknown',
+      timestamp: new Date().toISOString(),
+      hasShortId: true,
+      shortIdLength: shortID.length,
+      shortIdSuffix: shortID.slice(-4),
+      configPath: config.openvpn_config
+    });
+
     fs.writeFileSync(authPath, `${azureUpn}\n${shortID}`, 'utf-8');
     console.log(`🔐 [Azure] auth-user-pass preparado com UPN: ${azureUpn}`);
 
@@ -3045,6 +3353,11 @@ ipcMain.handle('connect-openvpn', async () => {
         profileId: 'azure',
         mode: 'azure'
       });
+    }
+    if (process.platform === 'linux') {
+      openvpnArgs.push('--pull-filter', 'ignore', 'block-outside-dns');
+      openvpnArgs.push('--pull-filter', 'ignore', 'comp-lzo');
+      openvpnArgs.push('--pull-filter', 'ignore', 'compress');
     }
     let openvpnCommand;
     let openvpnArgsFinal;
@@ -3094,10 +3407,12 @@ ipcMain.handle('connect-openvpn', async () => {
         currentElevationMethod = 'direct';
         console.log('🔐 [Azure] Processo já é root — invocando openvpn diretamente');
       } else if (process.env.DISPLAY && pkexecAvailable) {
+        // BUG2-FIX: pkexec deve receber openvpn diretamente (policy cobre /usr/bin/openvpn, não stdbuf).
+        // SYSTEMD_ASK_PASSWORD já está no env do spawn.
         openvpnCommand = 'pkexec';
-        openvpnArgsFinal = ['stdbuf', '-oL', '-eL', 'env', 'SYSTEMD_ASK_PASSWORD=', 'openvpn', ...openvpnArgs];
+        openvpnArgsFinal = ['openvpn', ...openvpnArgs];
         currentElevationMethod = 'pkexec';
-        console.log('🔐 [Azure] Usando pkexec para elevação interativa via GUI');
+        console.log('🔐 [Azure] Usando pkexec openvpn (sem stdbuf, SYSTEMD_ASK_PASSWORD via env)');
       } else {
         openvpnCommand = 'sudo';
         openvpnArgsFinal = ['-n', 'openvpn', ...openvpnArgs];
@@ -3107,12 +3422,148 @@ ipcMain.handle('connect-openvpn', async () => {
     }
 
     let connectionEstablished = false;
+    let azureAuthFailed = false;
+    let azureFatalFailed = false;
     let lastErrorOutput = '';
+    let promiseSettled = false;
 
     let connectionTimeout = null;
+    let azureFallbackInterval = null;
+    const azureFallbackStartedAt = Date.now();
+
+    const resolveOnce = (value) => {
+      if (promiseSettled) return;
+      promiseSettled = true;
+      resolve(value);
+    };
+
+    const rejectOnce = (error) => {
+      if (promiseSettled) return;
+      promiseSettled = true;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    const isAzureConnectedOutput = (output) => {
+      if (!output || typeof output !== 'string') return false;
+      return /Initialization Sequence Completed/i.test(output)
+        || /CONNECTED,SUCCESS/i.test(output)
+        || /\bConnected\b/i.test(output);
+    };
+
+    const isAzureFatalOutput = (output) => {
+      if (!output || typeof output !== 'string') return false;
+      return /AUTH_FAILED/i.test(output)
+        || /Cannot open TUN\/TAP dev/i.test(output)
+        || /Failed to open tun\/tap interface/i.test(output)
+        || /Exiting due to fatal error/i.test(output)
+        || /Failed to apply push options/i.test(output)
+        || /process-push-msg-failed/i.test(output)
+        || /server pushed compression settings/i.test(output)
+        || /Compression is not allowed/i.test(output)
+        || /TLS Error: TLS key negotiation failed/i.test(output)
+        || /sudo:.*password is required/i.test(output)
+        || /Not authorized/i.test(output);
+    };
+
+    const getAzureFatalLine = (output) => {
+      const lines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const fatalLine = [...lines].reverse().find((line) => isAzureFatalOutput(line));
+      return (fatalLine || lines[lines.length - 1] || 'Erro fatal no OpenVPN Azure').slice(-500);
+    };
+
+    const clearAzureFallbackInterval = () => {
+      if (azureFallbackInterval) {
+        clearInterval(azureFallbackInterval);
+        azureFallbackInterval = null;
+      }
+    };
+
+    const handleAzureConnected = (source, output) => {
+      if (connectionEstablished) return;
+      connectionEstablished = true;
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      clearAzureFallbackInterval();
+      vpnConnectionActive = true;
+      const bluepexPid = refreshTrackedBluepexPid(currentConnectionMeta) || vpnProcess.pid;
+      currentConnectionMeta = { ...currentConnectionMeta, vpnPid: bluepexPid };
+      persistBluepexConnectionMeta(currentConnectionMeta);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
+      }
+      console.log('✅ [Azure] VPN conectada com sucesso!');
+      logger.logConnectionSuccess('azure', 'azure', {
+        pid: bluepexPid,
+        wrapperPid: vpnProcess.pid,
+        source,
+        output: String(output || '').slice(-1000)
+      });
+      resolveOnce({ pid: bluepexPid, shortID });
+    };
+
+    const handleAzureAuthFailure = (source) => {
+      if (azureAuthFailed) return;
+      azureAuthFailed = true;
+      suppressNextReconnect = true;
+      lastErrorOutput = 'Falha de autenticação do OpenVPN.';
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-status', 'Falha de autenticação do OpenVPN Azure');
+      }
+
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      clearAzureFallbackInterval();
+
+      logger.log('CONNECTION', 'AUTH_FAILED_DETECTED', {
+        connectionId,
+        profileId: 'azure',
+        source
+      });
+
+      killVPNConnection().catch((killError) => {
+        logger.logSystemError('AUTH_FAILED_KILL_FAILED', killError, {
+          connectionId,
+          profileId: 'azure',
+          source
+        });
+      });
+
+      rejectOnce(new Error('Falha na autenticação do OpenVPN Azure'));
+    };
+
+    const handleAzureFatalOutput = (source, output) => {
+      if (connectionEstablished || azureFatalFailed) return;
+      azureFatalFailed = true;
+      suppressNextReconnect = true;
+      lastErrorOutput = getAzureFatalLine(output);
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-status', `Erro fatal no OpenVPN Azure: ${lastErrorOutput}`);
+      }
+
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      clearAzureFallbackInterval();
+
+      logger.log('CONNECTION', 'OPENVPN_AZURE_FATAL_OUTPUT', {
+        connectionId,
+        profileId: 'azure',
+        source,
+        error: lastErrorOutput
+      }, 'ERROR');
+
+      killVPNConnection().catch((killError) => {
+        logger.logSystemError('AZURE_FATAL_KILL_FAILED', killError, {
+          connectionId,
+          profileId: 'azure',
+          source
+        });
+      });
+
+      rejectOnce(new Error(`Erro fatal no OpenVPN Azure: ${lastErrorOutput}`));
+    };
 
     const cleanup = () => {
       if (connectionTimeout) clearTimeout(connectionTimeout);
+      clearAzureFallbackInterval();
       try {
         if (fs.existsSync(authPath)) {
           fs.unlinkSync(authPath);
@@ -3129,21 +3580,71 @@ ipcMain.handle('connect-openvpn', async () => {
       });
     } catch (spawnError) {
       cleanup();
-      reject(new Error(`Falha ao iniciar OpenVPN: ${spawnError.message}`));
+      rejectOnce(new Error(`Falha ao iniciar OpenVPN: ${spawnError.message}`));
       return;
     }
 
     vpnConnectionActive = true;
+    currentConnectionMeta = buildBluepexConnectionMeta({
+      connectionId,
+      profileId: 'azure',
+      profileType: 'azure',
+      configPath: config.openvpn_config,
+      authFilePath: authPath,
+      vpnPid: vpnProcess.pid,
+      wrapperPid: vpnProcess.pid
+    });
+    persistBluepexConnectionMeta(currentConnectionMeta);
+
+    if (process.platform === 'linux') {
+      logger.log('CONNECTION', 'AZURE_CONNECT_FALLBACK_WAITING', {
+        connectionId,
+        profileId: 'azure',
+        intervalMs: 2000,
+        minAliveMs: 10000
+      });
+
+      azureFallbackInterval = setInterval(() => {
+        if (connectionEstablished || azureAuthFailed || azureFatalFailed || promiseSettled) {
+          clearAzureFallbackInterval();
+          return;
+        }
+
+        const trackedPid = refreshTrackedBluepexPid(currentConnectionMeta);
+        const wrapperAlive = vpnProcess?.pid ? isPidAlive(vpnProcess.pid) : false;
+        const bluepexAlive = !!trackedPid || wrapperAlive;
+        const elapsedMs = Date.now() - azureFallbackStartedAt;
+
+        if (!bluepexAlive) {
+          return;
+        }
+
+        const vpnState = detectLocalVpnInterfaceState();
+        if (elapsedMs >= 10000 && vpnState.connected && !isAzureFatalOutput(lastErrorOutput)) {
+          logger.log('CONNECTION', 'AZURE_CONNECT_FALLBACK_CONFIRMED', {
+            connectionId,
+            profileId: 'azure',
+            elapsedMs,
+            pid: trackedPid || vpnProcess.pid,
+            detail: vpnState.detail
+          });
+          handleAzureConnected('local-vpn-state', vpnState.detail);
+        }
+      }, 2000);
+    }
 
     connectionTimeout = setTimeout(() => {
       if (!connectionEstablished) {
         vpnConnectionActive = false;
-        if (vpnProcess && !vpnProcess.killed) {
-          try {
-            vpnProcess.kill('SIGTERM');
-          } catch (_) {}
-        }
-        reject(new Error(`Timeout na conexão OpenVPN Azure. ${lastErrorOutput || ''}`.trim()));
+        suppressNextReconnect = true;
+        clearAzureFallbackInterval();
+        killVPNConnection().catch((killError) => {
+          logger.logSystemError('AZURE_TIMEOUT_KILL_FAILED', killError, {
+            connectionId,
+            profileId: 'azure'
+          });
+        });
+        rejectOnce(new Error(`Timeout na conexão OpenVPN Azure. ${lastErrorOutput || ''}`.trim()));
       }
     }, 120000);
 
@@ -3154,17 +3655,18 @@ ipcMain.handle('connect-openvpn', async () => {
         mainWindow.webContents.send('vpn-log', output);
       }
 
-      if ((output.includes('Initialization Sequence Completed') || output.includes('CONNECTED,SUCCESS')) && !connectionEstablished) {
-        connectionEstablished = true;
-        if (connectionTimeout) clearTimeout(connectionTimeout);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('vpn-connected', { pid: vpnProcess.pid });
-        }
-        resolve({ pid: vpnProcess.pid, shortID });
+      if (isAzureConnectedOutput(output) && !connectionEstablished) {
+        handleAzureConnected('stdout', output);
       }
 
       if (output.includes('AUTH_FAILED')) {
-        lastErrorOutput = 'Falha de autenticação do OpenVPN.';
+        handleAzureAuthFailure('stdout');
+        return;
+      }
+
+      if (isAzureFatalOutput(output)) {
+        handleAzureFatalOutput('stdout', output);
+        return;
       }
     });
 
@@ -3175,6 +3677,11 @@ ipcMain.handle('connect-openvpn', async () => {
         mainWindow.webContents.send('vpn-log', `ERRO: ${errorText}`);
       }
 
+      if (isAzureConnectedOutput(errorText) && !connectionEstablished) {
+        handleAzureConnected('stderr', errorText);
+        return;
+      }
+
       if (errorText.includes('sudo:') || errorText.includes('a password is required')) {
         lastErrorOutput = 'Sudo requer senha/interação para iniciar OpenVPN (configure NOPASSWD ou use pkexec).';
       } else if (errorText.includes('pkexec') || errorText.includes('Not authorized')) {
@@ -3182,25 +3689,44 @@ ipcMain.handle('connect-openvpn', async () => {
       } else if (errorText.includes('Cannot open TUN/TAP dev')) {
         lastErrorOutput = 'Sem permissão para abrir TUN/TAP.';
       } else if (errorText.includes('AUTH_FAILED')) {
-        lastErrorOutput = 'Falha de autenticação do OpenVPN.';
+        handleAzureAuthFailure('stderr');
+        return;
       } else if (errorText.trim()) {
         lastErrorOutput = errorText.trim().split('\n').pop();
+      }
+
+      if (isAzureFatalOutput(errorText)) {
+        handleAzureFatalOutput('stderr', errorText);
+        return;
       }
     });
 
     vpnProcess.on('error', (error) => {
+      if (error.code === 'EPERM' && error.syscall === 'kill') {
+        console.log('⚠️ [Azure] EPERM kill ignorado (processo root, Node não pode verificar PID) — aguardando evento close para diagnóstico real');
+        logger.log('CONNECTION', 'EPERM_KILL_IGNORED', {
+          connectionId,
+          profileId: 'azure',
+          note: 'EPERM_syscall_kill_is_nodejs_internal_pid_check_not_spawn_failure',
+          pid: vpnProcess?.pid
+        });
+        return;
+      }
+
       vpnConnectionActive = false;
       cleanup();
+      clearBluepexConnectionMeta();
       vpnProcess = null;
-      reject(new Error(`Erro ao iniciar OpenVPN Azure: ${error.message}`));
+      rejectOnce(new Error(`Erro ao iniciar OpenVPN Azure: ${error.message}`));
     });
 
      vpnProcess.on('close', (code) => {
        console.log(`OpenVPN Azure encerrado com código ${code}`);
        const wasEstablished = connectionEstablished;
-       vpnConnectionActive = false;
-       cleanup();
-       vpnProcess = null;
+        vpnConnectionActive = false;
+         cleanup();
+        vpnProcess = null;
+        clearBluepexConnectionMeta();
 
        if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
          mainWindow.webContents.send('vpn-disconnected');
@@ -3210,16 +3736,24 @@ ipcMain.handle('connect-openvpn', async () => {
            suppressNextReconnect = false;
          }
          // RF010: reagendar reconexão se caiu inesperadamente
-         if (code !== 0 && AUTO_RECONNECT.enabled && !manualDisconnect) {
+          if (code !== 0 && AUTO_RECONNECT.enabled && !azureAuthFailed && !manualDisconnect) {
            AUTO_RECONNECT.lastProfileId = 'azure';
            AUTO_RECONNECT.lastProfileType = 'azure';
            scheduleReconnect('azure', 'azure');
          }
        }
 
-       if (!wasEstablished) {
-         reject(new Error(`OpenVPN Azure encerrou antes de conectar (código ${code}). ${lastErrorOutput || ''}`.trim()));
-       }
+       if (code !== 0 && lastErrorOutput) {
+          logger.log('CONNECTION', 'OPENVPN_AZURE_STDERR_ON_EXIT', {
+            connectionId,
+            exitCode: code,
+            stderr: lastErrorOutput.slice(-2000)
+          }, 'ERROR');
+        }
+
+       if (!wasEstablished && !azureAuthFailed && !azureFatalFailed) {
+           rejectOnce(new Error(`OpenVPN Azure encerrou antes de conectar (código ${code}). ${lastErrorOutput || ''}`.trim()));
+         }
      });
   });
 });
@@ -3236,6 +3770,8 @@ async function killVPNConnection() {
   }
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Executa um comando e retorna resultado sem lançar exceção
   const execCommand = (command) => new Promise((resolve) => {
     exec(command, (error, stdout, stderr) => {
       resolve({
@@ -3248,95 +3784,240 @@ async function killVPNConnection() {
     });
   });
 
-  const verifyDisconnected = () => {
-    const trackedPid = getTrackedVpnPid();
-    if (trackedPid && isVpnPidRunning(trackedPid)) {
-      return false;
-    }
-    return !hasAnyOpenVpnProcess();
-  };
-  
-  try {
-    // Método 1: Matar processo vpnProcess se existir
-    if (vpnProcess && !vpnProcess.killed) {
-      console.log(`🔌 Matando processo VPN ativo: PID ${vpnProcess.pid}`);
-      
-      try {
-        vpnProcess.kill('SIGTERM');
-        console.log(`✅ SIGTERM enviado para ${vpnProcess.pid}`);
-      } catch (termErr) {
-        console.log(`❌ Erro SIGTERM: ${termErr.message}`);
+  // BUG1-FIX: kill elevado e cirúrgico para PID específico.
+  // Estratégia primária: pkexec /bin/kill coberto pela policy com.bluepex.kill
+  // (allow_active=yes → sem prompt de senha em sessão ativa).
+  // Fallback: sudo -n kill (sistemas com NOPASSWD configurado).
+  const sudoKillPid = (pid, signal) => new Promise((resolve) => {
+    const sigArg = signal === 'SIGKILL' ? '-9' : '-TERM';
+    // Usa pkexec /bin/kill coberto pela policy com.bluepex.kill (allow_active=yes, sem prompt de senha)
+    // Fallback: sudo -n kill se pkexec falhar (ex: sem DISPLAY ou polkit não instalado)
+    const pkexecCmd = `pkexec /bin/kill ${sigArg} ${Number(pid)}`;
+    exec(pkexecCmd, (pkexecError, pkexecStdout, pkexecStderr) => {
+      if (!pkexecError) {
+        resolve({
+          ok: true,
+          method: 'pkexec',
+          error: null,
+          stdout: (pkexecStdout || '').trim(),
+          stderr: (pkexecStderr || '').trim()
+        });
+      } else {
+        // Fallback: sudo -n
+        exec(`sudo -n kill ${sigArg} ${Number(pid)}`, (sudoError, sudoStdout, sudoStderr) => {
+          resolve({
+            ok: !sudoError,
+            method: 'sudo',
+            error: sudoError ? sudoError.message : null,
+            stdout: (sudoStdout || '').trim(),
+            stderr: (sudoStderr || '').trim(),
+            pkexecError: pkexecError.message,
+            pkexecStderr: (pkexecStderr || '').trim()
+          });
+        });
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    });
+  });
+
+  // verifyDisconnected verifica apenas se o openvpn rastreado BluePex ainda está vivo.
+  // NÃO usa hasAnyOpenVpnProcess() como critério de falha (não interfere com processos externos).
+  const verifyDisconnected = () => {
+    return !refreshTrackedBluepexPid();
+  };
+
+  try {
+    const meta = loadTrackedBluepexMetaFromState();
+    const bluepexPid = refreshTrackedBluepexPid(meta);
+    const wrapperPid = vpnProcess?.pid || meta?.wrapperPid || null;
+
+    if (!bluepexPid && !vpnProcess) {
+      // Nenhuma sessão BluePex rastreada — não matar processos externos
+      if (hasAnyOpenVpnProcess()) {
+        console.log('ℹ️ OpenVPN externo detectado; desconexão BluePex não matará processos externos.');
+      }
+      vpnConnectionActive = false;
+      clearBluepexConnectionMeta();
+      return { success: true, skipped: true, reason: 'no_tracked_bluepex_session' };
+    }
+
+    // --- AVISO TCP: explicit-exit-notify não é suportado em perfis TCP ---
+    const ovpnPath = currentOvpnPath || meta?.ovpnPath || meta?.configPath || null;
+    if (ovpnPath) {
+      try {
+        const ovpnContent = fs.readFileSync(ovpnPath, 'utf8');
+        if (/^\s*proto\s+tcp/im.test(ovpnContent)) {
+          console.log('⚠️ [KILL-TCP] Perfil TCP detectado — explicit-exit-notify não suportado pelo protocolo; servidor pode demorar keepalive timeout para limpar sessão');
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('vpn-log', '⚠️ Perfil TCP: servidor pode demorar para limpar sessão (keepalive timeout)\n');
+          }
+        }
+      } catch (e) {
+        console.log(`⚠️ [KILL-TCP] Não foi possível ler perfil ovpn para verificar proto: ${e.message}`);
+      }
+    }
+
+    // Determina se bluepexPid é distinto do wrapper (conexão com pkexec/sudo)
+    // hasSeparateOpenvpnPid = true  → há wrapper (pkexec/sudo) separado do openvpn
+    // isDirectConnection     = true → vpnProcess IS o próprio openvpn (sem wrapper elevado)
+    const hasSeparateOpenvpnPid = !!(bluepexPid && bluepexPid !== wrapperPid);
+    const isDirectConnection = !hasSeparateOpenvpnPid;
+
+    // =====================================================================
+    // PASSO 1 — SIGTERM DIRETO NO PROCESSO OPENVPN para enviar explicit-exit-notify
+    //
+    // RAZÃO: pkexec NÃO repassa SIGTERM ao filho openvpn (openvpn receberia
+    // SIGHUP, que trata como restart, nunca encerrando graciosamente).
+    // Ao mandar SIGTERM diretamente no PID do openvpn, ele envia
+    // explicit-exit-notify ao servidor UTM antes de encerrar.
+    // =====================================================================
+    if (hasSeparateOpenvpnPid && process.platform !== 'win32') {
+      console.log(`🔌 [KILL-1] PASSO 1: kill -TERM ${bluepexPid} (pkexec/sudo) — SIGTERM direto no openvpn para enviar explicit-exit-notify ao servidor UTM`);
+      const r = await sudoKillPid(bluepexPid, 'SIGTERM');
+      logger.log('CONNECTION', 'DISCONNECT_SIGTERM_SENT', {
+        pid: bluepexPid,
+        wrapperPid,
+        method: r.method,
+        ok: r.ok,
+        error: r.error,
+        stderr: r.stderr,
+        pkexecError: r.pkexecError,
+        pkexecStderr: r.pkexecStderr,
+        ovpnPath,
+        purpose: 'explicit_exit_notify_udp'
+      });
+      if (r.ok === false) {
+        logger.log('CONNECTION', 'DISCONNECT_SIGTERM_FAILED', {
+          pid: bluepexPid,
+          wrapperPid,
+          method: r.method,
+          error: r.error,
+          stderr: r.stderr,
+          pkexecError: r.pkexecError,
+          pkexecStderr: r.pkexecStderr,
+          ovpnPath,
+          purpose: 'explicit_exit_notify_udp'
+        }, 'ERROR');
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vpn-log', `🔌 SIGTERM enviado ao OpenVPN PID ${bluepexPid} para notificar o servidor UDP\n`);
+      }
+      console.log(`   resultado: ok=${r.ok} method=${r.method}${r.error ? ` err=${r.error}` : ''}${r.stderr ? ` stderr=${r.stderr}` : ''}`);
+      console.log('🔌 [KILL-1] Aguardando 8000ms para explicit-exit-notify (3 retransmissões UDP)...');
+      await sleep(8000);
+
+      if (verifyDisconnected()) {
+        console.log('✅ [KILL-1] OpenVPN encerrado após SIGTERM direto — explicit-exit-notify enviado com sucesso; pulando passos seguintes');
+      } else {
+        console.log('⚠️ [KILL-1] OpenVPN ainda vivo após 8s; prosseguindo para PASSO 2');
+      }
+    } else if (isDirectConnection) {
+      // Conexão direta (sem pkexec): vpnProcess IS o próprio openvpn
+      // vpnProcess.kill('SIGTERM') entrega SIGTERM diretamente ao openvpn
+      if (vpnProcess && !vpnProcess.killed) {
+        console.log(`🔌 [KILL-1] PASSO 1 (direct): vpnProcess.kill(SIGTERM) PID=${vpnProcess.pid} — openvpn direto, enviando explicit-exit-notify`);
+        try {
+          const directPid = bluepexPid || vpnProcess.pid;
+          vpnProcess.kill('SIGTERM');
+          logger.log('CONNECTION', 'DISCONNECT_SIGTERM_SENT', {
+            pid: directPid,
+            wrapperPid,
+            method: 'process.kill',
+            ok: true,
+            error: null,
+            stderr: null,
+            ovpnPath,
+            purpose: 'explicit_exit_notify_udp'
+          });
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('vpn-log', `🔌 SIGTERM enviado ao OpenVPN PID ${directPid} para notificar o servidor UDP\n`);
+          }
+        } catch (e) {
+          console.log(`⚠️ vpnProcess TERM (direct): ${e.message}`);
+          logger.log('CONNECTION', 'DISCONNECT_SIGTERM_FAILED', {
+            pid: bluepexPid || vpnProcess.pid,
+            wrapperPid,
+            method: 'process.kill',
+            error: e.message,
+            stderr: null,
+            ovpnPath,
+            purpose: 'explicit_exit_notify_udp'
+          }, 'ERROR');
+        }
+      }
+      console.log('🔌 [KILL-1] Aguardando 8000ms para explicit-exit-notify (conexão direta)...');
+      await sleep(8000);
+
+      if (verifyDisconnected()) {
+        console.log('✅ [KILL-1] OpenVPN direto encerrado após SIGTERM — explicit-exit-notify enviado');
+      } else {
+        console.log('⚠️ [KILL-1] OpenVPN direto ainda vivo após 8s; prosseguindo para PASSO 2');
+      }
+    } else if (bluepexPid && process.platform === 'win32') {
+      console.log(`🔌 [KILL-1] PASSO 1 (Windows): taskkill /PID ${bluepexPid} /T`);
+      await execCommand(`taskkill /PID ${bluepexPid} /T`);
+      await sleep(4000);
+    }
+
+    // =====================================================================
+    // PASSO 2 — SIGTERM NO WRAPPER (pkexec/sudo) para limpar árvore de processos
+    //
+    // Executado apenas se openvpn ainda estiver vivo após o PASSO 1.
+    // =====================================================================
+    if (!verifyDisconnected()) {
+      console.log('🔌 [KILL-2] PASSO 2: SIGTERM no wrapper (pkexec/sudo) para limpar árvore de processos');
 
       if (vpnProcess && !vpnProcess.killed) {
-        console.log(`🔌 Forçando SIGKILL em ${vpnProcess.pid}`);
-        try {
-          vpnProcess.kill('SIGKILL');
-          console.log(`✅ SIGKILL enviado para ${vpnProcess.pid}`);
-        } catch (killErr) {
-          console.log(`❌ Erro SIGKILL: ${killErr.message}`);
-        }
+        console.log(`   vpnProcess.kill(SIGTERM) PID=${vpnProcess.pid}`);
+        try { vpnProcess.kill('SIGTERM'); } catch (e) { console.log(`⚠️ vpnProcess TERM: ${e.message}`); }
       }
-      
-      vpnProcess = null;
-    }
-    
-    // Método 2: Matar TODOS os processos openvpn no sistema (com validação)
-    console.log('🔌 Matando TODOS os processos OpenVPN no sistema...');
-    
-    if (process.platform === 'linux') {
-      try {
-        const attempts = [
-          'pkexec pkill -TERM -x openvpn',
-          'sudo -n pkill -TERM -x openvpn',
-          'pkill -TERM -x openvpn',
-          'pkexec pkill -9 -x openvpn',
-          'sudo -n pkill -9 -x openvpn',
-          'pkill -9 -x openvpn'
-        ];
 
-        for (const command of attempts) {
-          const result = await execCommand(command);
-          if (result.ok) {
-            console.log(`✅ Comando de desconexão executado: ${command}`);
-          } else {
-            console.log(`⚠️ Comando falhou (${command}): ${result.error}`);
-          }
+      if (wrapperPid && wrapperPid !== bluepexPid) {
+        console.log(`   process.kill(${wrapperPid}, SIGTERM) — wrapper`);
+        try { process.kill(Number(wrapperPid), 'SIGTERM'); } catch (e) { console.log(`⚠️ wrapper TERM: ${e.message}`); }
+      }
 
-          await sleep(400);
-          if (verifyDisconnected()) {
-            console.log('✅ Sessão OpenVPN finalizada após comando de desconexão');
-            break;
-          }
-        }
-      } catch (err) {
-        console.log(`❌ Erro ao tentar matar processos: ${err.message}`);
-      }
-    } else if (process.platform === 'win32') {
-      const result = await execCommand('taskkill /F /IM openvpn.exe');
-      if (result.ok) {
-        console.log('✅ OpenVPN terminado no Windows');
-      } else {
-        console.log(`⚠️ taskkill falhou: ${result.error}`);
-      }
+      await sleep(1500);
     }
 
-    await sleep(500);
+    // =====================================================================
+    // PASSO 3 — SIGKILL de limpeza (somente se ainda vivo após SIGTERM)
+    // =====================================================================
+    if (!verifyDisconnected()) {
+      console.log('🔌 [KILL-3] PASSO 3: SIGKILL de limpeza (processo ainda vivo após todos os SIGTERM)');
+
+      if (bluepexPid && process.platform !== 'win32') {
+        console.log(`   kill -9 ${bluepexPid} (pkexec/sudo)`);
+        const r = await sudoKillPid(bluepexPid, 'SIGKILL');
+        console.log(`   KILL resultado: ok=${r.ok} method=${r.method}${r.error ? ` err=${r.error}` : ''}`);
+      } else if (bluepexPid && process.platform === 'win32') {
+        await execCommand(`taskkill /F /PID ${bluepexPid} /T`);
+      }
+
+      if (vpnProcess && !vpnProcess.killed) {
+        try { vpnProcess.kill('SIGKILL'); } catch (e) { console.log(`⚠️ vpnProcess KILL: ${e.message}`); }
+      }
+
+      if (wrapperPid && wrapperPid !== bluepexPid) {
+        try { process.kill(Number(wrapperPid), 'SIGKILL'); } catch (e) { console.log(`⚠️ wrapper KILL: ${e.message}`); }
+      }
+
+      await sleep(1000);
+    }
+
+    // Verificação final — baseada apenas no processo rastreado BluePex
     const disconnected = verifyDisconnected();
 
     if (!disconnected) {
-      console.log('❌ Desconexão não confirmada: processo OpenVPN ainda ativo');
+      console.log('❌ Desconexão não confirmada: sessão BluePex rastreada ainda ativa');
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('vpn-log', '❌ Falha ao confirmar desconexão: processo OpenVPN ainda ativo\n');
+        mainWindow.webContents.send('vpn-log', '❌ Falha ao confirmar desconexão: sessão BluePex ainda ativa\n');
       }
       return {
         success: false,
-        error: 'Não foi possível confirmar a desconexão da VPN. Processo OpenVPN ainda ativo.'
+        error: 'Não foi possível confirmar a desconexão da VPN BluePex rastreada.'
       };
     }
-    
+
     // Notificar desconexão
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vpn-log', '✅ VPN desconectada com sucesso\n');
@@ -3347,10 +4028,11 @@ async function killVPNConnection() {
     vpnConnectionActive = false;
     currentOvpnPath = null;
     currentElevationMethod = null;
-    
+    clearBluepexConnectionMeta();
+
     console.log('✅ Conexão VPN finalizada (MÉTODO DO FECHAR)');
     return { success: true };
-    
+
   } catch (error) {
     console.error('❌ Erro ao matar conexão VPN:', error);
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3363,6 +4045,9 @@ async function killVPNConnection() {
 // APENAS UM HANDLER - REMOVER O DUPLICADO!
 ipcMain.handle('kill-vpn-connection', async () => {
   console.log('🔌 [MAIN] Executando kill-vpn-connection via IPC');
+  // RF010: cancelar reconexão automática quando usuário desconectar manualmente via kill-vpn-connection
+  cancelReconnect();
+  suppressNextReconnect = true;
   return await killVPNConnection();
 });
 
@@ -3387,6 +4072,388 @@ ipcMain.on('internal-reconnect', (profileId, profileType) => {
 });
 
 // ============ VERIFICAÇÃO DE STATUS VPN ============
+
+function normalizePathForCompare(value) {
+  if (!value || typeof value !== 'string') return '';
+  let normalized = value.replace(/^file:\/\//i, '').trim();
+  try {
+    normalized = path.resolve(normalized);
+  } catch (_) {}
+  if (process.platform === 'win32') {
+    normalized = normalized.replace(/\\/g, '/').toLowerCase();
+  }
+  return normalized;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function getConfigPathFromArgs(args = []) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = String(args[i] || '');
+    if (arg === '--config' && args[i + 1]) return String(args[i + 1]);
+    if (arg.startsWith('--config=')) return arg.slice('--config='.length);
+  }
+  return null;
+}
+
+function getBluepexOvpnProfilesDirs() {
+  const dirs = new Set();
+  try {
+    dirs.add(normalizePathForCompare(path.join(app.getPath('userData'), 'ovpn_profiles')));
+  } catch (_) {}
+  if (process.platform === 'linux' && process.env.HOME) {
+    dirs.add(normalizePathForCompare(path.join(process.env.HOME, '.config', 'bluepex-vpn', 'ovpn_profiles')));
+  }
+  return [...dirs].filter(Boolean);
+}
+
+function isBluepexProfileConfigPath(configPath) {
+  const normalizedConfig = normalizePathForCompare(configPath);
+  if (!normalizedConfig) return false;
+  return getBluepexOvpnProfilesDirs().some((profilesDir) => {
+    const separator = process.platform === 'win32' ? '/' : path.sep;
+    const prefix = profilesDir.endsWith(separator) || profilesDir.endsWith('/') ? profilesDir : `${profilesDir}${separator}`;
+    return normalizedConfig === profilesDir || normalizedConfig.startsWith(prefix);
+  });
+}
+
+function listBluepexOpenVpnProfileProcesses() {
+  const processes = [];
+
+  try {
+    if (process.platform === 'linux') {
+      const procEntries = fs.readdirSync('/proc').filter((entry) => /^\d+$/.test(entry));
+      for (const pidText of procEntries) {
+        const args = readLinuxCmdline(pidText);
+        if (!args?.length) continue;
+        const command = path.basename(args[0] || '').toLowerCase();
+        if (!command.includes('openvpn')) continue;
+        const configPath = getConfigPathFromArgs(args);
+        if (!isBluepexProfileConfigPath(configPath)) continue;
+        const pid = Number(pidText);
+        if (Number.isInteger(pid) && pid > 0) {
+          processes.push({ pid, configPath });
+        }
+      }
+    } else if (process.platform === 'win32') {
+      const output = execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name=\'openvpn.exe\'\" | ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }"',
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      const lines = output.split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        const [pidText, ...cmdParts] = line.split('|');
+        const commandLine = cmdParts.join('|');
+        const match = commandLine.match(/--config(?:=|\s+)("[^"]+"|'[^']+'|\S+)/i);
+        const configPath = match ? match[1].replace(/^['"]|['"]$/g, '') : null;
+        if (!isBluepexProfileConfigPath(configPath)) continue;
+        const pid = Number(pidText);
+        if (Number.isInteger(pid) && pid > 0) {
+          processes.push({ pid, configPath });
+        }
+      }
+    }
+  } catch (error) {
+    console.log(`⚠️ Falha ao listar OpenVPN BluePex por diretório de perfis: ${error.message}`);
+  }
+
+  return processes;
+}
+
+function getActiveBluepexOpenVpnProcesses(meta = loadTrackedBluepexMetaFromState()) {
+  const processes = listBluepexOpenVpnProfileProcesses();
+  const trackedPid = refreshTrackedBluepexPid(meta);
+
+  if (trackedPid && !processes.some((processInfo) => processInfo.pid === trackedPid)) {
+    processes.push({ pid: trackedPid, configPath: meta?.configPath || meta?.ovpnPath || null });
+  }
+
+  return processes;
+}
+
+function buildBluepexConnectionMeta({ connectionId, profileId, profileType, configPath, authFilePath, vpnPid = null, wrapperPid = null }) {
+  const normalizedConfigPath = normalizePathForCompare(configPath);
+  return {
+    connectionOwner: 'bluepex',
+    connectionId,
+    profileId,
+    profileType,
+    ovpnPath: configPath,
+    configPath,
+    normalizedConfigPath,
+    authFilePath: authFilePath || null,
+    startedAt: new Date().toISOString(),
+    vpnPid: vpnPid ? Number(vpnPid) : null,
+    wrapperPid: wrapperPid ? Number(wrapperPid) : null,
+    elevationMethod: currentElevationMethod || null
+  };
+}
+
+function getBluepexStatePayload(meta = currentConnectionMeta) {
+  if (!meta || meta.connectionOwner !== 'bluepex') return {};
+  return {
+    vpnConnected: true,
+    connectionOwner: 'bluepex',
+    connectionId: meta.connectionId || null,
+    profileId: meta.profileId || null,
+    profileType: meta.profileType || null,
+    ovpnPath: meta.ovpnPath || meta.configPath || null,
+    configPath: meta.configPath || meta.ovpnPath || null,
+    authFilePath: meta.authFilePath || null,
+    startedAt: meta.startedAt || null,
+    vpnPid: meta.vpnPid || meta.wrapperPid || null,
+    wrapperPid: meta.wrapperPid || null
+  };
+}
+
+function persistBluepexConnectionMeta(meta = currentConnectionMeta) {
+  if (!meta || meta.connectionOwner !== 'bluepex') return;
+  try {
+    const currentState = fs.existsSync(APP_STATE_PATH)
+      ? JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'))
+      : {};
+    const mergedState = {
+      ...currentState,
+      ...getBluepexStatePayload(meta),
+      lastSaved: new Date().toISOString()
+    };
+    fs.writeFileSync(APP_STATE_PATH, JSON.stringify(mergedState, null, 2));
+  } catch (error) {
+    console.log(`⚠️ Não foi possível persistir metadados BluePex: ${error.message}`);
+  }
+}
+
+function clearBluepexConnectionMeta() {
+  currentConnectionMeta = null;
+  try {
+    if (!fs.existsSync(APP_STATE_PATH)) return;
+    const state = JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'));
+    const cleaned = {
+      ...state,
+      vpnConnected: false,
+      vpnPid: null,
+      wrapperPid: null,
+      connectionOwner: null,
+      connectionId: null,
+      profileId: null,
+      profileType: null,
+      ovpnPath: null,
+      configPath: null,
+      authFilePath: null,
+      startedAt: null,
+      lastSaved: new Date().toISOString()
+    };
+    fs.writeFileSync(APP_STATE_PATH, JSON.stringify(cleaned, null, 2));
+  } catch (error) {
+    console.log(`⚠️ Não foi possível limpar metadados BluePex: ${error.message}`);
+  }
+}
+
+function loadTrackedBluepexMetaFromState() {
+  if (currentConnectionMeta?.connectionOwner === 'bluepex') {
+    return currentConnectionMeta;
+  }
+
+  try {
+    if (!fs.existsSync(APP_STATE_PATH)) return null;
+    const state = JSON.parse(fs.readFileSync(APP_STATE_PATH, 'utf-8'));
+    if (state?.connectionOwner !== 'bluepex' || !state?.connectionId) return null;
+
+    const configPath = state.configPath || state.ovpnPath;
+    if (!configPath) return null;
+
+    return {
+      connectionOwner: 'bluepex',
+      connectionId: state.connectionId,
+      profileId: state.profileId || null,
+      profileType: state.profileType || null,
+      ovpnPath: state.ovpnPath || configPath,
+      configPath,
+      normalizedConfigPath: normalizePathForCompare(configPath),
+      authFilePath: state.authFilePath || null,
+      startedAt: state.startedAt || null,
+      vpnPid: state.vpnPid ? Number(state.vpnPid) : null,
+      wrapperPid: state.wrapperPid ? Number(state.wrapperPid) : null,
+      elevationMethod: state.elevationMethod || null
+    };
+  } catch (error) {
+    console.log(`⚠️ Não foi possível carregar metadados BluePex salvos: ${error.message}`);
+    return null;
+  }
+}
+
+function readLinuxCmdline(pid) {
+  try {
+    const cmdlinePath = `/proc/${Number(pid)}/cmdline`;
+    if (!fs.existsSync(cmdlinePath)) return null;
+    const raw = fs.readFileSync(cmdlinePath);
+    return raw.toString('utf8').split('\0').filter(Boolean);
+  } catch (_) {
+    return null;
+  }
+}
+
+function commandLineMatchesBluepexConfig(argsOrText, expectedConfigPath) {
+  const expected = normalizePathForCompare(expectedConfigPath);
+  if (!expected) return false;
+
+  if (Array.isArray(argsOrText)) {
+    const configArg = getConfigPathFromArgs(argsOrText);
+    return normalizePathForCompare(configArg) === expected;
+  }
+
+  const text = String(argsOrText || '');
+  if (!/--config(?:\s|=)/i.test(text)) return false;
+  const comparable = process.platform === 'win32'
+    ? text.replace(/\\/g, '/').toLowerCase()
+    : text;
+  return comparable.includes(expected);
+}
+
+function isBluepexOwnedPid(pid, meta = loadTrackedBluepexMetaFromState()) {
+  const pidNumber = Number(pid);
+  if (!Number.isInteger(pidNumber) || pidNumber <= 0 || !meta || meta.connectionOwner !== 'bluepex') {
+    return false;
+  }
+
+  try {
+    if (process.platform === 'linux') {
+      const args = readLinuxCmdline(pidNumber);
+      if (!args?.length) return false;
+      const command = path.basename(args[0] || '').toLowerCase();
+      if (!command.includes('openvpn')) return false;
+      return commandLineMatchesBluepexConfig(args, meta.configPath || meta.ovpnPath);
+    }
+
+    if (process.platform === 'win32') {
+      const psCommand = `powershell -NoProfile -Command "$p=Get-CimInstance Win32_Process -Filter \"ProcessId=${pidNumber}\"; if ($p) { $p.Name; $p.CommandLine }"`;
+      const output = execSync(psCommand, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      if (!/openvpn\.exe/i.test(output)) return false;
+      return commandLineMatchesBluepexConfig(output, meta.configPath || meta.ovpnPath);
+    }
+
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+function findRelatedOpenVpnPidByConfig(meta = loadTrackedBluepexMetaFromState()) {
+  if (!meta?.configPath && !meta?.ovpnPath) return null;
+  const expectedConfig = meta.configPath || meta.ovpnPath;
+
+  try {
+    if (process.platform === 'linux') {
+      const procEntries = fs.readdirSync('/proc').filter((entry) => /^\d+$/.test(entry));
+      for (const pid of procEntries) {
+        const args = readLinuxCmdline(pid);
+        if (!args?.length) continue;
+        const command = path.basename(args[0] || '').toLowerCase();
+        if (!command.includes('openvpn')) continue;
+        if (commandLineMatchesBluepexConfig(args, expectedConfig)) {
+          return Number(pid);
+        }
+      }
+      return null;
+    }
+
+    if (process.platform === 'win32') {
+      const output = execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name=\'openvpn.exe\'\" | ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }"',
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      const lines = output.split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        const [pidText, ...cmdParts] = line.split('|');
+        if (commandLineMatchesBluepexConfig(cmdParts.join('|'), expectedConfig)) {
+          const pid = Number(pidText);
+          return Number.isInteger(pid) && pid > 0 ? pid : null;
+        }
+      }
+      return null;
+    }
+  } catch (error) {
+    console.log(`⚠️ Falha ao localizar OpenVPN por config BluePex: ${error.message}`);
+  }
+
+  return null;
+}
+
+function refreshTrackedBluepexPid(meta = loadTrackedBluepexMetaFromState()) {
+  if (!meta) return null;
+  if (meta.vpnPid && isBluepexOwnedPid(meta.vpnPid, meta)) {
+    currentConnectionMeta = { ...meta, vpnPid: Number(meta.vpnPid) };
+    return currentConnectionMeta.vpnPid;
+  }
+
+  const relatedPid = findRelatedOpenVpnPidByConfig(meta);
+  if (relatedPid && isBluepexOwnedPid(relatedPid, { ...meta, vpnPid: relatedPid })) {
+    currentConnectionMeta = { ...meta, vpnPid: relatedPid };
+    persistBluepexConnectionMeta(currentConnectionMeta);
+    return relatedPid;
+  }
+
+  return null;
+}
+
+function isPidAlive(pid) {
+  const pidNumber = Number(pid);
+  if (!Number.isInteger(pidNumber) || pidNumber <= 0) return false;
+
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync(`tasklist /FI "PID eq ${pidNumber}" /FO CSV /NH`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+      }).trim();
+      return !!output && !output.includes('No tasks are running');
+    }
+
+    process.kill(pidNumber, 0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function detectLocalVpnInterfaceState() {
+  if (process.platform !== 'linux') {
+    return { connected: false, detail: 'unsupported-platform' };
+  }
+
+  try {
+    const addrOutput = execSync('ip -o addr show', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 3000
+    });
+    const routeOutput = execSync('ip route show', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 3000
+    });
+    const vpnInterfacePattern = /\b(?:tun|tap|ovpn)\w*\b/i;
+    const privateIpPattern = /\binet\s+(?:10\.|172\.(?:1[6-9]|2\d|3[0-1])\.|192\.168\.)/;
+    const addrLines = addrOutput.split(/\r?\n/).filter((line) => vpnInterfacePattern.test(line));
+    const routeLines = routeOutput.split(/\r?\n/).filter((line) => /\bdev\s+(?:tun|tap|ovpn)\w*\b/i.test(line));
+    const hasPrivateVpnAddress = addrLines.some((line) => privateIpPattern.test(line));
+    const hasVpnRoute = routeLines.length > 0;
+    const connected = addrLines.length > 0 && (hasPrivateVpnAddress || hasVpnRoute);
+    const interfaces = [...new Set(addrLines.map((line) => {
+      const match = line.match(/^\d+:\s+([^\s:]+)[:\s]/);
+      return match ? match[1].replace(/@.*$/, '') : null;
+    }).filter(Boolean))];
+    const detailParts = [];
+    if (interfaces.length) detailParts.push(`ifaces=${interfaces.join(',')}`);
+    if (hasPrivateVpnAddress) detailParts.push('private_addr=true');
+    if (hasVpnRoute) detailParts.push(`routes=${routeLines.length}`);
+    return { connected, detail: detailParts.join(' ') || 'no-vpn-interface-state' };
+  } catch (error) {
+    return { connected: false, detail: `detect-error:${error.message}` };
+  }
+}
 
 function isVpnPidRunning(pid) {
   const pidNumber = Number(pid);
@@ -3422,7 +4489,7 @@ function isVpnPidRunning(pid) {
 
 function getTrackedVpnPid() {
   if (vpnProcess?.pid) {
-    return vpnProcess.pid;
+    return currentConnectionMeta?.vpnPid || vpnProcess.pid;
   }
 
   try {
@@ -3461,23 +4528,17 @@ function hasAnyOpenVpnProcess() {
 }
 
 function isVpnSessionActive() {
-  const trackedPid = getTrackedVpnPid();
-  if (trackedPid && isVpnPidRunning(trackedPid)) {
+  const bluepexPid = refreshTrackedBluepexPid();
+  if (bluepexPid) {
     vpnConnectionActive = true;
     return true;
   }
 
-  const anyOpenVpnRunning = hasAnyOpenVpnProcess();
-  if (vpnConnectionActive && !anyOpenVpnRunning) {
-    vpnConnectionActive = false;
-    return false;
+  if (hasAnyOpenVpnProcess()) {
+    console.log('ℹ️ OpenVPN externo detectado, ignorado para estado/bloqueio BluePex');
   }
 
-  if (anyOpenVpnRunning) {
-    vpnConnectionActive = true;
-    return true;
-  }
-
+  vpnConnectionActive = false;
   return false;
 }
 
@@ -3485,17 +4546,23 @@ ipcMain.handle('check-vpn-status', async (event, savedPid) => {
   console.log(`🔍 [MAIN] Verificando status da VPN para PID: ${savedPid}`);
   
   try {
-    const pidToCheck = savedPid || getTrackedVpnPid();
+    const meta = loadTrackedBluepexMetaFromState();
+    const pidToCheck = savedPid || meta?.vpnPid || getTrackedVpnPid();
 
-    if (pidToCheck && isVpnPidRunning(pidToCheck)) {
+    if (pidToCheck && isBluepexOwnedPid(pidToCheck, meta)) {
       vpnConnectionActive = true;
       console.log(`✅ [MAIN] VPN ainda está ativa (PID: ${pidToCheck})`);
       return { connected: true, pid: Number(pidToCheck) };
     }
 
-    if (isVpnSessionActive()) {
+    const bluepexPid = refreshTrackedBluepexPid(meta);
+    if (bluepexPid) {
       vpnConnectionActive = true;
-      return { connected: true, pid: pidToCheck ? Number(pidToCheck) : null };
+      return { connected: true, pid: Number(bluepexPid) };
+    }
+
+    if (hasAnyOpenVpnProcess()) {
+      console.log('ℹ️ [MAIN] OpenVPN externo ativo não será tratado como conexão BluePex');
     }
 
     console.log(`❌ [MAIN] VPN não está ativa para PID: ${pidToCheck}`);
@@ -3524,10 +4591,11 @@ ipcMain.handle('validate-openvpn-config', async () => {
       const content = fs.readFileSync(config.openvpn_config, 'utf-8');
       const lines = content.split('\n');
 
-      const hasRemote = lines.some(line => line.trim().startsWith('remote '));
-      const hasCa = lines.some(line => line.trim().startsWith('ca '));
-      const hasCert = lines.some(line => line.trim().startsWith('cert '));
-      const hasKey = lines.some(line => line.trim().startsWith('key '));
+      const hasRemote = hasDirective(content, 'remote');
+      const hasCa = hasDirective(content, 'ca') || hasInlineBlock(content, 'ca');
+      const hasCert = hasDirective(content, 'cert') || hasInlineBlock(content, 'cert');
+      const hasKey = hasDirective(content, 'key') || hasInlineBlock(content, 'key');
+      const clientCertDisabled = hasClientCertDisabled(content);
 
       if (!hasRemote) {
         resolve({ valid: false, error: 'Configuração não possui servidor remoto (remote)' });
@@ -3539,6 +4607,11 @@ ipcMain.handle('validate-openvpn-config', async () => {
         return;
       }
 
+      if (!clientCertDisabled && (hasCert !== hasKey)) {
+        resolve({ valid: false, error: 'Configuração possui cert/key incompletos' });
+        return;
+      }
+
       resolve({
         valid: true,
         info: {
@@ -3546,6 +4619,7 @@ ipcMain.handle('validate-openvpn-config', async () => {
           hasCa,
           hasCert,
           hasKey,
+          clientCertDisabled,
           lineCount: lines.length
         }
       });
@@ -3743,10 +4817,11 @@ ipcMain.on('adjust-window-size', (event, { width, height }) => {
 ipcMain.handle('quit-app', async () => {
   if (isVpnSessionActive()) {
     const activePid = getTrackedVpnPid();
+    const bluepexProcesses = getActiveBluepexOpenVpnProcesses();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vpn-status', 'Desconecte da VPN antes de sair do aplicativo.');
     }
-    return { success: false, blocked: true, reason: 'vpn_active', pid: activePid };
+    return { success: false, blocked: true, reason: 'vpn_active', pid: activePid, pids: bluepexProcesses.map((processInfo) => processInfo.pid), bluepexProcesses };
   }
 
   app.quit();

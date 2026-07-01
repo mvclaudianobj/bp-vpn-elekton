@@ -1,7 +1,7 @@
 {
   "name": "bluepex-vpn",
   "productName": "BluePexVPN",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "BluePex VPN Client with Azure AD authentication and 2FA support",
   "main": "main.js",
   "author": {
@@ -28,7 +28,7 @@
     "logs": "node scripts/view-logs.js",
     "logs:renderer": "node scripts/view-logs.js --filter renderer",
     "logs:tail": "tail -f /var/log/bluepex-vpn/logs/*.log 2>/dev/null || tail -f ~/.config/bluepex-vpn/logs/*.log",
-    "test": "node scripts/test-logging.js && node scripts/test-modal-classes.js && node scripts/test-ui-functions.js"
+    "test": "node scripts/test-logging.js && node scripts/test-modal-classes.js && node scripts/test-ui-functions.js && node scripts/test-bluepex-ownership.js"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
@@ -89,6 +89,10 @@
       {
         "from": "build/com.bpvpn.pkexec.policy",
         "to": "com.bpvpn.pkexec.policy"
+      },
+      {
+        "from": "build/com.bluepex.vpn.rules",
+        "to": "com.bluepex.vpn.rules"
       }
     ],
     "linux": {

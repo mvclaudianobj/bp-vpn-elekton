@@ -7,7 +7,59 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ---
 
-## [0.1.8] - PLANEJADO — Fase 3: Baixa Prioridade / Qualidade de Código
+## [0.1.8] - beta
+
+### 📂 Importação de Perfis `.ovpn`
+
+- Filtro de arquivo adicionado ao diálogo de seleção: somente arquivos `.ovpn` são exibidos
+- Validação de extensão case-insensitive (`.ovpn` e `.OVPN`) no processo principal, antes e durante o salvamento
+- Validação de existência e tipo de arquivo regular antes de processar
+- Validação mínima de conteúdo: exige ao menos `remote` e diretiva/bloco `ca` (externo ou inline)
+- Geração de nome do perfil corrigida para usar `path.parse().name`, evitando problema com `.OVPN` maiúsculo
+- Mensagens de erro específicas para tipo de arquivo inválido exibidas dentro do modal de configurações
+
+### 📋 Perfis de Arquivo Único / OpenVPN Connect (blocos inline)
+
+- Suporte explícito a perfis com certificados e chaves embutidas no mesmo arquivo (blocos `<ca>`, `<cert>`, `<key>`, `<tls-auth>`, `<tls-crypt>`)
+- Parser de blocos inline adicionado: detecta abertura/fechamento via `<tag>` / `</tag>`
+- Conteúdo dentro de blocos inline preservado literalmente: sem `trim()` destrutivo, sem remoção de linhas vazias, sem processamento de diretivas externas
+- `auth-user-pass` removido/substituído somente fora de blocos inline
+- Remoção global de linhas em branco eliminada: arquivo processado mantém estrutura original com `join('\n')`
+- Validação ajustada para aceitar `<ca>` inline além de `ca arquivo`
+- Validação aceita perfis com `setenv CLIENT_CERT 0` sem exigir `<cert>`/`<key>`
+- Reconhecimento de diretivas corrigido para não confundir `key` com `key-direction` e `remote` com `remote-cert-tls`
+- Parsing de caminhos externos melhorado para suportar aspas e espaços
+- Logs de processamento reduzidos: não imprime mais conteúdo bruto do `.ovpn`; registra apenas metadados (caminho, linhas, tamanho)
+
+### 🔵 Perfis Azure / Entra ID
+
+- Validação de tags `#AZURE:` adicionada ao salvar perfil Azure: arquivo sem nenhuma tag `#AZURE:` é rejeitado com mensagem clara
+- Aviso informativo para tags parcialmente ausentes (`client_id`, `tenant_id`, `scope`, `server_api`)
+- Mensagem de erro de compatibilidade exibida diretamente no modal de configurações sem depender do status da tela principal
+
+### 🖥️ Status no Modal de Configurações
+
+- Área de status local adicionada ao modal de configurações (`#configStatus`)
+- Mensagens de seleção, salvamento e erro exibidas dentro do modal, sem necessidade de fechá-lo
+- Status local limpo automaticamente ao abrir e fechar o modal
+- Estilos consistentes com o status global (`success`, `alert`)
+
+### 🔒 Separação de Conexões BluePex vs. OpenVPN Avulsas
+
+- Rastreamento de ownership de conexão adicionado: metadados `connectionOwner`, `connectionId`, `profileId`, `profileType`, `ovpnPath`, `authFilePath`, `startedAt`, `wrapperPid` persistidos no estado da aplicação
+- Fechamento da janela, tray/sair, `before-quit` e `window-all-closed` bloqueiam somente para sessão BluePex rastreada; OpenVPN externo não trava mais o fechamento
+- `killVPNConnection()` reescrita para matar somente o processo rastreado pelo BluePex; removidos comandos globais `pkill -x openvpn` e `taskkill /IM openvpn.exe`
+- Verificação de desconexão revisada: sucesso não depende mais da ausência de todo e qualquer OpenVPN no sistema
+- `check-vpn-status` e `load-app-state` consideram sessão ativa somente se o PID corresponder à conexão BluePex
+- Validação de ownership via `/proc/<pid>/cmdline` (Linux): exige `--config` com caminho do `.ovpn` do BluePex
+- Validação de ownership via PowerShell/CIM/WMI (Windows) quando disponível
+- Compatibilidade com `pkexec`/`sudo`: busca processo `openvpn` real pelo caminho `--config` quando PID rastreado é wrapper
+- Fallback conservador: se não for possível provar ownership, não assume que o processo pertence ao BluePex
+- `hasAnyOpenVpnProcess()` mantido apenas para diagnóstico/log, sem papel em decisões de sessão ativa
+
+---
+
+## [0.1.8] - PLANEJADO (itens adiados para próxima versão)
 
 ### 🔀 RF012: Split Tunneling
 - Permitir configurar rotas específicas por perfil `.ovpn` diretamente na interface

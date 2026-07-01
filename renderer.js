@@ -139,6 +139,7 @@ const btnCopiarCodigo = document.getElementById('btnCopiarCodigo');
 const menuBtn = document.getElementById('menuBtn');
 const configModal = document.getElementById('configModal');
 const configCloseBtn = document.getElementById('configCloseBtn');
+const configStatusEl = document.getElementById('configStatus');
 
 // Elementos de Credenciais
 const userUsername = document.getElementById('userUsername');
@@ -236,10 +237,7 @@ let appLogsBtn, appLogsModal, appLogsCloseBtn, appLogsModalContent;
     const closeBtn = document.getElementById('closeBtn');
     if (closeBtn) {
       closeBtn.addEventListener('click', async () => {
-        const result = await window.electronAPI.quitApp();
-        if (result?.blocked && result?.reason === 'vpn_active') {
-            showStatus('Desconecte da VPN antes de sair do aplicativo.', 'alert');
-        }
+        await requestAppExitWithVpnPrompt('quit');
       });
       console.log('✅ Event listener adicionado ao closeBtn');
     } else {
@@ -533,12 +531,7 @@ async function initializeApp() {
     if (windowCloseBtn) {
         windowCloseBtn.addEventListener('click', async () => {
             try {
-                const result = await window.electronAPI.closeWindow();
-                if (result?.success) {
-                    console.log('✅ Janela fechada via barra de título');
-                } else if (result?.blocked && result?.reason === 'vpn_active') {
-                    showStatus('Desconecte da VPN antes de fechar o aplicativo.', 'alert');
-                }
+                await requestAppExitWithVpnPrompt('close');
             } catch (error) {
                 console.error('❌ Erro ao fechar janela via barra de título:', error);
             }
@@ -866,6 +859,98 @@ function updateConnectionButtons() {
     }
 }
 
+function getFriendlyIpcErrorMessage(error) {
+    let message = String(error?.message || error || 'Erro desconhecido');
+
+    // Remove prefixos técnicos do Electron IPC:
+    // Error invoking remote method 'x': Error: mensagem
+    message = message.replace(/^Error invoking remote method '[^']+':\s*/i, '');
+    message = message.replace(/^Error:\s*/i, '');
+
+    if (/Falha na autenticação/i.test(message)) {
+        return 'Falha na autenticação: usuário, senha ou token incorretos. Verifique também a permissão no Controle OpenVPN.';
+    }
+
+    return message;
+}
+
+function isActiveVpnError(error) {
+    const message = getFriendlyIpcErrorMessage(error);
+    return /Já existe uma conexão VPN ativa|conexão VPN ativa|VPN ativa/i.test(message);
+}
+
+async function promptForceDisconnectActiveVpn(errorMessage = '') {
+    const shouldForce = window.confirm(
+        'Já existe uma conexão VPN ativa ou presa pelo BluePex VPN.\n\n' +
+        'Deseja forçar a desconexão agora?\n\n' +
+        'Isso tentará encerrar apenas a conexão VPN gerenciada pelo BluePex.'
+    );
+
+    if (!shouldForce) {
+        return false;
+    }
+
+    try {
+        showStatus('Forçando desconexão da VPN ativa...', 'warning');
+        const result = await window.electronAPI.killVPNConnection();
+
+        if (result?.success) {
+            vpnPid = null;
+            await saveApplicationState();
+            showConnectionElements();
+            updateConnectionButtons();
+            showStatus('VPN desconectada com sucesso. Tente conectar novamente.', 'success');
+            return true;
+        }
+
+        showStatus(`Falha ao forçar desconexão: ${result?.error || 'erro desconhecido'}`, 'alert');
+        updateConnectionButtons();
+        return false;
+    } catch (forceError) {
+        showStatus(`Erro ao forçar desconexão: ${forceError.message}`, 'alert');
+        updateConnectionButtons();
+        return false;
+    }
+}
+
+async function requestAppExitWithVpnPrompt(action, force = false) {
+    const result = action === 'quit'
+        ? await window.electronAPI.quitApp()
+        : await window.electronAPI.closeWindow();
+
+    if (result?.success) {
+        if (action === 'close') console.log('✅ Janela fechada via barra de título');
+        return true;
+    }
+
+    if (!force && result?.blocked && result?.reason === 'vpn_active') {
+        const shouldForce = window.confirm('Existe conexão VPN BluePex ativa ou presa. Deseja forçar desconexão antes de sair/fechar?');
+        if (!shouldForce) {
+            showStatus('Saída cancelada. A conexão VPN BluePex permanece ativa.', 'warning');
+            return false;
+        }
+
+        try {
+            showStatus('Forçando desconexão da VPN BluePex...', 'warning');
+            const killResult = await window.electronAPI.killVPNConnection();
+            if (killResult?.success) {
+                vpnPid = null;
+                await saveApplicationState();
+                showConnectionElements();
+                updateConnectionButtons();
+                return await requestAppExitWithVpnPrompt(action, true);
+            }
+            showStatus(`Falha ao forçar desconexão: ${killResult?.error || 'erro desconhecido'}`, 'alert');
+            return false;
+        } catch (error) {
+            showStatus(`Erro ao forçar desconexão: ${error.message}`, 'alert');
+            return false;
+        }
+    }
+
+    return false;
+}
+
 function isUserFormValid() {
     return currentProfile?.type === 'user' &&
            userUsername && userPassword &&
@@ -959,7 +1044,12 @@ async function handleConnect() {
                 if (!publishResult || !publishResult.success) {
                     throw new Error('Falha ao publicar token no servidor');
                 }
-                showStatus('Token publicado. Conectando...', 'status');
+                const publishedShortId = publishResult.short_id ? String(publishResult.short_id).trim() : '';
+                if (!publishedShortId) {
+                    console.error('❌ [RENDERER] Backend publicou token sem short_id válido:', publishResult);
+                    throw new Error('Backend não retornou short_id do Entra ID.');
+                }
+                showStatus('Token publicado. Conectando VPN...', 'status');
 
                 const connectResult = await window.electronAPI.connectOpenVPN();
                 if (!connectResult || !connectResult.pid) {
@@ -986,11 +1076,18 @@ async function handleConnect() {
         saveApplicationState();
 
     } catch (err) {
-        console.log(`❌ [RENDERER] Erro na conexão: ${err.message}`);
+        const friendlyError = getFriendlyIpcErrorMessage(err);
+        console.log(`❌ [RENDERER] Erro na conexão: ${friendlyError}`);
+        const activeVpnError = isActiveVpnError(err);
         vpnPid = null; // Garantir que vpnPid seja limpo em caso de erro
         // Destravar seleção de perfil em caso de erro
         if (profileSelect) profileSelect.disabled = false;
-        showStatus(`Erro: ${err.message}`, 'alert');
+        showStatus(`Erro: ${friendlyError}`, 'alert');
+
+        if (activeVpnError) {
+            await promptForceDisconnectActiveVpn(friendlyError);
+        }
+    } finally {
         updateConnectionButtons();
     }
 }
@@ -1046,7 +1143,9 @@ function toggleConfigModal() {
         if (isVisible) {
             configModal.classList.remove('show');
             configModal.style.display = 'none';
+            clearConfigStatus();
         } else {
+            clearConfigStatus();
             configModal.style.display = 'flex';
             configModal.classList.add('show');
         }
@@ -1067,6 +1166,7 @@ function closeConfigModal() {
         console.log('  Modal encontrado, removendo classe show');
         configModal.classList.remove('show');
         configModal.style.display = 'none';
+        clearConfigStatus();
         console.log('  Classe show removida, classes atuais:', configModal.className, 'display:', configModal.style.display);
     } else {
         console.log("closeLogsModalBtn não encontrado");
@@ -1226,6 +1326,27 @@ function showStatus(message, type = 'status') {
     }
 }
 
+function normalizeConfigStatusType(type = 'status') {
+    return type === 'error' ? 'alert' : type;
+}
+
+function showConfigStatus(message, type = 'status') {
+    if (!configStatusEl) return;
+
+    const normalizedType = normalizeConfigStatusType(type);
+    configStatusEl.textContent = message;
+    configStatusEl.className = `status config-status ${normalizedType}`;
+    configStatusEl.style.display = 'block';
+}
+
+function clearConfigStatus() {
+    if (!configStatusEl) return;
+
+    configStatusEl.textContent = '';
+    configStatusEl.className = 'status config-status';
+    configStatusEl.style.display = 'none';
+}
+
 function saveApplicationState() {
     const appState = {
         selectedProfileType: currentProfile?.type || null,
@@ -1362,16 +1483,19 @@ async function handleOvpnFileSelection() {
             };
 
             showStatus(`Arquivo "${result.fileName}" selecionado com sucesso!`, 'success');
+            showConfigStatus(`Arquivo "${result.fileName}" selecionado com sucesso!`, 'success');
         } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
             console.error('❌ Erro na seleção:', result.error);
             console.log('Result completo:', result);
             showStatus(`Erro: ${result.error}`, 'alert');
+            showConfigStatus(`Erro: ${result.error}`, 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao selecionar arquivo:', error);
         showStatus(`Erro ao selecionar arquivo: ${error.message}`, 'alert');
+        showConfigStatus(`Erro ao selecionar arquivo: ${error.message}`, 'alert');
     }
 }
 
@@ -1393,17 +1517,20 @@ function handleSaveProfileCheckbox() {
 async function saveUserProfileConfig() {
     if (!selectedOvpnFile) {
         showStatus('Por favor, selecione um arquivo OVPN primeiro.', 'alert');
+        showConfigStatus('Por favor, selecione um arquivo OVPN primeiro.', 'alert');
         return;
     }
 
     if (!configProfileName || !configProfileName.value.trim()) {
         showStatus('Por favor, digite um nome para o perfil.', 'alert');
+        showConfigStatus('Por favor, digite um nome para o perfil.', 'alert');
         return;
     }
 
     try {
         console.log('💾 Salvando perfil usuário...');
         showStatus('Salvando perfil...', 'status');
+        showConfigStatus('Salvando perfil...', 'status');
 
         const profileId = `profile_${Date.now()}`;
         const profileName = configProfileName.value.trim();
@@ -1418,6 +1545,7 @@ async function saveUserProfileConfig() {
         if (result.success) {
             console.log('✅ Perfil salvo:', result);
             showStatus(`Perfil "${profileName}" salvo com sucesso!`, 'success');
+            showConfigStatus(`Perfil "${profileName}" salvo com sucesso!`, 'success');
 
             // Recarregar perfis e selecionar automaticamente o novo perfil
             await loadAllProfiles();
@@ -1444,10 +1572,12 @@ async function saveUserProfileConfig() {
         console.log("connLogsModal não encontrado");
             console.error('❌ Erro ao salvar perfil:', result.error);
             showStatus(`Erro ao salvar perfil: ${result.error}`, 'alert');
+            showConfigStatus(`Erro ao salvar perfil: ${result.error}`, 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao salvar perfil:', error);
         showStatus(`Erro ao salvar perfil: ${error.message}`, 'alert');
+        showConfigStatus(`Erro ao salvar perfil: ${error.message}`, 'alert');
     }
 }
 
@@ -1480,15 +1610,18 @@ async function handleAzureOvpnFileSelection() {
             };
 
             showStatus(`Arquivo Azure "${result.fileName}" selecionado com sucesso!`, 'success');
+            showConfigStatus(`Arquivo Azure "${result.fileName}" selecionado com sucesso!`, 'success');
         } else {
         console.log("closeLogsModalBtn não encontrado");
         console.log("connLogsModal não encontrado");
             console.error('❌ Erro na seleção Azure:', result.error);
             showStatus(`Erro: ${result.error}`, 'alert');
+            showConfigStatus(`Erro: ${result.error}`, 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao selecionar arquivo Azure:', error);
         showStatus(`Erro ao selecionar arquivo: ${error.message}`, 'alert');
+        showConfigStatus(`Erro ao selecionar arquivo: ${error.message}`, 'alert');
     }
 }
 
@@ -1510,17 +1643,27 @@ function handleSaveAzureProfileCheckbox() {
 async function saveAzureProfileConfig() {
     if (!selectedAzureOvpnFile) {
         showStatus('Por favor, selecione um arquivo OVPN Azure primeiro.', 'alert');
+        showConfigStatus('Por favor, selecione um arquivo OVPN Azure primeiro.', 'alert');
         return;
     }
 
     if (!configAzureProfileName || !configAzureProfileName.value.trim()) {
         showStatus('Por favor, digite um nome para o perfil Azure.', 'alert');
+        showConfigStatus('Por favor, digite um nome para o perfil Azure.', 'alert');
         return;
     }
+
+    const originalButtonText = configSaveAzureProfileBtn?.textContent;
 
     try {
         console.log('💾 Salvando perfil Azure...');
         showStatus('Salvando perfil Azure...', 'status');
+        showConfigStatus('Salvando perfil Azure...', 'status');
+
+        if (configSaveAzureProfileBtn) {
+            configSaveAzureProfileBtn.disabled = true;
+            configSaveAzureProfileBtn.textContent = 'Salvando...';
+        }
 
         const profileId = `azure_${Date.now()}`;
         const profileName = configAzureProfileName.value.trim();
@@ -1532,9 +1675,10 @@ async function saveAzureProfileConfig() {
             selectedAzureOvpnFile.path
         );
 
-        if (result.success) {
+        if (result?.success) {
             console.log('✅ Perfil Azure salvo:', result);
             showStatus(`Perfil Azure "${profileName}" salvo com sucesso!`, 'success');
+            showConfigStatus(`Perfil Azure "${profileName}" salvo com sucesso!`, 'success');
 
             // Limpar formulário
             selectedAzureOvpnFile = null;
@@ -1547,14 +1691,22 @@ async function saveAzureProfileConfig() {
             // Recarregar perfis
             await loadAllProfiles();
         } else {
-        console.log("closeLogsModalBtn não encontrado");
-        console.log("connLogsModal não encontrado");
-            console.error('❌ Erro ao salvar perfil Azure:', result.error);
-            showStatus(`Erro ao salvar perfil Azure: ${result.error}`, 'alert');
+            const errorMessage = result?.error || 'Falha desconhecida ao salvar perfil Azure.';
+            console.error('❌ Erro ao salvar perfil Azure:', errorMessage);
+            showStatus(`Erro ao salvar perfil Azure: ${errorMessage}`, 'alert');
+            showConfigStatus(`Erro ao salvar perfil Azure: ${errorMessage}`, 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao salvar perfil Azure:', error);
         showStatus(`Erro ao salvar perfil Azure: ${error.message}`, 'alert');
+        showConfigStatus(`Erro ao salvar perfil Azure: ${error.message}`, 'alert');
+    } finally {
+        if (configSaveAzureProfileBtn) {
+            configSaveAzureProfileBtn.disabled = false;
+            if (originalButtonText) {
+                configSaveAzureProfileBtn.textContent = originalButtonText;
+            }
+        }
     }
 }
 
@@ -1567,6 +1719,7 @@ async function deleteProfile(profileId, profileType) {
     try {
         console.log(`🗑️ Excluindo perfil ${profileType}:${profileId}...`);
         showStatus('Excluindo perfil...', 'status');
+        showConfigStatus('Excluindo perfil...', 'status');
 
         let result;
         if (profileType === 'user') {
@@ -1582,6 +1735,7 @@ async function deleteProfile(profileId, profileType) {
         if (result.success) {
             console.log('✅ Perfil excluído:', profileId);
             showStatus('Perfil excluído com sucesso!', 'success');
+            showConfigStatus('Perfil excluído com sucesso!', 'success');
 
             // Recarregar perfis
             await loadAllProfiles();
@@ -1590,10 +1744,12 @@ async function deleteProfile(profileId, profileType) {
         console.log("connLogsModal não encontrado");
             console.error('❌ Erro ao excluir perfil:', result.error);
             showStatus(`Erro ao excluir perfil: ${result.error}`, 'alert');
+            showConfigStatus(`Erro ao excluir perfil: ${result.error}`, 'alert');
         }
     } catch (error) {
         console.error('❌ Erro ao excluir perfil:', error);
         showStatus(`Erro ao excluir perfil: ${error.message}`, 'alert');
+        showConfigStatus(`Erro ao excluir perfil: ${error.message}`, 'alert');
     }
 }
 

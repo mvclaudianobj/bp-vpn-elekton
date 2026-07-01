@@ -1,0 +1,7 @@
+/* BluePex VPN — permite executar openvpn e kill sem senha para usuários em sessão ativa */
+polkit.addRule(function(action, subject) {
+    if ((action.id === "com.bluepex.openvpn" || action.id === "com.bluepex.kill") &&
+        subject.active && subject.local) {
+        return polkit.Result.YES;
+    }
+});

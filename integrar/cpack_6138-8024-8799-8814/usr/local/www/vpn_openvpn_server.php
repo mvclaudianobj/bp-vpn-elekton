@@ -450,6 +450,18 @@ if ($_POST['save']) {
 		$input_errors[] = gettext("A Backend for Authentication must be selected if the server mode requires User Auth.");
 	}
 
+	$authmodes = is_array($pconfig['authmode']) ? $pconfig['authmode'] : explode(",", $pconfig['authmode']);
+	$auth_servers = auth_get_authserver_list();
+	foreach ($authmodes as $authmode) {
+		if (isset($auth_servers[$authmode]['type']) &&
+		    $auth_servers[$authmode]['type'] == 'entraid' &&
+		    ((!empty($pconfig['compression']) && $pconfig['compression'] != 'none') ||
+		    !empty($pconfig['compression_push']))) {
+			$input_errors[] = gettext("Compression and Push Compression are not supported for EntraID authentication.");
+			break;
+		}
+	}
+
 	/* input validation */
 	if ($result = openvpn_validate_port($pconfig['local_port'], 'Local port', 1)) {
 		$input_errors[] = $result;

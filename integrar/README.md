@@ -79,6 +79,19 @@ echo $?
 
 Retorno `0` indica validacao positiva.
 
+## Disconnect EntraID/OpenVPN
+
+Endpoint local do UTM:
+
+```bash
+curl -s -X POST "https://<utm>/entraid_saml/entraid_logout.php" \
+  -d "ip=<ip_web>" \
+  -d "remote_ip=<ip_openvpn>" \
+  -d "client_id=<management_client_id>"
+```
+
+Parametros aceitos: `ip` remove a sessao web no SQLite; `client_id` tenta derrubar a VPN com `client-kill <client_id> HALT`; sem `client_id`, `remote_ip` ou `ip` tenta fallback `kill <ip>` via socket Unix `/var/etc/openvpn/server*/sock` ou `$g['openvpn_base']/server*/sock`. Sem parametros de VPN suficientes, o JSON informa que apenas a sessao web foi limpa.
+
 ## Correcao adicional (wizard OpenVPN)
 
 Foi identificado que o instalador nao aplicava os arquivos do wizard customizado, apesar deles existirem no pacote.
