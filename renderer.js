@@ -24,6 +24,66 @@ let allProfiles = []; // Todos os perfis disponíveis (user + azure)
 // Estado de atualização
 let updateInfo = null;
 
+function setUpdateDownloadState(state) {
+    const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+    const updateInstallBtn = document.getElementById('updateInstallBtn');
+    const updateProgress = document.getElementById('updateProgress');
+    const updatePhase = document.getElementById('updatePhase');
+    const updateSpinner = document.querySelector('#updateProgress .update-spinner');
+
+    if (state === 'ready') {
+        if (updateDownloadBtn) {
+            updateDownloadBtn.style.display = 'block';
+            updateDownloadBtn.disabled = false;
+        }
+        if (updateInstallBtn) updateInstallBtn.style.display = 'none';
+        if (updateProgress) updateProgress.style.display = 'none';
+        if (updateSpinner) updateSpinner.style.display = 'block';
+        if (updatePhase) updatePhase.textContent = 'Baixando atualização...';
+        return;
+    }
+
+    if (state === 'downloading') {
+        if (updateDownloadBtn) {
+            updateDownloadBtn.style.display = 'none';
+            updateDownloadBtn.disabled = true;
+        }
+        if (updateInstallBtn) updateInstallBtn.style.display = 'none';
+        if (updateProgress) updateProgress.style.display = 'block';
+        if (updateSpinner) updateSpinner.style.display = 'block';
+        if (updatePhase) updatePhase.textContent = 'Baixando atualização...';
+        return;
+    }
+
+    if (state === 'downloaded') {
+        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
+        if (updateInstallBtn) updateInstallBtn.style.display = 'block';
+        if (updateProgress) updateProgress.style.display = 'none';
+        if (updateSpinner) updateSpinner.style.display = 'none';
+        if (updatePhase) updatePhase.textContent = 'Pronto para instalar!';
+        return;
+    }
+
+    if (state === 'installing') {
+        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
+        if (updateInstallBtn) updateInstallBtn.style.display = 'none';
+        if (updateProgress) updateProgress.style.display = 'block';
+        if (updateSpinner) updateSpinner.style.display = 'block';
+        if (updatePhase) updatePhase.textContent = 'Instalando atualização...';
+        return;
+    }
+
+    if (state === 'error') {
+        if (updateDownloadBtn) {
+            updateDownloadBtn.style.display = 'block';
+            updateDownloadBtn.disabled = false;
+        }
+        if (updateInstallBtn) updateInstallBtn.style.display = 'none';
+        if (updateProgress) updateProgress.style.display = 'none';
+        if (updateSpinner) updateSpinner.style.display = 'none';
+    }
+}
+
 // Logs armazenados em memória (removidos da interface principal)
 
 // Watcher para arquivo de logs
@@ -334,6 +394,7 @@ function setupEventListeners() {
             if (updateInfo) {
                 // Se há atualização disponível, abre o modal
                 if (updateModal) {
+                    setUpdateDownloadState('ready');
                     updateModal.style.display = 'flex';
                 }
             } else {
@@ -358,17 +419,7 @@ function setupEventListeners() {
         updateDownloadBtn.addEventListener('click', async () => {
             console.log('🖱️ Download button clicked');
             try {
-                const updateProgress = document.getElementById('updateProgress');
-                const updatePhase = document.getElementById('updatePhase');
-
-                updateDownloadBtn.style.display = 'none';
-                updateDownloadBtn.disabled = true;
-                if (updateProgress) {
-                    updateProgress.style.display = 'block';
-                }
-                if (updatePhase) {
-                    updatePhase.textContent = 'Baixando atualização...';
-                }
+                setUpdateDownloadState('downloading');
 
                 console.log('📡 Calling downloadUpdate IPC');
                 const result = await window.electronAPI.downloadUpdate();
@@ -376,14 +427,12 @@ function setupEventListeners() {
                 if (result.success) {
                     showStatus('Download da atualização iniciado!', 'success');
                 } else {
-                    updateDownloadBtn.style.display = 'block';
-                    updateDownloadBtn.disabled = false;
+                    setUpdateDownloadState('error');
                     showStatus(`Erro no download: ${result.error}`, 'alert');
                 }
             } catch (error) {
                 console.error('❌ Error in download button:', error);
-                updateDownloadBtn.style.display = 'block';
-                updateDownloadBtn.disabled = false;
+                setUpdateDownloadState('error');
                 showStatus('Erro ao iniciar download da atualização', 'alert');
             }
         });
@@ -398,12 +447,7 @@ function setupEventListeners() {
     if (updateInstallBtn) {
         updateInstallBtn.addEventListener('click', async () => {
             try {
-                // Mostrar progresso de instalação
-                const updatePhase = document.getElementById('updatePhase');
-                if (updatePhase) updatePhase.textContent = 'Instalando atualização...';
-
-                // Esconder botões
-                updateInstallBtn.style.display = 'none';
+                setUpdateDownloadState('installing');
                 const updateLaterBtn = document.getElementById('updateLaterBtn');
                 if (updateLaterBtn) updateLaterBtn.style.display = 'none';
 
@@ -412,9 +456,11 @@ function setupEventListeners() {
                 if (result.success) {
                     // quitAndInstall will restart the app
                 } else {
+                    setUpdateDownloadState('downloaded');
                     showStatus(`Erro na instalação: ${result.error}`, 'alert');
                 }
             } catch (error) {
+                setUpdateDownloadState('downloaded');
                 showStatus('Erro ao instalar atualização', 'alert');
             }
         });
@@ -2011,6 +2057,7 @@ if (window.electronAPI) {
         if (showDialog) {
             // Abrir modal apenas quando chamado manualmente
             if (updateModal) {
+                setUpdateDownloadState('ready');
                 updateModal.style.display = 'flex';
             }
         }
@@ -2019,12 +2066,13 @@ if (window.electronAPI) {
 
     window.electronAPI.onUpdateDownloaded((info) => {
         console.log('📦 Update downloaded:', info);
-        const updateDownloadBtn = document.getElementById('updateDownloadBtn');
-        const updateInstallBtn = document.getElementById('updateInstallBtn');
-        const updatePhase = document.getElementById('updatePhase');
-        if (updateDownloadBtn) updateDownloadBtn.style.display = 'none';
-        if (updateInstallBtn) updateInstallBtn.style.display = 'block';
-        if (updatePhase) updatePhase.textContent = 'Pronto para instalar!';
+        setUpdateDownloadState('downloaded');
+    });
+
+    window.electronAPI.onUpdateError((event, error) => {
+        console.log('❌ Update error:', error);
+        setUpdateDownloadState('error');
+        showStatus(`Erro na atualização: ${error?.message || 'falha desconhecida'}`, 'alert');
     });
 
     window.electronAPI.onUpdateDownloadStarted(() => {
@@ -2036,10 +2084,7 @@ if (window.electronAPI) {
 
     window.electronAPI.onUpdateProgress((progress) => {
         console.log('📊 Update progress:', progress);
-        const updateProgress = document.getElementById('updateProgress');
-        if (updateProgress) {
-            updateProgress.style.display = 'block';
-        }
+        setUpdateDownloadState('downloading');
         const progressFill = document.getElementById('progressFill');
         if (progressFill) {
             progressFill.style.width = `${progress.percent}%`;

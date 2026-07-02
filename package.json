@@ -127,6 +127,7 @@
       "description": "BluePex VPN - Professional OpenVPN client with Azure AD authentication and 2FA support"
     },
     "deb": {
+      "artifactName": "bluepex-vpn_${version}_amd64.deb",
       "depends": [
         "openvpn",
         "policykit-1"
@@ -137,6 +138,7 @@
       "afterRemove": "build/afterRemove.sh"
     },
     "rpm": {
+      "artifactName": "bluepex-vpn-${version}.x86_64.rpm",
       "depends": [
         "openvpn",
         "polkit"
@@ -145,6 +147,9 @@
       "afterInstall": "build/afterInstall.sh",
       "afterRemove": "build/afterRemove.sh",
       "fpm": []
+    },
+    "appImage": {
+      "artifactName": "bluepex-vpn-${version}.AppImage"
     },
     "win": {
       "target": [

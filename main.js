@@ -264,6 +264,8 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // ============ SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ============
 
+const WSUTM_UPDATE_BASE_URL = process.env.BLUEPEX_UPDATE_BASE_URL || 'http://wsutm.bluepex.com/bluepexvpn';
+
 class AutoUpdaterManager {
   constructor() {
     this.updateAvailable = false;
@@ -271,18 +273,37 @@ class AutoUpdaterManager {
     this.updateInfo = null;
     this.checkInterval = null;
     this.isChecking = false;
+    this.updateProvider = 'github';
+    this.lastCheckProvider = null;
+    this.wsutmBaseUrl = this.normalizeWsutmBaseUrl(WSUTM_UPDATE_BASE_URL);
 
     this.configureUpdater();
     this.setupEventHandlers();
     this.startPeriodicChecks();
   }
 
-   configureUpdater() {
+  normalizeWsutmBaseUrl(baseUrl) {
+    return String(baseUrl || '').trim().replace(/\/+$/, '');
+  }
+
+  configureUpdater() {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
     autoUpdater.allowPrerelease = true;
 
+    this.configureGithubFeed();
+
+    logger.log('UPDATE', 'CONFIGURED', {
+      autoDownload: autoUpdater.autoDownload,
+      autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
+      provider: 'github',
+      fallbackProvider: 'generic',
+      fallbackBaseUrl: this.wsutmBaseUrl
+    });
+  }
+
+  configureGithubFeed() {
     if (process.env.GITHUB_TOKEN) {
       autoUpdater.setFeedURL({
         provider: 'github',
@@ -302,11 +323,60 @@ class AutoUpdaterManager {
       console.log('🔗 Feed URL configurado (public):', 'mvclaudianobj/BluePexVPN');
     }
 
-    logger.log('UPDATE', 'CONFIGURED', {
-      autoDownload: autoUpdater.autoDownload,
-      autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
-      provider: 'github'
+    this.updateProvider = 'github';
+  }
+
+  configureWsutmFeed() {
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: this.wsutmBaseUrl,
+      channel: process.platform === 'win32' ? 'latest' : 'latest-linux'
     });
+
+    this.updateProvider = 'wsutm';
+    console.log('🔗 Feed URL fallback WSUTM configurado:', this.wsutmBaseUrl);
+
+    logger.log('UPDATE', 'WSUTM_CONFIGURED', {
+      provider: 'generic',
+      baseUrl: this.wsutmBaseUrl,
+      expectedManifests: process.platform === 'win32' ? ['latest.yml'] : ['latest-linux.yml'],
+      versionedAssetsPath: `${this.wsutmBaseUrl}/${app.getVersion()}/`
+    });
+  }
+
+  getWsutmArtifactAliases(version) {
+    return {
+      win32: [
+        `BluePex.VPN.Setup.${version}.exe`,
+        `BluePex VPN Setup ${version}.exe`,
+        `BluePex VPN Setup ${version}.exe.blockmap`,
+        `BluePex.VPN.Setup.${version}.exe.blockmap`
+      ],
+      linux: [
+        `bluepex-vpn_${version}_amd64.deb`,
+        `bluepex-vpn-${version}.x86_64.rpm`,
+        `bluepex-vpn-${version}.AppImage`,
+        `BluePex VPN-${version}.AppImage`
+      ],
+      darwin: []
+    }[process.platform] || [];
+  }
+
+  enhanceWsutmUpdateInfo(info) {
+    if (!info || this.updateProvider !== 'wsutm') return info;
+
+    const version = info.version || app.getVersion();
+    const aliases = this.getWsutmArtifactAliases(version);
+    info.wsutmCompatibility = {
+      baseUrl: this.wsutmBaseUrl,
+      manifestRoot: this.wsutmBaseUrl,
+      versionedAssetsPath: `${this.wsutmBaseUrl}/${version}/`,
+      artifactAliases: aliases,
+      manifestFiles: Array.isArray(info.files) ? info.files.map((file) => file.url || file.path).filter(Boolean) : []
+    };
+
+    logger.log('UPDATE', 'WSUTM_COMPATIBILITY_ALIASES', info.wsutmCompatibility);
+    return info;
   }
 
   setupEventHandlers() {
@@ -347,10 +417,16 @@ class AutoUpdaterManager {
       console.log('💥 AUTO_UPDATER ERROR:', error.message);
       console.log('📋 Error details:', error);
 
+      const waitingForFallback = this.isChecking && this.updateProvider === 'github';
+
       logger.logSystemError('AUTO_UPDATER', error, {
         currentVersion: app.getVersion(),
-        platform: process.platform
+        platform: process.platform,
+        provider: this.updateProvider,
+        waitingForFallback
       });
+
+      if (waitingForFallback) return;
 
       this.updateAvailable = false;
       this.updateDownloaded = false;
@@ -390,55 +466,27 @@ class AutoUpdaterManager {
 
     this.isChecking = true;
     try {
+      this.configureGithubFeed();
+
       logger.log('UPDATE', 'CHECK_START', {
         manual: showDialog,
-        currentVersion: app.getVersion()
+        currentVersion: app.getVersion(),
+        primaryProvider: 'github',
+        fallbackProvider: 'wsutm'
       });
 
       console.log('🔍 Iniciando checkForUpdates()...');
 
-      // Aguardar resolução real do evento antes de retornar ao renderer.
-      // autoUpdater.checkForUpdates() dispara os eventos 'update-available' ou
-      // 'update-not-available' de forma assíncrona após retornar — por isso usamos
-      // uma Promise que aguarda um desses dois eventos (ou erro) com timeout de 30s.
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          cleanup();
-          reject(new Error('Timeout na verificação de atualização (30s)'));
-        }, 30000);
-
-        const onAvailable = (info) => {
-          cleanup();
-          this.updateAvailable = true;
-          this.updateInfo = info;
-          resolve({ available: true, info });
-        };
-
-        const onNotAvailable = (info) => {
-          cleanup();
-          this.updateAvailable = false;
-          this.updateInfo = null;
-          resolve({ available: false, info });
-        };
-
-        const onError = (err) => {
-          cleanup();
-          reject(err);
-        };
-
-        const cleanup = () => {
-          clearTimeout(timeout);
-          autoUpdater.removeListener('update-available', onAvailable);
-          autoUpdater.removeListener('update-not-available', onNotAvailable);
-          autoUpdater.removeListener('error', onError);
-        };
-
-        autoUpdater.once('update-available', onAvailable);
-        autoUpdater.once('update-not-available', onNotAvailable);
-        autoUpdater.once('error', onError);
-
-        autoUpdater.checkForUpdates().catch(onError);
-      });
+      try {
+        await this.runUpdateCheck('github');
+      } catch (githubError) {
+        logger.logSystemError('UPDATE_CHECK_GITHUB_FAILED', githubError, {
+          fallback: 'wsutm',
+          baseUrl: this.wsutmBaseUrl
+        });
+        this.configureWsutmFeed();
+        await this.runUpdateCheck('wsutm');
+      }
 
       console.log('✅ checkForUpdates() concluído. updateAvailable:', this.updateAvailable);
 
@@ -466,13 +514,69 @@ class AutoUpdaterManager {
     }
   }
 
+  async runUpdateCheck(provider) {
+    this.lastCheckProvider = provider;
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timeout na verificação de atualização ${provider} (30s)`));
+      }, 30000);
+
+      const onAvailable = (info) => {
+        cleanup();
+        this.updateAvailable = true;
+        this.updateInfo = this.enhanceWsutmUpdateInfo(info);
+        resolve({ available: true, info: this.updateInfo });
+      };
+
+      const onNotAvailable = (info) => {
+        cleanup();
+        this.updateAvailable = false;
+        this.updateInfo = null;
+        resolve({ available: false, info });
+      };
+
+      const onError = (err) => {
+        cleanup();
+        reject(err);
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        autoUpdater.removeListener('update-available', onAvailable);
+        autoUpdater.removeListener('update-not-available', onNotAvailable);
+        autoUpdater.removeListener('error', onError);
+      };
+
+      logger.log('UPDATE', 'CHECK_PROVIDER_START', {
+        provider,
+        baseUrl: provider === 'wsutm' ? this.wsutmBaseUrl : undefined
+      });
+
+      autoUpdater.once('update-available', onAvailable);
+      autoUpdater.once('update-not-available', onNotAvailable);
+      autoUpdater.once('error', onError);
+
+      autoUpdater.checkForUpdates().catch(onError);
+    });
+
+    logger.log('UPDATE', 'CHECK_PROVIDER_COMPLETE', {
+      provider,
+      available: this.updateAvailable,
+      version: this.updateInfo?.version
+    });
+  }
+
   getStatus() {
     return {
       updateAvailable: this.updateAvailable,
       updateDownloaded: this.updateDownloaded,
       updateInfo: this.updateInfo,
       currentVersion: app.getVersion(),
-      isChecking: this.isChecking
+      isChecking: this.isChecking,
+      provider: this.updateProvider,
+      fallbackBaseUrl: this.wsutmBaseUrl
     };
   }
 }
