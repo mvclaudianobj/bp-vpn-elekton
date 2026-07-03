@@ -786,7 +786,6 @@ function migrateLegacyUserDataIfNeeded() {
 let mainWindow;
 let splashWindow;
 let tray;
-let pca;
 let config;
 let currentElevationMethod = null;
 let currentOvpnPath = null;
@@ -794,6 +793,7 @@ let vpnProcess = null;
 let vpnConnectionActive = false;
 let currentConnectionMeta = null;
 let suppressNextReconnect = false;
+const azureAuthContexts = new Map();
 
 // RF010: controle de reconexão automática
 const AUTO_RECONNECT = {
@@ -1189,28 +1189,12 @@ app.whenReady().then(async () => {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   }
 
-  try {
-    pca = new PublicClientApplication({
-      auth: {
-        clientId: config.client_id,
-        authority: `https://login.microsoftonline.com/${config.tenant_id}`,
-      }
-    });
-
-    logger.log('AZURE', 'CLIENT_CONFIGURED', {
-      hasClientId: !!config.client_id,
-      hasTenantId: !!config.tenant_id,
-      authority: `https://login.microsoftonline.com/${config.tenant_id}`,
-      scope: config.scope,
-      serverApi: config.server_api
-    });
-  } catch (azureError) {
-    logger.logSystemError('AZURE_CLIENT_INIT_FAILED', azureError, {
-      clientId: config.client_id ? '***configured***' : 'not_set',
-      tenantId: config.tenant_id ? '***configured***' : 'not_set'
-    });
-    console.error('Erro ao configurar cliente Azure:', azureError);
-  }
+  logger.log('AZURE', 'CLIENT_DEFERRED_PROFILE_CONFIG', {
+    hasGlobalClientId: !!config.client_id,
+    hasGlobalTenantId: !!config.tenant_id,
+    hasGlobalScope: !!config.scope,
+    hasGlobalServerApi: !!config.server_api
+  });
 
   createWindow();
   app.on('activate', () => {
@@ -1499,6 +1483,92 @@ function shouldEnableExplicitExitNotify(ovpnContent = '') {
   return true;
 }
 
+function maskValue(value) {
+  const text = String(value || '');
+  if (!text) return 'not_set';
+  if (text.length <= 8) return '***configured***';
+  return `${text.slice(0, 4)}***${text.slice(-4)}`;
+}
+
+function parseAzureConfigFromOvpnContent(content = '') {
+  const azureConfig = {
+    client_id: null,
+    tenant_id: null,
+    scope: null,
+    server_api: null
+  };
+
+  String(content || '').split('\n').forEach((line) => {
+    const trimmedLine = line.trim();
+    if (!trimmedLine.startsWith('#AZURE:')) return;
+    const azureLine = trimmedLine.substring(7).trim();
+    const separatorIndex = azureLine.indexOf('=');
+    if (separatorIndex < 0) return;
+    const key = azureLine.substring(0, separatorIndex).trim().toLowerCase();
+    const value = azureLine.substring(separatorIndex + 1).trim();
+    if (!value || !Object.prototype.hasOwnProperty.call(azureConfig, key)) return;
+    azureConfig[key] = value;
+  });
+
+  return azureConfig;
+}
+
+function normalizeAzureConfig(azureConfig = {}) {
+  return {
+    client_id: azureConfig.client_id || azureConfig.clientId || null,
+    tenant_id: azureConfig.tenant_id || azureConfig.tenantId || null,
+    scope: azureConfig.scope || null,
+    server_api: azureConfig.server_api || azureConfig.serverApi || null
+  };
+}
+
+function mergeAzureConfig(...configs) {
+  return configs.reduce((merged, item) => {
+    const normalized = normalizeAzureConfig(item || {});
+    Object.keys(merged).forEach((key) => {
+      if (!merged[key] && normalized[key]) merged[key] = normalized[key];
+    });
+    return merged;
+  }, { client_id: null, tenant_id: null, scope: null, server_api: null });
+}
+
+async function getAzureProfile(profileId) {
+  const profilesRead = await readJsonWithBackup(AZURE_PROFILES_PATH, [], 'azure_profiles');
+  if (!profilesRead.success) {
+    throw new Error(`Falha ao ler perfis Azure: ${profilesRead.error}`);
+  }
+  const profiles = Array.isArray(profilesRead.data) ? profilesRead.data : [];
+  return profiles.find((profile) => profile && profile.id === profileId) || null;
+}
+
+async function resolveAzureProfileConfig(profileId) {
+  if (!profileId) {
+    throw new Error('Perfil Azure não informado. Selecione um perfil e tente novamente.');
+  }
+
+  const profile = await getAzureProfile(profileId);
+  const ovpnResult = await loadOvnFromProfile(profileId, 'azure');
+  const ovpnConfig = ovpnResult.success ? parseAzureConfigFromOvpnContent(ovpnResult.content) : {};
+  const fallbackConfig = {
+    client_id: config?.client_id || null,
+    tenant_id: config?.tenant_id || null,
+    scope: config?.scope || null,
+    server_api: config?.server_api || null
+  };
+  const azureConfig = mergeAzureConfig(profile?.azureConfig, ovpnConfig, fallbackConfig);
+  const missing = ['client_id', 'tenant_id', 'scope', 'server_api'].filter((key) => !azureConfig[key]);
+
+  if (missing.length) {
+    throw new Error(`Configuração Azure incompleta para o perfil selecionado: ${missing.join(', ')}.`);
+  }
+
+  return {
+    profile,
+    ovpnPath: ovpnResult.success ? ovpnResult.path : null,
+    azureConfig
+  };
+}
+
 async function loadOvnFromProfile(profileId, preferredType = null) {
   console.log(`🔍 Iniciando busca por arquivo OVPN para perfil: ${profileId}`);
 
@@ -1659,25 +1729,27 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
 
       if (trimmedLine.startsWith('#AZURE:')) {
         const azureLine = trimmedLine.substring(7).trim();
-        const [key, value] = azureLine.split('=').map(s => s.trim());
+        const separatorIndex = azureLine.indexOf('=');
+        const key = separatorIndex >= 0 ? azureLine.substring(0, separatorIndex).trim() : '';
+        const value = separatorIndex >= 0 ? azureLine.substring(separatorIndex + 1).trim() : '';
 
         if (key && value) {
           switch (key.toLowerCase()) {
             case 'client_id':
               azureConfig.client_id = value;
-              console.log(`🔧 Configuração Azure extraída: client_id = ${value}`);
+              console.log(`🔧 Configuração Azure extraída: client_id = ${maskValue(value)}`);
               break;
             case 'tenant_id':
               azureConfig.tenant_id = value;
-              console.log(`🔧 Configuração Azure extraída: tenant_id = ${value}`);
+              console.log(`🔧 Configuração Azure extraída: tenant_id = ${maskValue(value)}`);
               break;
             case 'scope':
               azureConfig.scope = value;
-              console.log(`🔧 Configuração Azure extraída: scope = ${value}`);
+              console.log(`🔧 Configuração Azure extraída: scope = ${value ? '***configured***' : 'not_set'}`);
               break;
             case 'server_api':
               azureConfig.server_api = value;
-              console.log(`🔧 Configuração Azure extraída: server_api = ${value}`);
+              console.log(`🔧 Configuração Azure extraída: server_api = ${value ? '***configured***' : 'not_set'}`);
               break;
           }
         }
@@ -2999,30 +3071,13 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       return { success: false, error: processResult.error };
     }
 
-    if (processResult.azureConfig) {
-      const configPath = CONFIG_PATH;
-      const currentConfig = JSON.parse(await fsAsync.readFile(configPath, 'utf-8'));
-
-      if (processResult.azureConfig.client_id) {
-        currentConfig.client_id = processResult.azureConfig.client_id;
-        console.log(`💾 Client ID salvo: ${processResult.azureConfig.client_id}`);
-      }
-      if (processResult.azureConfig.tenant_id) {
-        currentConfig.tenant_id = processResult.azureConfig.tenant_id;
-        console.log(`💾 Tenant ID salvo: ${processResult.azureConfig.tenant_id}`);
-      }
-      if (processResult.azureConfig.scope) {
-        currentConfig.scope = processResult.azureConfig.scope;
-        console.log(`💾 Scope salvo: ${processResult.azureConfig.scope}`);
-      }
-      if (processResult.azureConfig.server_api) {
-        currentConfig.server_api = processResult.azureConfig.server_api;
-        console.log(`💾 Server API salvo: ${processResult.server_api}`);
-      }
-
-      await fsAsync.writeFile(configPath, JSON.stringify(currentConfig, null, 2));
-      console.log(`✅ Configurações Azure salvas no config.json`);
-    }
+    const profileAzureConfig = normalizeAzureConfig(processResult.azureConfig || {});
+    console.log('✅ Configurações Azure extraídas para o perfil', {
+      hasClientId: !!profileAzureConfig.client_id,
+      hasTenantId: !!profileAzureConfig.tenant_id,
+      hasScope: !!profileAzureConfig.scope,
+      hasServerApi: !!profileAzureConfig.server_api
+    });
 
     console.log(`✅ Perfil Azure salvo: ${profileId}`);
 
@@ -3037,6 +3092,7 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
       azureProfiles[profileIndex].ovpnFile = path.join(processResult.profileDir, `${profileId}.ovpn`);
       azureProfiles[profileIndex].ovpnFileName = ovpnFileName;
       azureProfiles[profileIndex].profileDir = processResult.profileDir;
+      azureProfiles[profileIndex].azureConfig = profileAzureConfig;
       azureProfiles[profileIndex].updatedAt = new Date().toISOString();
     } else {
       azureProfiles.push({
@@ -3045,6 +3101,7 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
         ovpnFile: path.join(processResult.profileDir, `${profileId}.ovpn`),
         ovpnFileName: ovpnFileName,
         profileDir: processResult.profileDir,
+        azureConfig: profileAzureConfig,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -3054,9 +3111,6 @@ ipcMain.handle('save-azure-config', async (event, profileId, ovpnContent, ovpnFi
     if (!azureWriteResult.success) {
       return { success: false, error: `Falha ao salvar perfis Azure: ${azureWriteResult.error}` };
     }
-
-    config.openvpn_config = path.join(processResult.profileDir, `${profileId}.ovpn`);
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 
     return {
       success: true,
@@ -3269,11 +3323,30 @@ ipcMain.handle('delete-azure-profile', async (event, profileId) => {
 
 // ============ FUNÇÕES AZURE EXISTENTES ============
 
-ipcMain.handle('login-azure', async () => {
-  logger.log('AZURE', 'LOGIN_START', { scopes: config.scope });
+ipcMain.handle('login-azure', async (event, profileId) => {
+  const { azureConfig } = await resolveAzureProfileConfig(profileId);
+  const profilePca = new PublicClientApplication({
+    auth: {
+      clientId: azureConfig.client_id,
+      authority: `https://login.microsoftonline.com/${azureConfig.tenant_id}`,
+    }
+  });
+
+  azureAuthContexts.set(profileId, {
+    azureConfig,
+    updatedAt: new Date().toISOString()
+  });
+
+  logger.log('AZURE', 'LOGIN_START', {
+    profileId,
+    hasClientId: !!azureConfig.client_id,
+    tenantId: maskValue(azureConfig.tenant_id),
+    hasScope: !!azureConfig.scope,
+    hasServerApi: !!azureConfig.server_api
+  });
 
   const request = {
-    scopes: config.scope.split(' '),
+    scopes: azureConfig.scope.split(' ').filter(Boolean),
     deviceCodeCallback: (deviceCodeResponse) => {
       logger.log('AZURE', 'DEVICE_CODE_GENERATED', {
         verificationUri: deviceCodeResponse.verificationUri,
@@ -3295,7 +3368,7 @@ ipcMain.handle('login-azure', async () => {
   };
 
   try {
-    const response = await pca.acquireTokenByDeviceCode(request);
+    const response = await profilePca.acquireTokenByDeviceCode(request);
     const { accessToken, account } = response;
 
     let expiresAtIso;
@@ -3310,6 +3383,7 @@ ipcMain.handle('login-azure', async () => {
     const cache = {
       access_token: accessToken,
       username: account.username,
+      profile_id: profileId,
       expires_at: expiresAtIso
     };
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
@@ -3326,11 +3400,20 @@ ipcMain.handle('login-azure', async () => {
   }
 });
 
-ipcMain.handle('publish-token', async (event, username, token) => {
+ipcMain.handle('publish-token', async (event, username, token, profileId) => {
   try {
-    logger.log('AZURE', 'TOKEN_PUBLISH_START', { username, serverApi: config.server_api });
+    const context = azureAuthContexts.get(profileId);
+    const { azureConfig } = context?.azureConfig
+      ? context
+      : await resolveAzureProfileConfig(profileId);
 
-    const response = await axios.post(config.server_api, { username, jwt_token: token });
+    logger.log('AZURE', 'TOKEN_PUBLISH_START', {
+      username,
+      profileId,
+      hasServerApi: !!azureConfig.server_api
+    });
+
+    const response = await axios.post(azureConfig.server_api, { username, jwt_token: token });
     const shortIdRaw =
       response?.data?.short_id ||
       response?.data?.shortID ||
@@ -3344,7 +3427,8 @@ ipcMain.handle('publish-token', async (event, username, token) => {
       const responseData = response?.data && typeof response.data === 'object' ? response.data : {};
       logger.log('AZURE', 'TOKEN_PUBLISH_FAILURE', {
         username,
-        serverApi: config.server_api,
+        profileId,
+        hasServerApi: !!azureConfig.server_api,
         status: response?.status || null,
         responseKeys: Object.keys(responseData),
         nestedDataKeys: responseData.data && typeof responseData.data === 'object' ? Object.keys(responseData.data) : []
@@ -3360,6 +3444,7 @@ ipcMain.handle('publish-token', async (event, username, token) => {
 
       existing.short_id = shortId;
       existing.shortID = shortId;
+      existing.profile_id = profileId;
       existing.short_id_generated_at = new Date().toISOString();
       fs.writeFileSync(cachePath, JSON.stringify(existing, null, 2));
     } catch (persistErr) {
@@ -3370,21 +3455,25 @@ ipcMain.handle('publish-token', async (event, username, token) => {
     }
 
     logger.logAzureTokenPublish(username, true, {
-      serverApi: config.server_api,
+      profileId,
+      hasServerApi: !!azureConfig.server_api,
       hasShortId: !!shortId
     });
     return { success: true, short_id: shortId };
   } catch (err) {
     logger.logAzureTokenPublish(username, false, {
-      serverApi: config.server_api,
+      profileId,
       error: err.response?.data?.message || err.message
     });
     throw new Error(err.response?.data?.message || err.message);
   }
 });
 
-ipcMain.handle('connect-openvpn', async () => {
+ipcMain.handle('connect-openvpn', async (event, profileId) => {
   suppressNextReconnect = false;
+  const connectionProfileId = profileId || 'azure';
+  const ovpnResult = profileId ? await loadOvnFromProfile(profileId, 'azure') : { success: false };
+  const azureOvpnPath = ovpnResult.success ? ovpnResult.path : config?.openvpn_config;
   const connectionId = `conn_azure_${Date.now()}`;
   const pkexecAvailableGlobal = await checkPkexecAvailable();
   return new Promise((resolve, reject) => {
@@ -3396,16 +3485,16 @@ ipcMain.handle('connect-openvpn', async () => {
       return;
     }
 
-    if (!config?.openvpn_config || !fs.existsSync(config.openvpn_config)) {
+    if (!azureOvpnPath || !fs.existsSync(azureOvpnPath)) {
       reject(new Error('Arquivo de configuração OpenVPN Azure não encontrado.'));
       return;
     }
 
     let configContent = '';
     try {
-      configContent = fs.readFileSync(config.openvpn_config, 'utf-8');
+      configContent = fs.readFileSync(azureOvpnPath, 'utf-8');
     } catch (readConfigError) {
-      console.log(`⚠️ Não foi possível ler conteúdo do .ovpn Azure (${config.openvpn_config}): ${readConfigError.message}`);
+      console.log(`⚠️ Não foi possível ler conteúdo do .ovpn Azure (${azureOvpnPath}): ${readConfigError.message}`);
     }
 
     let cache;
@@ -3427,6 +3516,11 @@ ipcMain.handle('connect-openvpn', async () => {
     }
     const azureUpn = String(cache.username || '').trim().replace(/[\r\n]/g, '');
 
+    if (profileId && cache.profile_id && cache.profile_id !== profileId) {
+      reject(new Error('Token Azure pertence a outro perfil. Faça login novamente com o perfil selecionado.'));
+      return;
+    }
+
     if (!azureUpn || !azureUpn.includes('@')) {
       reject(new Error('UPN do Entra ID inválido ou ausente no cache. Faça login novamente.'));
       return;
@@ -3434,7 +3528,7 @@ ipcMain.handle('connect-openvpn', async () => {
 
     logger.log('CONNECTION', 'START', {
       connectionId,
-      profileId: 'azure',
+      profileId: connectionProfileId,
       profileType: 'azure',
       connectionType: 'openvpn-azure',
       platform: process.platform,
@@ -3443,18 +3537,18 @@ ipcMain.handle('connect-openvpn', async () => {
       hasShortId: true,
       shortIdLength: shortID.length,
       shortIdSuffix: shortID.slice(-4),
-      configPath: config.openvpn_config
+      configPath: azureOvpnPath
     });
 
     fs.writeFileSync(authPath, `${azureUpn}\n${shortID}`, 'utf-8');
     console.log(`🔐 [Azure] auth-user-pass preparado com UPN: ${azureUpn}`);
 
-    const openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
+    const openvpnArgs = ['--config', azureOvpnPath, '--auth-user-pass', authPath];
     if (shouldEnableExplicitExitNotify(configContent)) {
       openvpnArgs.push('--explicit-exit-notify', '3');
       logger.log('CONNECTION', 'EXPLICIT_EXIT_NOTIFY_ENABLED', {
         profileType: 'azure',
-        profileId: 'azure',
+        profileId: connectionProfileId,
         mode: 'azure'
       });
     }
@@ -3466,7 +3560,7 @@ ipcMain.handle('connect-openvpn', async () => {
     let openvpnCommand;
     let openvpnArgsFinal;
 
-    currentOvpnPath = config.openvpn_config;
+    currentOvpnPath = azureOvpnPath;
     currentElevationMethod = 'direct';
 
     if (process.platform === 'win32') {
@@ -3619,14 +3713,14 @@ ipcMain.handle('connect-openvpn', async () => {
 
       logger.log('CONNECTION', 'AUTH_FAILED_DETECTED', {
         connectionId,
-        profileId: 'azure',
+        profileId: connectionProfileId,
         source
       });
 
       killVPNConnection().catch((killError) => {
         logger.logSystemError('AUTH_FAILED_KILL_FAILED', killError, {
           connectionId,
-          profileId: 'azure',
+          profileId: connectionProfileId,
           source
         });
       });
@@ -3649,7 +3743,7 @@ ipcMain.handle('connect-openvpn', async () => {
 
       logger.log('CONNECTION', 'OPENVPN_AZURE_FATAL_OUTPUT', {
         connectionId,
-        profileId: 'azure',
+        profileId: connectionProfileId,
         source,
         error: lastErrorOutput
       }, 'ERROR');
@@ -3657,7 +3751,7 @@ ipcMain.handle('connect-openvpn', async () => {
       killVPNConnection().catch((killError) => {
         logger.logSystemError('AZURE_FATAL_KILL_FAILED', killError, {
           connectionId,
-          profileId: 'azure',
+          profileId: connectionProfileId,
           source
         });
       });
@@ -3691,9 +3785,9 @@ ipcMain.handle('connect-openvpn', async () => {
     vpnConnectionActive = true;
     currentConnectionMeta = buildBluepexConnectionMeta({
       connectionId,
-      profileId: 'azure',
+      profileId: connectionProfileId,
       profileType: 'azure',
-      configPath: config.openvpn_config,
+      configPath: azureOvpnPath,
       authFilePath: authPath,
       vpnPid: vpnProcess.pid,
       wrapperPid: vpnProcess.pid
@@ -3703,7 +3797,7 @@ ipcMain.handle('connect-openvpn', async () => {
     if (process.platform === 'linux') {
       logger.log('CONNECTION', 'AZURE_CONNECT_FALLBACK_WAITING', {
         connectionId,
-        profileId: 'azure',
+        profileId: connectionProfileId,
         intervalMs: 2000,
         minAliveMs: 10000
       });
@@ -3727,7 +3821,7 @@ ipcMain.handle('connect-openvpn', async () => {
         if (elapsedMs >= 10000 && vpnState.connected && !isAzureFatalOutput(lastErrorOutput)) {
           logger.log('CONNECTION', 'AZURE_CONNECT_FALLBACK_CONFIRMED', {
             connectionId,
-            profileId: 'azure',
+            profileId: connectionProfileId,
             elapsedMs,
             pid: trackedPid || vpnProcess.pid,
             detail: vpnState.detail
@@ -3745,7 +3839,7 @@ ipcMain.handle('connect-openvpn', async () => {
         killVPNConnection().catch((killError) => {
           logger.logSystemError('AZURE_TIMEOUT_KILL_FAILED', killError, {
             connectionId,
-            profileId: 'azure'
+            profileId: connectionProfileId
           });
         });
         rejectOnce(new Error(`Timeout na conexão OpenVPN Azure. ${lastErrorOutput || ''}`.trim()));
@@ -3810,7 +3904,7 @@ ipcMain.handle('connect-openvpn', async () => {
         console.log('⚠️ [Azure] EPERM kill ignorado (processo root, Node não pode verificar PID) — aguardando evento close para diagnóstico real');
         logger.log('CONNECTION', 'EPERM_KILL_IGNORED', {
           connectionId,
-          profileId: 'azure',
+          profileId: connectionProfileId,
           note: 'EPERM_syscall_kill_is_nodejs_internal_pid_check_not_spawn_failure',
           pid: vpnProcess?.pid
         });
@@ -3841,9 +3935,9 @@ ipcMain.handle('connect-openvpn', async () => {
          }
          // RF010: reagendar reconexão se caiu inesperadamente
           if (code !== 0 && AUTO_RECONNECT.enabled && !azureAuthFailed && !manualDisconnect) {
-           AUTO_RECONNECT.lastProfileId = 'azure';
-           AUTO_RECONNECT.lastProfileType = 'azure';
-           scheduleReconnect('azure', 'azure');
+            AUTO_RECONNECT.lastProfileId = connectionProfileId;
+            AUTO_RECONNECT.lastProfileType = 'azure';
+            scheduleReconnect(connectionProfileId, 'azure');
          }
        }
 
@@ -4829,10 +4923,10 @@ ipcMain.handle('save-azure-app-config', async (event, newConfig) => {
     }
 
     const changes = {};
-    if (config.client_id !== newConfig.client_id) changes.client_id = { old: config.client_id, new: newConfig.client_id };
-    if (config.tenant_id !== newConfig.tenant_id) changes.tenant_id = { old: config.tenant_id, new: newConfig.tenant_id };
-    if (config.scope !== newConfig.scope) changes.scope = { old: config.scope, new: newConfig.scope };
-    if (config.server_api !== newConfig.server_api) changes.server_api = { old: config.server_api, new: newConfig.server_api };
+    if (config.client_id !== newConfig.client_id) changes.client_id = { changed: true };
+    if (config.tenant_id !== newConfig.tenant_id) changes.tenant_id = { changed: true };
+    if (config.scope !== newConfig.scope) changes.scope = { changed: true };
+    if (config.server_api !== newConfig.server_api) changes.server_api = { changed: true };
 
     config.client_id = newConfig.client_id;
     config.tenant_id = newConfig.tenant_id;

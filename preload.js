@@ -15,11 +15,11 @@ ipcRenderer.invoke('send-renderer-log', {
 
 globalThis.electronAPI = {
   // Autenticação Azure
-  loginAzure: () => ipcRenderer.invoke('login-azure'),
-  publishToken: (username, token) => ipcRenderer.invoke('publish-token', username, token),
+  loginAzure: (profileId) => ipcRenderer.invoke('login-azure', profileId),
+  publishToken: (username, token, profileId) => ipcRenderer.invoke('publish-token', username, token, profileId),
 
   // Conexões VPN
-  connectOpenVPN: () => ipcRenderer.invoke('connect-openvpn'),
+  connectOpenVPN: (profileId) => ipcRenderer.invoke('connect-openvpn', profileId),
   disconnectOpenVPN: (pid) => ipcRenderer.invoke('disconnect-openvpn', pid),
   killVPNConnection: () => ipcRenderer.invoke('kill-vpn-connection'),
   connectOpenVPNUserPassProfile: (profileId, username, password) =>
