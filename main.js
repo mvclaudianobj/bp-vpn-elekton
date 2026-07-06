@@ -465,6 +465,7 @@ class AutoUpdaterManager {
     }
 
     this.isChecking = true;
+    let githubCheckError;
     try {
       this.configureGithubFeed();
 
@@ -472,7 +473,8 @@ class AutoUpdaterManager {
         manual: showDialog,
         currentVersion: app.getVersion(),
         primaryProvider: 'github',
-        fallbackProvider: 'wsutm'
+        fallbackProvider: 'wsutm',
+        providerTimeoutMs: UPDATE_PROVIDER_TIMEOUT_MS
       });
 
       console.log('🔍 Iniciando checkForUpdates()...');
@@ -480,12 +482,32 @@ class AutoUpdaterManager {
       try {
         await this.runUpdateCheck('github');
       } catch (githubError) {
+        githubCheckError = githubError;
         logger.logSystemError('UPDATE_CHECK_GITHUB_FAILED', githubError, {
           fallback: 'wsutm',
-          baseUrl: this.wsutmBaseUrl
+          baseUrl: this.wsutmBaseUrl,
+          providerTimeoutMs: UPDATE_PROVIDER_TIMEOUT_MS
+        });
+      }
+
+      if (!this.updateAvailable) {
+        logger.log('UPDATE', 'CHECK_FALLBACK_START', {
+          from: 'github',
+          to: 'wsutm',
+          reason: githubCheckError ? truncateUpdateError(githubCheckError) : 'no_update_on_github'
         });
         this.configureWsutmFeed();
-        await this.runUpdateCheck('wsutm');
+        try {
+          await this.runUpdateCheck('wsutm');
+        } catch (wsutmError) {
+          if (githubCheckError) {
+            const message = 'Não foi possível verificar atualizações no GitHub nem no WSUTM.';
+            const detail = `GitHub: ${truncateUpdateError(githubCheckError)} | WSUTM: ${truncateUpdateError(wsutmError)}`;
+            const finalError = new Error(`${message} ${detail}`);
+            finalError.code = 'UPDATE_CHECK_ALL_PROVIDERS_FAILED';
+            throw finalError;
+          }
+        }
       }
 
       console.log('✅ checkForUpdates() concluído. updateAvailable:', this.updateAvailable);
