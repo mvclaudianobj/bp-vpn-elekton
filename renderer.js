@@ -231,6 +231,9 @@ const configSaveAzureProfileBtn = document.getElementById('configSaveAzureProfil
 const updateBtn = document.getElementById('updateBtn');
 const updateModal = document.getElementById('updateModal');
 const updateCloseBtn = document.getElementById('updateCloseBtn');
+const UPDATE_CHECK_TIMEOUT_MS = 40000;
+const updateBtnDefaultHtml = updateBtn ? updateBtn.innerHTML : '';
+let isManualUpdateCheckRunning = false;
 
 // Garantir que o modal esteja escondido inicialmente
 if (updateModal) {
@@ -755,6 +758,10 @@ function populateProfileSelect() {
     console.log(`📋 Select populado com ${allProfiles.length} perfis`);
 }
 
+function getTwoFactorBadge(profile) {
+    return profile.type === 'user' && profile.requires2FA ? '<span class="profile-2fa-badge">2FA detectado</span>' : '';
+}
+
 function populateConfigProfilesList() {
     if (!configProfilesList) return;
 
@@ -765,7 +772,7 @@ function populateConfigProfilesList() {
         li.className = 'profile-item';
         li.innerHTML = `
             <div class="profile-info">
-                <strong>${profile.name}</strong>
+                <strong>${profile.name}</strong> ${getTwoFactorBadge(profile)}
                 <small>${profile.ovpnFileName || 'Arquivo não especificado'}</small>
             </div>
             <button class="btn btn-sm btn-danger font-095" onclick="deleteProfile('${profile.id}', 'user')">Excluir</button>
@@ -858,6 +865,9 @@ function updateProfileDisplay() {
         let details = '';
         if (currentProfile.type === 'user') {
             details = `Arquivo: ${currentProfile.ovpnFileName || 'N/A'}`;
+            if (currentProfile.requires2FA) {
+                details += ' · 2FA detectado';
+            }
         } else if (currentProfile.type === 'azure') {
             details = `Arquivo: ${currentProfile.ovpnFileName || 'N/A'}`;
         }
@@ -913,11 +923,81 @@ function getFriendlyIpcErrorMessage(error) {
     message = message.replace(/^Error invoking remote method '[^']+':\s*/i, '');
     message = message.replace(/^Error:\s*/i, '');
 
+    if (/Token 2FA inválido ou expirado/i.test(message)) {
+        return 'Token 2FA inválido ou expirado. Tente novamente.';
+    }
+
     if (/Falha na autenticação/i.test(message)) {
         return 'Falha na autenticação: usuário, senha ou token incorretos. Verifique também a permissão no Controle OpenVPN.';
     }
 
     return message;
+}
+
+function promptTotpTokenBeforeConnection(message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('challengeModal');
+        const msgEl = document.getElementById('challengeMessage');
+        const inputEl = document.getElementById('challengeResponse');
+        const timerEl = document.getElementById('challengeTimer');
+        const submitBtn = document.getElementById('submitChallengeBtn');
+        const cancelBtn = document.getElementById('cancelChallengeBtn');
+
+        if (!modal || !msgEl || !inputEl || !submitBtn || !cancelBtn) {
+            const token = window.prompt(message);
+            if (token === null) {
+                resolve(null);
+                return;
+            }
+            const trimmedToken = token.trim();
+            if (!/^\d{6}$/.test(trimmedToken)) {
+                showStatus('Token deve ser exatamente 6 dígitos numéricos.', 'alert');
+                resolve(false);
+                return;
+            }
+            resolve(trimmedToken);
+            return;
+        }
+
+        const submitClone = submitBtn.cloneNode(true);
+        const cancelClone = cancelBtn.cloneNode(true);
+        submitBtn.replaceWith(submitClone);
+        cancelBtn.replaceWith(cancelClone);
+
+        const closeModal = (value) => {
+            modal.style.display = 'none';
+            inputEl.value = '';
+            inputEl.removeEventListener('keydown', onKeyDown);
+            resolve(value);
+        };
+
+        const onSubmit = () => {
+            const token = inputEl.value.trim();
+            if (!/^\d{6}$/.test(token)) {
+                showStatus('Token deve ser exatamente 6 dígitos numéricos.', 'alert');
+                return;
+            }
+            closeModal(token);
+        };
+
+        const onCancel = () => {
+            closeModal(null);
+        };
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Enter') onSubmit();
+            if (event.key === 'Escape') onCancel();
+        };
+
+        msgEl.textContent = message;
+        inputEl.value = '';
+        if (timerEl) timerEl.textContent = '';
+        modal.style.display = 'flex';
+        submitClone.addEventListener('click', onSubmit);
+        cancelClone.addEventListener('click', onCancel);
+        inputEl.addEventListener('keydown', onKeyDown);
+        setTimeout(() => inputEl.focus(), 100);
+    });
 }
 
 function isActiveVpnError(error) {
@@ -1030,7 +1110,27 @@ async function handleConnect() {
         console.log('📝 [RENDERER] Logs de conexão limpos');
 
         if (currentProfile.type === 'user') {
-            // Conexão usuário/senha
+            let totpToken = null;
+
+            if (window.electronAPI.detect2FARequirement) {
+                let twoFaCheck = null;
+                try {
+                    twoFaCheck = await window.electronAPI.detect2FARequirement(currentProfile.id);
+                } catch (_) {}
+
+                if (twoFaCheck && twoFaCheck.requires2FA) {
+                    const tokenResult = await promptTotpTokenBeforeConnection('Este perfil requer 2FA. Informe o token TOTP para iniciar a conexão.');
+                    if (tokenResult === null) {
+                        showStatus('Autenticação 2FA cancelada', 'alert');
+                        return;
+                    }
+                    if (tokenResult === false) {
+                        throw new Error('Token deve ser exatamente 6 dígitos numéricos.');
+                    }
+                    totpToken = tokenResult;
+                }
+            }
+
             const username = userUsername.value.trim();
             const password = userPassword.value;
 
@@ -1062,7 +1162,8 @@ async function handleConnect() {
             const result = await window.electronAPI.connectOpenVPNUserPassProfile(
                 currentProfile.id,
                 username,
-                password
+                password,
+                totpToken
             );
 
             vpnPid = result.pid;
@@ -1806,22 +1907,58 @@ function initializeUpdateElements() {
     console.log('🔄 Elementos de atualização inicializados');
 }
 
+function setUpdateCheckingState(isChecking) {
+    isManualUpdateCheckRunning = isChecking;
+    if (!updateBtn) return;
+
+    updateBtn.disabled = isChecking;
+    if (isChecking) {
+        updateBtn.innerHTML = 'Verificando...';
+    } else if (!updateInfo) {
+        updateBtn.innerHTML = updateBtnDefaultHtml;
+    }
+}
+
+function withLocalTimeout(promise, timeoutMs, message) {
+    let timeout;
+    const timeoutPromise = new Promise((resolve) => {
+        timeout = setTimeout(() => resolve({ success: false, error: message, timeout: true }), timeoutMs);
+    });
+
+    return Promise.race([
+        promise.finally(() => clearTimeout(timeout)),
+        timeoutPromise
+    ]);
+}
+
+function getIpcPayload(eventOrPayload, payload) {
+    return payload === undefined ? eventOrPayload : payload;
+}
+
 async function checkForUpdates() {
     try {
+        if (isManualUpdateCheckRunning) return;
         console.log('🔄 BOTÃO DE ATUALIZAÇÃO CLICADO - Verificando atualizações...');
         showStatus('Verificando atualizações...', 'status');
+        setUpdateCheckingState(true);
 
-        const result = await window.electronAPI.checkForUpdates(true);
+        const result = await withLocalTimeout(
+            window.electronAPI.checkForUpdates(true),
+            UPDATE_CHECK_TIMEOUT_MS,
+            'Tempo esgotado ao verificar atualizações.'
+        );
 
         // Não exibir "versão mais recente" aqui — o resultado correto chega via evento:
         // onUpdateAvailable (se houver update) ou onUpdateCheckComplete (se não houver).
         // Exibir mensagem apenas em caso de erro técnico no IPC.
         if (!result.success) {
             showStatus(`Erro na verificação: ${result.error}`, 'alert');
+            setUpdateCheckingState(false);
         }
     } catch (error) {
         console.error('❌ Erro ao verificar atualizações:', error);
         showStatus(`Erro ao verificar atualizações: ${error.message}`, 'alert');
+        setUpdateCheckingState(false);
     }
 }
 
@@ -1918,7 +2055,14 @@ if (window.electronAPI) {
 
     // Desafio 2FA - abrir modal real
     window.electronAPI.onVpnChallenge((event, data) => {
-        console.log('🔐 Desafio VPN recebido:', data);
+        console.log('🔐 Desafio VPN recebido:', {
+            type: data?.type,
+            requiresInput: !!data?.requiresInput,
+            usesEcho: !!data?.usesEcho,
+            usesAuthUserPass: !!data?.usesAuthUserPass,
+            composeLocalMfa: !!data?.composeLocalMfa,
+            messageLength: data?.message ? String(data.message).length : 0
+        });
 
         const modal = document.getElementById('challengeModal');
         const msgEl = document.getElementById('challengeMessage');
@@ -1963,17 +2107,17 @@ if (window.electronAPI) {
         // Enviar token
         const onSubmit = async () => {
             const token = inputEl.value.trim();
-            if (!token || token.length < 6) {
-                showStatus('Digite um token válido de 6 dígitos', 'alert');
+            if (!/^\d{6}$/.test(token)) {
+                showStatus('Token deve ser exatamente 6 dígitos numéricos.', 'alert');
                 return;
             }
-            closeModal();
             console.log('📤 Enviando token 2FA');
             try {
                 await window.electronAPI.sendChallengeResponse(token);
+                closeModal();
             } catch (err) {
                 console.error('Erro ao enviar token 2FA:', err);
-                showStatus('Erro ao enviar token 2FA', 'error');
+                showStatus('Erro ao enviar token 2FA. Tente novamente.', 'error');
             }
         };
 
@@ -1981,6 +2125,11 @@ if (window.electronAPI) {
         const onCancel = () => {
             closeModal();
             showStatus('Autenticação 2FA cancelada', 'alert');
+            if (window.electronAPI.cancelChallengeResponse) {
+                window.electronAPI.cancelChallengeResponse().catch((err) => {
+                    console.error('Erro ao cancelar token 2FA:', err);
+                });
+            }
         };
 
         // Enter no input também submete
@@ -2020,10 +2169,11 @@ if (window.electronAPI) {
     }
 
     // Eventos de atualização
-    window.electronAPI.onUpdateAvailable(async (event) => {
-        const info = event.info || event;
-        const showDialog = event.showDialog;
-        console.log('🎉 Update available event received:', JSON.stringify(event, null, 2));
+    window.electronAPI.onUpdateAvailable(async (event, data) => {
+        const payload = getIpcPayload(event, data);
+        const info = payload.info || payload;
+        const showDialog = payload.showDialog;
+        console.log('🎉 Update available event received:', JSON.stringify(payload, null, 2));
         if (!info) {
             console.error('❌ Info is null or undefined');
             return;
@@ -2034,6 +2184,7 @@ if (window.electronAPI) {
         console.log('📦 Extracted version:', version);
         if (updateBtn) {
             updateBtn.style.display = 'block';
+            updateBtn.disabled = false;
             updateBtn.innerHTML = `<img src="local-resource://icon-download.png" alt="Icon Download" class="mg-top-icon"> Baixar ${version}`;
         }
         // Atualizar modal com nova versão
@@ -2062,17 +2213,21 @@ if (window.electronAPI) {
             }
         }
         showStatus('Atualização disponível!', 'success');
+        isManualUpdateCheckRunning = false;
     });
 
-    window.electronAPI.onUpdateDownloaded((info) => {
+    window.electronAPI.onUpdateDownloaded((event, data) => {
+        const info = getIpcPayload(event, data);
         console.log('📦 Update downloaded:', info);
         setUpdateDownloadState('downloaded');
     });
 
     window.electronAPI.onUpdateError((event, error) => {
-        console.log('❌ Update error:', error);
+        const updateError = getIpcPayload(event, error);
+        console.log('❌ Update error:', updateError);
         setUpdateDownloadState('error');
-        showStatus(`Erro na atualização: ${error?.message || 'falha desconhecida'}`, 'alert');
+        setUpdateCheckingState(false);
+        showStatus(`Erro na atualização: ${updateError?.message || 'falha desconhecida'}`, 'alert');
     });
 
     window.electronAPI.onUpdateDownloadStarted(() => {
@@ -2082,7 +2237,8 @@ if (window.electronAPI) {
         }
     });
 
-    window.electronAPI.onUpdateProgress((progress) => {
+    window.electronAPI.onUpdateProgress((event, data) => {
+        const progress = getIpcPayload(event, data);
         console.log('📊 Update progress:', progress);
         setUpdateDownloadState('downloading');
         const progressFill = document.getElementById('progressFill');
@@ -2092,9 +2248,11 @@ if (window.electronAPI) {
 
     });
 
-    window.electronAPI.onUpdateCheckComplete((data) => {
-        if (!data) return;
-        if (data.available === false) {
+    window.electronAPI.onUpdateCheckComplete((event, data) => {
+        const payload = getIpcPayload(event, data);
+        if (!payload) return;
+        if (payload.available === false) {
+            setUpdateCheckingState(false);
             showStatus('Verificação concluída. Você está usando a versão mais recente.', 'success');
         }
     });

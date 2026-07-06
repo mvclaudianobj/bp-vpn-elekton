@@ -22,8 +22,8 @@ globalThis.electronAPI = {
   connectOpenVPN: () => ipcRenderer.invoke('connect-openvpn'),
   disconnectOpenVPN: (pid) => ipcRenderer.invoke('disconnect-openvpn', pid),
   killVPNConnection: () => ipcRenderer.invoke('kill-vpn-connection'),
-  connectOpenVPNUserPassProfile: (profileId, username, password) =>
-  ipcRenderer.invoke('connect-openvpn-userpass-profile', profileId, username, password),
+  connectOpenVPNUserPassProfile: (profileId, username, password, totpToken) =>
+  ipcRenderer.invoke('connect-openvpn-userpass-profile', profileId, username, password, totpToken),
 
   // Gestão de Arquivos
   selectOvpnFile: () => ipcRenderer.invoke('select-ovpn-file'),
@@ -76,6 +76,7 @@ globalThis.electronAPI = {
 
   // Desafio de autenticação
   sendChallengeResponse: (response) => ipcRenderer.invoke('send-challenge-response', response),
+  cancelChallengeResponse: () => ipcRenderer.invoke('cancel-challenge-response'),
   onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', (event, data) => {
     ipcRenderer.invoke('send-renderer-log', {
       category: 'PRELOAD',

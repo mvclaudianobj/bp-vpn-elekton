@@ -265,6 +265,24 @@ process.on('unhandledRejection', (reason, promise) => {
 // ============ SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ============
 
 const WSUTM_UPDATE_BASE_URL = process.env.BLUEPEX_UPDATE_BASE_URL || 'http://wsutm.bluepex.com/bluepexvpn';
+const UPDATE_PROVIDER_TIMEOUT_MS = 15000;
+const UPDATE_IPC_TIMEOUT_MS = 35000;
+
+function truncateUpdateError(error) {
+  return String(error?.message || error || 'erro desconhecido').slice(0, 300);
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeout;
+  const timeoutPromise = new Promise((resolve) => {
+    timeout = setTimeout(() => resolve({ success: false, error: message, timeout: true }), timeoutMs);
+  });
+
+  return Promise.race([
+    promise.finally(() => clearTimeout(timeout)),
+    timeoutPromise
+  ]);
+}
 
 class AutoUpdaterManager {
   constructor() {
@@ -418,15 +436,17 @@ class AutoUpdaterManager {
       console.log('📋 Error details:', error);
 
       const waitingForFallback = this.isChecking && this.updateProvider === 'github';
+      const handledByActiveCheck = this.isChecking;
 
       logger.logSystemError('AUTO_UPDATER', error, {
         currentVersion: app.getVersion(),
         platform: process.platform,
         provider: this.updateProvider,
-        waitingForFallback
+        waitingForFallback,
+        handledByActiveCheck
       });
 
-      if (waitingForFallback) return;
+      if (handledByActiveCheck) return;
 
       this.updateAvailable = false;
       this.updateDownloaded = false;
@@ -461,10 +481,11 @@ class AutoUpdaterManager {
   async checkForUpdates(showDialog = true) {
     if (this.isChecking) {
       logger.log('UPDATE', 'CHECK_ALREADY_RUNNING');
-      return;
+      return { success: false, alreadyRunning: true, error: 'Verificação de atualizações já está em andamento.' };
     }
 
     this.isChecking = true;
+    let githubCheckError;
     try {
       this.configureGithubFeed();
 
@@ -472,7 +493,8 @@ class AutoUpdaterManager {
         manual: showDialog,
         currentVersion: app.getVersion(),
         primaryProvider: 'github',
-        fallbackProvider: 'wsutm'
+        fallbackProvider: 'wsutm',
+        providerTimeoutMs: UPDATE_PROVIDER_TIMEOUT_MS
       });
 
       console.log('🔍 Iniciando checkForUpdates()...');
@@ -480,12 +502,32 @@ class AutoUpdaterManager {
       try {
         await this.runUpdateCheck('github');
       } catch (githubError) {
+        githubCheckError = githubError;
         logger.logSystemError('UPDATE_CHECK_GITHUB_FAILED', githubError, {
           fallback: 'wsutm',
-          baseUrl: this.wsutmBaseUrl
+          baseUrl: this.wsutmBaseUrl,
+          providerTimeoutMs: UPDATE_PROVIDER_TIMEOUT_MS
+        });
+      }
+
+      if (!this.updateAvailable) {
+        logger.log('UPDATE', 'CHECK_FALLBACK_START', {
+          from: 'github',
+          to: 'wsutm',
+          reason: githubCheckError ? truncateUpdateError(githubCheckError) : 'no_update_on_github'
         });
         this.configureWsutmFeed();
-        await this.runUpdateCheck('wsutm');
+        try {
+          await this.runUpdateCheck('wsutm');
+        } catch (wsutmError) {
+          if (githubCheckError) {
+            const message = 'Não foi possível verificar atualizações no GitHub nem no WSUTM.';
+            const detail = `GitHub: ${truncateUpdateError(githubCheckError)} | WSUTM: ${truncateUpdateError(wsutmError)}`;
+            const finalError = new Error(`${message} ${detail}`);
+            finalError.code = 'UPDATE_CHECK_ALL_PROVIDERS_FAILED';
+            throw finalError;
+          }
+        }
       }
 
       console.log('✅ checkForUpdates() concluído. updateAvailable:', this.updateAvailable);
@@ -501,14 +543,20 @@ class AutoUpdaterManager {
           });
         }
       }
+      return { success: true, available: this.updateAvailable, provider: this.lastCheckProvider };
     } catch (error) {
       logger.logSystemError('UPDATE_CHECK', error);
+      const message = error.code === 'UPDATE_CHECK_ALL_PROVIDERS_FAILED'
+        ? 'Não foi possível verificar atualizações no GitHub nem no WSUTM.'
+        : error.message;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-error', {
-          message: error.message,
+          message,
+          detail: truncateUpdateError(error),
           code: error.code
         });
       }
+      return { success: false, error: message, detail: truncateUpdateError(error), code: error.code };
     } finally {
       this.isChecking = false;
     }
@@ -520,8 +568,8 @@ class AutoUpdaterManager {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error(`Timeout na verificação de atualização ${provider} (30s)`));
-      }, 30000);
+        reject(new Error(`Timeout na verificação de atualização ${provider} (${UPDATE_PROVIDER_TIMEOUT_MS / 1000}s)`));
+      }, UPDATE_PROVIDER_TIMEOUT_MS);
 
       const onAvailable = (info) => {
         cleanup();
@@ -551,6 +599,7 @@ class AutoUpdaterManager {
 
       logger.log('UPDATE', 'CHECK_PROVIDER_START', {
         provider,
+        timeoutMs: UPDATE_PROVIDER_TIMEOUT_MS,
         baseUrl: provider === 'wsutm' ? this.wsutmBaseUrl : undefined
       });
 
@@ -794,6 +843,7 @@ let vpnProcess = null;
 let vpnConnectionActive = false;
 let currentConnectionMeta = null;
 let suppressNextReconnect = false;
+let currentLocalChallengeContext = null;
 
 // RF010: controle de reconexão automática
 const AUTO_RECONNECT = {
@@ -1798,25 +1848,72 @@ async function processAndCopyOvpnFiles(originalOvpnPath, profileId, baseDir = nu
   }
 }
 
+function detectTwoFactorRequirementFromOvpn(ovpnContent) {
+  const staticChallengeMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"\s+(\d)/gi);
+  const hasStaticChallenge = staticChallengeMatch && staticChallengeMatch.length > 0;
+
+  let promptText = '';
+  if (hasStaticChallenge) {
+    const promptMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"/i);
+    if (promptMatch && promptMatch[1]) {
+      promptText = promptMatch[1];
+    }
+  }
+
+  const usesAuthUserPass = /auth-user-pass/gi.test(ovpnContent);
+
+  return {
+    requires2FA: hasStaticChallenge && usesAuthUserPass,
+    hasStaticChallenge: hasStaticChallenge,
+    staticChallengeMatches: staticChallengeMatch,
+    promptText: promptText,
+    usesEcho: ovpnContent.includes('static-challenge') && ovpnContent.includes(' 1')
+  };
+}
+
 // ============ CONEXÕES VPN ============
 
 // Conexão OpenVPN com usuário/senha usando perfil
-ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, username, password) => {
+ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, username, password, totpToken) => {
   return new Promise(async (resolve, reject) => {
     let authFilePath = null;
+    let tempConfigPath = null;
+    let runtimeConfigPath = null;
+    let originalConfigPath = null;
     let challengeHandler = null;
     let challengeTimeout = null;
     let promiseSettled = false;
+    let transientPassword = null;
+
+    const cleanupTempConfig = () => {
+      try {
+        if (tempConfigPath && tempConfigPath !== originalConfigPath && fs.existsSync(tempConfigPath)) {
+          fs.unlinkSync(tempConfigPath);
+          console.log(`🧹 Configuração temporária removida: ${tempConfigPath}`);
+        }
+      } catch (cleanupError) {
+        logger.logSystemError('TEMP_CONFIG_CLEANUP_FAILED', cleanupError, {
+          connectionId,
+          tempConfigPath
+        });
+      }
+    };
 
     const resolveOnce = (value) => {
       if (promiseSettled) return;
       promiseSettled = true;
+      transientPassword = null;
+      cleanupTempConfig();
+      if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
       resolve(value);
     };
 
     const rejectOnce = (error) => {
       if (promiseSettled) return;
       promiseSettled = true;
+      transientPassword = null;
+      cleanupTempConfig();
+      if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
       reject(error instanceof Error ? error : new Error(String(error)));
     };
 
@@ -1860,9 +1957,11 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       const profileDir = ovpnResult.profileDir;
       const configPath = ovpnResult.path;
+      originalConfigPath = configPath;
+      runtimeConfigPath = configPath;
       const ovpnContent = ovpnResult.content || '';
       const hasStaticChallenge = /static-challenge/i.test(ovpnContent);
-      const authRetryMode = hasStaticChallenge ? 'interact' : 'nointeract';
+      const usesAuthUserPass = /^\s*auth-user-pass\b/im.test(ovpnContent);
 
       const normalizeCredentialValue = (value, { trim = false } = {}) => {
         let normalized = String(value ?? '');
@@ -1873,6 +1972,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
       const normalizedUsername = normalizeCredentialValue(username, { trim: true });
       const normalizedPassword = normalizeCredentialValue(password, { trim: false });
+      const normalizedTotpToken = normalizeCredentialValue(totpToken, { trim: true });
+      const preSubmittedTotp = hasStaticChallenge && usesAuthUserPass && !!normalizedTotpToken;
+      const authRetryMode = preSubmittedTotp ? 'nointeract' : hasStaticChallenge ? 'interact' : 'nointeract';
+      transientPassword = normalizedPassword;
 
       if (!normalizedUsername || !normalizedPassword) {
         rejectOnce(new Error('Usuário e senha são obrigatórios'));
@@ -1893,9 +1996,28 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
       console.log(`📁 Diretório do perfil: ${profileDir}`);
       console.log(`📄 Configuração: ${configPath}`);
 
+      if (preSubmittedTotp) {
+        const tempConfigContent = ovpnContent
+          .split(/\r?\n/)
+          .filter((line) => !/^\s*static-challenge\b/i.test(line))
+          .join('\n');
+        tempConfigPath = path.join(profileDir, `openvpn_runtime_${Date.now()}.ovpn`);
+        fs.writeFileSync(tempConfigPath, tempConfigContent, { encoding: 'utf8' });
+        runtimeConfigPath = tempConfigPath;
+        logger.log('CONNECTION', 'PRE_SUBMITTED_TOTP_CONFIG_PREPARED', {
+          connectionId,
+          profileId,
+          originalConfigPath: configPath,
+          runtimeConfigPath,
+          staticChallengeRemoved: true,
+          authRetryMode
+        });
+      }
+
         authFilePath = path.join(profileDir, `openvpn_auth_${Date.now()}.txt`);
         const authLineBreak = '\n';
-        const authFileContent = `${normalizedUsername}${authLineBreak}${normalizedPassword}${authLineBreak}`;
+        const authPasswordLine = preSubmittedTotp ? `${normalizedPassword}|${normalizedTotpToken}` : normalizedPassword;
+        const authFileContent = `${normalizedUsername}${authLineBreak}${authPasswordLine}${authLineBreak}`;
         fs.writeFileSync(authFilePath, authFileContent, { encoding: 'utf8' });
 
        if (process.platform !== 'win32') {
@@ -1905,7 +2027,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
        console.log(`🔐 Arquivo de autenticação criado: ${authFilePath}`);
 
         const openvpnArgs = [
-          '--config', configPath,
+          '--config', runtimeConfigPath,
           '--auth-user-pass', authFilePath,
           '--auth-retry', authRetryMode
         ];
@@ -1914,7 +2036,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           connectionId,
           profileId,
           authRetryMode,
-          hasStaticChallenge
+          hasStaticChallenge,
+          usesAuthUserPass,
+          preSubmittedTotp
         });
 
         if (shouldEnableExplicitExitNotify(ovpnContent)) {
@@ -1988,8 +2112,8 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
               console.log(`🔐 Processo já é root — invocando ${openvpnPath} diretamente`);
              } else if (process.env.DISPLAY && pkexecAvailable) {
                 // Verificar se perfil tem static-challenge (2FA) — pkexec intercepta stdin e quebra o challenge
-                if (hasStaticChallenge) {
-                 // 2FA detectado: pkexec bloqueia stdin — usar sudo para preservar challenge flow
+                if (hasStaticChallenge && !preSubmittedTotp) {
+                 // 2FA detectado SEM pré-submissão: pkexec bloqueia stdin — usar sudo para preservar challenge flow
                  openvpnCommand = 'sudo';
                  currentElevationMethod = 'sudo';
                  openvpnArgsFinal = ['-n', openvpnPath, ...openvpnArgs];
@@ -2001,7 +2125,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                    reason: 'static_challenge_detected_pkexec_incompatible',
                    elevationMethodStored: currentElevationMethod
                  });
-                 console.log(`🔐 2FA detectado (static-challenge) — usando sudo para preservar stdin`);
+                 console.log(`🔐 2FA detectado (static-challenge sem pré-submissão) — usando sudo para preservar stdin`);
                } else {
                   // BUG2-FIX: pkexec deve receber openvpnPath diretamente (policy cobre /usr/bin/openvpn,
                   // não /usr/bin/stdbuf). SYSTEMD_ASK_PASSWORD já está em spawnOptions.env.
@@ -2109,15 +2233,16 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
          vpnConnectionActive = true;
 
-         currentOvpnPath = configPath;
-         currentConnectionMeta = buildBluepexConnectionMeta({
-           connectionId,
-           profileId,
-           profileType: 'user',
-           configPath,
-           authFilePath,
-           vpnPid: vpnProcess.pid,
-           wrapperPid: vpnProcess.pid
+          currentOvpnPath = runtimeConfigPath;
+          currentConnectionMeta = buildBluepexConnectionMeta({
+            connectionId,
+            profileId,
+            profileType: 'user',
+            configPath: runtimeConfigPath,
+            originalConfigPath: configPath,
+            authFilePath,
+            vpnPid: vpnProcess.pid,
+            wrapperPid: vpnProcess.pid
          });
          persistBluepexConnectionMeta(currentConnectionMeta);
 
@@ -2128,7 +2253,12 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         let challengeDetected = false;
         let authFailed = false;
         let stdinReady = false;
-        let stderrBuffer = '';
+        let tokenResponseSent = false;
+         let stderrBuffer = '';
+
+        const isSudoPasswordRequired = (text) => /sudo:.*password is required|sudo:.*a password is required|sudo: a terminal is required|sudo:.*no tty present/i.test(String(text || ''));
+
+        const sudoPolicyError = 'OpenVPN com 2FA local requer stdin preservado. O sudo -n exigiu senha/interação. Instale a policy/polkit do BluePex ou configure sudoers NOPASSWD para o OpenVPN.';
 
         const handleAuthFailure = (source) => {
           if (authFailed) return;
@@ -2136,7 +2266,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           suppressNextReconnect = true;
 
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('vpn-status', 'Falha de autenticação (usuário/senha/token incorretos)');
+            const authFailMsg = tokenResponseSent || preSubmittedTotp
+              ? 'Token 2FA inválido ou expirado. Tente novamente.'
+              : 'Falha de autenticação (usuário/senha incorretos)';
+            mainWindow.webContents.send('vpn-status', authFailMsg);
           }
 
           ipcMain.removeAllListeners('send-challenge-response');
@@ -2158,7 +2291,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             });
           });
 
-          rejectOnce(new Error('Falha na autenticação: usuário, senha ou token incorretos'));
+          rejectOnce(new Error(preSubmittedTotp ? 'Token 2FA inválido ou expirado. Tente novamente.' : 'Falha na autenticação: usuário, senha ou token incorretos'));
         };
 
         const parseChallengeMessage = (text) => {
@@ -2184,11 +2317,18 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
         };
 
        challengeHandler = (event, response) => {
-         console.log('📤 Recebida resposta para desafio:', response);
-         if (vpnProcess && !vpnProcess.killed && challengeDetected) {
-           vpnProcess.stdin.write(response + '\n');
-           challengeDetected = false;
-           if (challengeTimeout) clearTimeout(challengeTimeout);
+         const responseText = typeof response === 'object' && response !== null ? String(response.response || '') : String(response || '');
+         console.log('📤 Recebida resposta para desafio:', { responseLength: responseText.length, composeLocalMfa: hasStaticChallenge && usesAuthUserPass });
+          if (vpnProcess && !vpnProcess.killed && challengeDetected) {
+            const challengeResponse = hasStaticChallenge && usesAuthUserPass && transientPassword !== null
+              ? `${transientPassword}|${responseText}`
+              : responseText;
+            vpnProcess.stdin.write(challengeResponse + '\n');
+            challengeDetected = false;
+            tokenResponseSent = true;
+            transientPassword = null;
+            if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+            if (challengeTimeout) clearTimeout(challengeTimeout);
 
            connectionTimeout = setTimeout(() => {
              if (!connectionEstablished && vpnProcess && !vpnProcess.killed) {
@@ -2200,8 +2340,6 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          }
        };
 
-      ipcMain.once('send-challenge-response', challengeHandler);
-
         const abortPendingConnection = (reason) => {
           if (!vpnProcess || vpnProcess.killed || connectionEstablished) {
             return;
@@ -2212,6 +2350,8 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           try {
             vpnProcess.kill('SIGTERM');
           } catch (_) {}
+          transientPassword = null;
+          if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
           setTimeout(() => {
             if (vpnProcess && !vpnProcess.killed) {
               try {
@@ -2226,6 +2366,8 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            const errorMsg = 'Timeout na conexão OpenVPN';
            console.error(`❌ ${errorMsg}`);
            ipcMain.removeAllListeners('send-challenge-response');
+           transientPassword = null;
+           if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
            abortPendingConnection('timeout_conexao');
            rejectOnce(new Error(errorMsg));
          }
@@ -2273,13 +2415,27 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           mainWindow.webContents.send('vpn-challenge', {
             type: 'static-challenge',
             message: challengeMessage,
-            requiresInput: true
+            requiresInput: true,
+            usesEcho: /static-challenge\s+"[^"]+"\s+1/i.test(ovpnContent),
+            usesAuthUserPass,
+            composeLocalMfa: hasStaticChallenge && usesAuthUserPass,
+            promptText: challengeMessage
           });
+          currentLocalChallengeContext = {
+            connectionId,
+            profileId,
+            composeLocalMfa: hasStaticChallenge && usesAuthUserPass,
+            getPassword: () => transientPassword,
+            submit: challengeHandler,
+            abort: abortPendingConnection
+          };
 
            challengeTimeout = setTimeout(() => {
              if (challengeDetected) {
                console.error('❌ Timeout no desafio 2FA');
                ipcMain.removeAllListeners('send-challenge-response');
+               transientPassword = null;
+               if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
                abortPendingConnection('timeout_desafio_2fa_stdout');
                rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
              }
@@ -2295,13 +2451,20 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            mainWindow.webContents.send('vpn-log', `ERRO: ${error}`);
          }
 
-           if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
-             console.error(`❌ Falha na autenticação`);
-             handleAuthFailure('stderr');
-             return;
-           }
+            if ((error.includes('AUTH_FAILED') || error.includes('auth-failure')) && !authFailed) {
+              console.error(`❌ Falha na autenticação`);
+              handleAuthFailure('stderr');
+              return;
+            }
 
-         if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
+          if (openvpnCommand === 'sudo' && isSudoPasswordRequired(error)) {
+            console.error('❌ sudo -n requer senha/interação para OpenVPN com stdin preservado');
+            abortPendingConnection('sudo_requer_senha');
+            rejectOnce(new Error(sudoPolicyError));
+            return;
+          }
+
+          if (isChallengePrompt(error) && !challengeDetected && !authFailed) {
             console.log('🔐 Static challenge detectado no stderr!', { error, challengeDetected, authFailed, stdinReady });
             challengeDetected = true;
             const challengeMessage = parseChallengeMessage(error);
@@ -2311,14 +2474,28 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            mainWindow.webContents.send('vpn-challenge', {
              type: 'static-challenge',
              message: challengeMessage,
-             requiresInput: true
+             requiresInput: true,
+             usesEcho: /static-challenge\s+"[^"]+"\s+1/i.test(ovpnContent),
+             usesAuthUserPass,
+             composeLocalMfa: hasStaticChallenge && usesAuthUserPass,
+             promptText: challengeMessage
            });
+           currentLocalChallengeContext = {
+             connectionId,
+             profileId,
+             composeLocalMfa: hasStaticChallenge && usesAuthUserPass,
+             getPassword: () => transientPassword,
+             submit: challengeHandler,
+             abort: abortPendingConnection
+           };
 
-            challengeTimeout = setTimeout(() => {
-              if (challengeDetected) {
-                console.error('❌ Timeout no desafio 2FA');
-                ipcMain.removeAllListeners('send-challenge-response');
-                abortPendingConnection('timeout_desafio_2fa_stderr');
+             challengeTimeout = setTimeout(() => {
+               if (challengeDetected) {
+                 console.error('❌ Timeout no desafio 2FA');
+                 ipcMain.removeAllListeners('send-challenge-response');
+                 transientPassword = null;
+                 if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+                 abortPendingConnection('timeout_desafio_2fa_stderr');
                 rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
                }
              }, 120000);
@@ -2331,22 +2508,27 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            vpnConnectionActive = false;
            vpnProcess = null;
            ipcMain.removeAllListeners('send-challenge-response');
+           transientPassword = null;
+           if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
            if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
              mainWindow.webContents.send('vpn-disconnected');
            }
 
-           if (connectionTimeout) clearTimeout(connectionTimeout);
-           if (challengeTimeout) clearTimeout(challengeTimeout);
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            if (challengeTimeout) clearTimeout(challengeTimeout);
+            cleanupTempConfig();
 
-           if (code === 0) {
+            if (code === 0) {
              logger.logConnectionDisconnect(profileId, 'user', 'normal_exit');
            } else {
              logger.logConnectionDisconnect(profileId, 'user', `exit_code_${code}`);
            }
 
-            currentElevationMethod = null;
-            currentOvpnPath = null;
-            clearBluepexConnectionMeta();
+             currentElevationMethod = null;
+             currentOvpnPath = null;
+             transientPassword = null;
+             if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+             clearBluepexConnectionMeta();
 
            const manualDisconnect = suppressNextReconnect;
            if (manualDisconnect) {
@@ -2369,9 +2551,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
               }, 'ERROR');
             }
 
-           if (!wasEstablished && !authFailed) {
-              rejectOnce(new Error(`OpenVPN encerrou antes de conectar (código ${code})`));
-            }
+             if (!wasEstablished && !authFailed) {
+               rejectOnce(new Error(isSudoPasswordRequired(stderrBuffer) ? sudoPolicyError : `OpenVPN encerrou antes de conectar (código ${code})`));
+             }
 
            try {
              if (authFilePath && fs.existsSync(authFilePath)) {
@@ -2401,6 +2583,7 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           console.error('❌ Erro ao executar OpenVPN:', error);
           vpnConnectionActive = false;
           clearBluepexConnectionMeta();
+          cleanupTempConfig();
 
           logger.log('CONNECTION', 'PROCESS_SPAWN_ERROR', {
             connectionId,
@@ -2418,6 +2601,8 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           ipcMain.removeAllListeners('send-challenge-response');
           if (connectionTimeout) clearTimeout(connectionTimeout);
           if (challengeTimeout) clearTimeout(challengeTimeout);
+          transientPassword = null;
+          if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
 
           try {
             if (authFilePath && fs.existsSync(authFilePath)) {
@@ -2477,12 +2662,15 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
      console.error(`❌ Erro na conexão:`, error);
      ipcMain.removeAllListeners('send-challenge-response');
      if (challengeTimeout) clearTimeout(challengeTimeout);
+     transientPassword = null;
+     if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
     
-     try {
-       if (authFilePath && fs.existsSync(authFilePath)) {
-         fs.unlinkSync(authFilePath);
-       }
-     } catch (e) {
+      try {
+        if (authFilePath && fs.existsSync(authFilePath)) {
+          fs.unlinkSync(authFilePath);
+        }
+       cleanupTempConfig();
+      } catch (e) {
        console.log('Erro ao limpar arquivo de auth:', e.message);
      }
     
@@ -2493,11 +2681,25 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
 
 // Nova função para enviar resposta de desafio
 ipcMain.handle('send-challenge-response', async (event, response) => {
+  if (currentLocalChallengeContext?.submit) {
+    currentLocalChallengeContext.submit(event, response);
+    return { success: true };
+  }
   if (vpnProcess && !vpnProcess.killed) {
     vpnProcess.stdin.write(response + '\n');
     return { success: true };
   }
   return { success: false, error: 'Processo VPN não encontrado' };
+});
+
+ipcMain.handle('cancel-challenge-response', async () => {
+  if (currentLocalChallengeContext?.abort) {
+    const context = currentLocalChallengeContext;
+    currentLocalChallengeContext = null;
+    context.abort('desafio_2fa_cancelado');
+    return { success: true };
+  }
+  return { success: false, error: 'Desafio 2FA não encontrado' };
 });
 
 // Handler para senha do sudo
@@ -2602,6 +2804,11 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
     console.log(`✅ Perfil salvo: ${profileId}`);
     console.log(`📁 Diretório: ${processResult.profileDir}`);
 
+    const twoFactorMetadata = detectTwoFactorRequirementFromOvpn([
+      processResult.content || '',
+      ovpnValidation.content || ovpnContent || ''
+    ].join('\n'));
+
     const profilesRead = await readJsonWithBackup(profilesPath, [], 'user_profiles');
     if (!profilesRead.success) {
       return { success: false, error: `Falha ao ler perfis de usuário: ${profilesRead.error}` };
@@ -2619,6 +2826,9 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
       profiles[profileIndex].ovpnFile = newOvpnPath;
       profiles[profileIndex].ovpnFileName = ovpnFileName;
       profiles[profileIndex].profileDir = processResult.profileDir;
+      profiles[profileIndex].requires2FA = !!twoFactorMetadata.requires2FA;
+      profiles[profileIndex].twoFactorPrompt = twoFactorMetadata.promptText || '';
+      profiles[profileIndex].twoFactorUsesEcho = !!twoFactorMetadata.usesEcho;
       profiles[profileIndex].updatedAt = new Date().toISOString();
 
       logger.log('PROFILE', 'PROFILE_UPDATED', {
@@ -2663,6 +2873,9 @@ ipcMain.handle('save-ovpn-to-profile', async (event, profileId, ovpnContent, ovp
         ovpnFile: path.join(processResult.profileDir, `${profileId}.ovpn`),
         ovpnFileName: ovpnFileName,
         profileDir: processResult.profileDir,
+        requires2FA: !!twoFactorMetadata.requires2FA,
+        twoFactorPrompt: twoFactorMetadata.promptText || '',
+        twoFactorUsesEcho: !!twoFactorMetadata.usesEcho,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -2945,27 +3158,15 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
     }
 
     const ovpnContent = ovpnResult.content;
-    
-    const staticChallengeMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"\s+(\d)/gi);
-    const hasStaticChallenge = staticChallengeMatch && staticChallengeMatch.length > 0;
-    
-    let promptText = '';
-    if (hasStaticChallenge) {
-      const promptMatch = ovpnContent.match(/static-challenge\s+"([^"]+)"/i);
-      if (promptMatch && promptMatch[1]) {
-        promptText = promptMatch[1];
-      }
-    }
-
-    const usesAuthUserPass = /auth-user-pass/gi.test(ovpnContent);
+    const twoFactorRequirement = detectTwoFactorRequirementFromOvpn(ovpnContent);
 
     return { 
       success: true, 
-      requires2FA: hasStaticChallenge && usesAuthUserPass,
-      hasStaticChallenge: hasStaticChallenge,
-      staticChallengeMatches: staticChallengeMatch,
-      promptText: promptText,
-      usesEcho: ovpnContent.includes('static-challenge') && ovpnContent.includes(' 1')
+      requires2FA: twoFactorRequirement.requires2FA,
+      hasStaticChallenge: twoFactorRequirement.hasStaticChallenge,
+      staticChallengeMatches: twoFactorRequirement.staticChallengeMatches,
+      promptText: twoFactorRequirement.promptText,
+      usesEcho: twoFactorRequirement.usesEcho
     };
     
   } catch (error) {
@@ -4277,7 +4478,7 @@ function getActiveBluepexOpenVpnProcesses(meta = loadTrackedBluepexMetaFromState
   return processes;
 }
 
-function buildBluepexConnectionMeta({ connectionId, profileId, profileType, configPath, authFilePath, vpnPid = null, wrapperPid = null }) {
+function buildBluepexConnectionMeta({ connectionId, profileId, profileType, configPath, originalConfigPath = null, authFilePath, vpnPid = null, wrapperPid = null }) {
   const normalizedConfigPath = normalizePathForCompare(configPath);
   return {
     connectionOwner: 'bluepex',
@@ -4286,6 +4487,7 @@ function buildBluepexConnectionMeta({ connectionId, profileId, profileType, conf
     profileType,
     ovpnPath: configPath,
     configPath,
+    originalConfigPath: originalConfigPath || configPath,
     normalizedConfigPath,
     authFilePath: authFilePath || null,
     startedAt: new Date().toISOString(),
@@ -4860,8 +5062,11 @@ ipcMain.handle('save-azure-app-config', async (event, newConfig) => {
 
 ipcMain.handle('check-for-updates', async (event, showDialog = true) => {
   try {
-    await updaterManager.checkForUpdates(showDialog);
-    return { success: true };
+    return await withTimeout(
+      updaterManager.checkForUpdates(showDialog),
+      UPDATE_IPC_TIMEOUT_MS,
+      'Tempo esgotado ao verificar atualizações.'
+    );
   } catch (error) {
     logger.logSystemError('CHECK_UPDATES_FAILED', error);
     return { success: false, error: error.message };
