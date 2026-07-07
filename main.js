@@ -331,7 +331,7 @@ class AutoUpdaterManager {
     autoUpdater.setFeedURL({
       provider: 'generic',
       url: this.wsutmBaseUrl,
-      channel: process.platform === 'win32' ? 'latest' : 'latest-linux'
+      channel: 'latest'
     });
 
     this.updateProvider = 'wsutm';
@@ -4987,12 +4987,16 @@ ipcMain.handle('check-for-updates', async (event, showDialog = true) => {
 
 ipcMain.handle('download-update', async () => {
   try {
-    if (updaterManager.updateAvailable) {
-      autoUpdater.downloadUpdate();
-      return { success: true };
-    } else {
-      return { success: false, error: 'Nenhuma atualização disponível' };
+    if (!updaterManager.updateAvailable) {
+      await updaterManager.checkForUpdates(false);
     }
+
+    if (updaterManager.updateAvailable || updaterManager.updateInfo) {
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    }
+
+    return { success: false, error: 'Nenhuma atualização disponível' };
   } catch (error) {
     logger.logSystemError('DOWNLOAD_UPDATE_FAILED', error);
     return { success: false, error: error.message };
