@@ -265,6 +265,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // ============ SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ============
 
 const WSUTM_UPDATE_BASE_URL = process.env.BLUEPEX_UPDATE_BASE_URL || 'http://wsutm.bluepex.com/bluepexvpn';
+const UPDATE_PROVIDER_TIMEOUT_MS = 15000;
 
 class AutoUpdaterManager {
   constructor() {
