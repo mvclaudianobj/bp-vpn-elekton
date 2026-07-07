@@ -944,6 +944,24 @@ function ensurePolicyFile() {
   }
 }
 
+async function ensurePolkitRules() {
+  if (process.platform !== 'linux') return;
+  const policyDest = '/usr/share/polkit-1/actions/com.bpvpn.pkexec.policy';
+  const rulesDest  = '/usr/share/polkit-1/rules.d/com.bluepex.vpn.rules';
+  if (fs.existsSync(policyDest) && fs.existsSync(rulesDest)) return;
+  const resDir = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'build');
+  const policySource = path.join(resDir, 'com.bpvpn.pkexec.policy');
+  const rulesSource  = path.join(resDir, 'com.bluepex.vpn.rules');
+  if (!fs.existsSync(policySource) || !fs.existsSync(rulesSource)) return;
+  const installScript = `install -Dm644 '${policySource}' '${policyDest}' && install -Dm644 '${rulesSource}' '${rulesDest}' && (systemctl reload polkit 2>/dev/null || pkill -HUP polkitd 2>/dev/null || true)`;
+  await new Promise((resolve) => {
+    exec(`pkexec sh -c "${installScript}"`, (err) => {
+      if (err) exec(`sudo -n sh -c "${installScript}"`, () => resolve());
+      else resolve();
+    });
+  });
+}
+
 function createTray() {
   // IS001: evitar criação dupla do tray (race condition Linux)
   if (tray && !tray.isDestroyed()) {
@@ -1207,6 +1225,7 @@ app.whenReady().then(async () => {
     logger = new AppLogger();
 
     if (!app.isPackaged) ensurePolicyFile();
+    if (process.platform === 'linux') await ensurePolkitRules();
     ensureDirectories();
     migrateLegacyUserDataIfNeeded();
 
