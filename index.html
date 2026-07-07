@@ -1150,7 +1150,91 @@
         }
 
 
-    /* Disable scrolling */
+        #vpn-stats-panel {
+            margin-top: 12px;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid #1a3a5c;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        #traffic-summary {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            color: #a0c4e0;
+            margin-bottom: 6px;
+        }
+
+        #traffic-summary .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #traffic-summary .stat-value {
+            font-weight: 700;
+            color: #4fc3f7;
+            font-size: 0.85rem;
+        }
+
+        #traffic-chart {
+            display: block;
+            width: 100%;
+            height: 80px;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.3);
+            margin-bottom: 8px;
+        }
+
+        #stats-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .stats-tab {
+            background: none;
+            border: 1px solid #1a3a5c;
+            color: #a0c4e0;
+            border-radius: 4px;
+            padding: 2px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .stats-tab.active {
+            background: #007BFF;
+            border-color: #007BFF;
+            color: white;
+        }
+
+        #connection-history-list {
+            max-height: 130px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .history-item {
+            font-size: 0.75rem;
+            color: #a0c4e0;
+            border-bottom: 1px solid #1a3a5c;
+            padding: 4px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .history-item:last-child { border-bottom: none; }
+
+        .history-item .hi-name { color: white; font-weight: 600; }
+        .history-item .hi-dur { color: #4fc3f7; }
+        .history-item .hi-date { color: #6c8fa8; font-size: 0.7rem; }
+
+        #connection-history-list::-webkit-scrollbar { width: 4px; }
+        #connection-history-list::-webkit-scrollbar-track { background: #0a1628; }
+        #connection-history-list::-webkit-scrollbar-thumb { background: #007BFF; border-radius: 2px; }
+
+        /* Disable scrolling */
     body {
         overflow: hidden;
     }
@@ -1357,6 +1441,34 @@
             <button class="btn btn-outline-light w-100 mt-2" id="btnCopiarCodigo" style="display: none;">
                 📋 Copiar Código de Verificação
             </button>
+
+            <!-- RNF008: Painel de Estatísticas VPN -->
+            <div id="vpn-stats-panel" style="display:none">
+                <div id="stats-tabs">
+                    <button class="stats-tab active" id="statsTabChart" onclick="switchStatsTab('chart')">Gráfico</button>
+                    <button class="stats-tab" id="statsTabHistory" onclick="switchStatsTab('history')">Histórico</button>
+                </div>
+                <div id="traffic-summary">
+                    <div class="stat-item">
+                        <span class="stat-label">Download</span>
+                        <span class="stat-value" id="stat-speed-in">0 B/s</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Upload</span>
+                        <span class="stat-value" id="stat-speed-out">0 B/s</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total RX</span>
+                        <span class="stat-value" id="stat-bytes-in">0 B</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total TX</span>
+                        <span class="stat-value" id="stat-bytes-out">0 B</span>
+                    </div>
+                </div>
+                <canvas id="traffic-chart" width="420" height="80"></canvas>
+                <div id="connection-history-list"></div>
+            </div>
         </div>
     </div>
 
@@ -1449,6 +1561,21 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- RF011: Kill Switch -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section" style="width:100%;">
+                    <h4>Segurança de Rede</h4>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="killSwitchToggle">
+                            <label for="killSwitchToggle" class="weight-600">Kill Switch</label>
+                        </div>
+                    </div>
+                    <p class="mt-1" style="font-size:0.85em;color:#aaa;">Bloqueia todo tráfego de rede quando a VPN cai inesperadamente. Liberado ao conectar ou desconectar manualmente.</p>
+                    <div id="killSwitchStatus" style="font-size:0.8em;display:none;"></div>
                 </div>
             </div>
         </div>

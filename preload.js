@@ -146,6 +146,11 @@ globalThis.electronAPI = {
    onVpnReconnecting: (callback) => ipcRenderer.on('vpn-reconnecting', (_, data) => callback(data)),
    onVpnReconnectFailed: (callback) => ipcRenderer.on('vpn-reconnect-failed', (_, data) => callback(data)),
    onVpnAutoReconnect: (callback) => ipcRenderer.on('vpn-auto-reconnect', (_, data) => callback(data)),
+
+   // RF011: Kill Switch
+   enableKillSwitch: () => ipcRenderer.invoke('enable-kill-switch'),
+   disableKillSwitch: () => ipcRenderer.invoke('disable-kill-switch'),
+   getKillSwitchStatus: () => ipcRenderer.invoke('get-kill-switch-status'),
 };
 
 // Send success log

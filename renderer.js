@@ -2291,6 +2291,31 @@ if (window.electronAPI) {
         }
     });
 
+    // RF011: Kill Switch toggle
+    const killSwitchToggle = document.getElementById('killSwitchToggle');
+    const killSwitchStatus = document.getElementById('killSwitchStatus');
+    if (killSwitchToggle) {
+        window.electronAPI.getKillSwitchStatus().then((status) => {
+            killSwitchToggle.checked = status.enabled;
+            if (killSwitchStatus) {
+                killSwitchStatus.style.display = status.active ? 'block' : 'none';
+                killSwitchStatus.textContent = status.active ? 'Kill Switch ativo: tráfego bloqueado.' : '';
+            }
+        }).catch(() => {});
+
+        killSwitchToggle.addEventListener('change', async () => {
+            if (killSwitchToggle.checked) {
+                await window.electronAPI.enableKillSwitch();
+            } else {
+                await window.electronAPI.disableKillSwitch();
+                if (killSwitchStatus) {
+                    killSwitchStatus.style.display = 'none';
+                    killSwitchStatus.textContent = '';
+                }
+            }
+        });
+    }
+
     // RF004: sessão limpa pelo processo principal (após logout)
     window.electronAPI.onSessionCleared(() => {
         vpnPid = null;
@@ -2398,4 +2423,181 @@ async function updateAppLogsModalContent() {
 
     // Rolar para o final
     appLogsModalContent.scrollTop = appLogsModalContent.scrollHeight;
+}
+
+// ============ RNF008: GRÁFICO DE CONSUMO E HISTÓRICO ============
+
+const CHART_POINTS = 60;
+const chartSpeedIn = new Array(CHART_POINTS).fill(0);
+const chartSpeedOut = new Array(CHART_POINTS).fill(0);
+let statsCurrentTab = 'chart';
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+function formatSpeed(bytesPerSec) {
+    return formatBytes(bytesPerSec) + '/s';
+}
+
+function drawTrafficChart() {
+    const canvas = document.getElementById('traffic-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 0, w, h);
+
+    const maxVal = Math.max(1, ...chartSpeedIn, ...chartSpeedOut);
+    const stepX = w / (CHART_POINTS - 1);
+
+    const drawLine = (data, color) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        data.forEach((val, i) => {
+            const x = i * stepX;
+            const y = h - (val / maxVal) * (h - 4) - 2;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    };
+
+    const fillLine = (data, color) => {
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        data.forEach((val, i) => {
+            const x = i * stepX;
+            const y = h - (val / maxVal) * (h - 4) - 2;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.lineTo((CHART_POINTS - 1) * stepX, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+    };
+
+    fillLine(chartSpeedIn, 'rgba(79,195,247,0.15)');
+    fillLine(chartSpeedOut, 'rgba(102,187,106,0.15)');
+    drawLine(chartSpeedIn, '#4fc3f7');
+    drawLine(chartSpeedOut, '#66bb6a');
+
+    ctx.fillStyle = 'rgba(79,195,247,0.8)';
+    ctx.font = '9px monospace';
+    ctx.fillText('RX', 4, 12);
+    ctx.fillStyle = 'rgba(102,187,106,0.8)';
+    ctx.fillText('TX', 4, 24);
+}
+
+function updateTrafficStats(data) {
+    chartSpeedIn.push(data.speedIn || 0);
+    chartSpeedOut.push(data.speedOut || 0);
+    if (chartSpeedIn.length > CHART_POINTS) chartSpeedIn.shift();
+    if (chartSpeedOut.length > CHART_POINTS) chartSpeedOut.shift();
+
+    const speedInEl = document.getElementById('stat-speed-in');
+    const speedOutEl = document.getElementById('stat-speed-out');
+    const bytesInEl = document.getElementById('stat-bytes-in');
+    const bytesOutEl = document.getElementById('stat-bytes-out');
+
+    if (speedInEl) speedInEl.textContent = formatSpeed(data.speedIn || 0);
+    if (speedOutEl) speedOutEl.textContent = formatSpeed(data.speedOut || 0);
+    if (bytesInEl) bytesInEl.textContent = formatBytes(data.bytesIn || 0);
+    if (bytesOutEl) bytesOutEl.textContent = formatBytes(data.bytesOut || 0);
+
+    if (statsCurrentTab === 'chart') drawTrafficChart();
+}
+
+function showStatsPanel() {
+    const panel = document.getElementById('vpn-stats-panel');
+    if (panel) panel.style.display = 'block';
+    chartSpeedIn.fill(0);
+    chartSpeedOut.fill(0);
+    drawTrafficChart();
+}
+
+function hideStatsPanel() {
+    const panel = document.getElementById('vpn-stats-panel');
+    if (panel) panel.style.display = 'none';
+}
+
+function switchStatsTab(tab) {
+    statsCurrentTab = tab;
+    const chartTab = document.getElementById('statsTabChart');
+    const historyTab = document.getElementById('statsTabHistory');
+    const historyList = document.getElementById('connection-history-list');
+    const canvas = document.getElementById('traffic-chart');
+    const summary = document.getElementById('traffic-summary');
+
+    if (tab === 'chart') {
+        if (chartTab) chartTab.classList.add('active');
+        if (historyTab) historyTab.classList.remove('active');
+        if (historyList) historyList.style.display = 'none';
+        if (canvas) canvas.style.display = 'block';
+        if (summary) summary.style.display = 'flex';
+        drawTrafficChart();
+    } else {
+        if (historyTab) historyTab.classList.add('active');
+        if (chartTab) chartTab.classList.remove('active');
+        if (historyList) historyList.style.display = 'block';
+        if (canvas) canvas.style.display = 'none';
+        if (summary) summary.style.display = 'none';
+        renderConnectionHistory();
+    }
+}
+
+async function renderConnectionHistory() {
+    const listEl = document.getElementById('connection-history-list');
+    if (!listEl) return;
+    try {
+        const history = await window.electronAPI.getConnectionHistory();
+        if (!history || history.length === 0) {
+            listEl.innerHTML = '<div style="color:#6c8fa8;font-size:0.75rem;padding:8px 0;text-align:center">Nenhum histórico disponível</div>';
+            return;
+        }
+        const reversed = [...history].reverse();
+        listEl.innerHTML = reversed.map(entry => {
+            const date = entry.startedAt ? new Date(entry.startedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+            const dur = entry.durationSeconds > 0 ? (entry.durationSeconds >= 60 ? Math.floor(entry.durationSeconds / 60) + 'min' : entry.durationSeconds + 's') : '-';
+            const rx = formatBytes(entry.bytesIn || 0);
+            const tx = formatBytes(entry.bytesOut || 0);
+            const reason = entry.disconnectReason === 'error' ? '<span style="color:#f44336">erro</span>' : (entry.disconnectReason === 'reconnect' ? '<span style="color:#ffc107">reconexão</span>' : '<span style="color:#66bb6a">manual</span>');
+            return `<div class="history-item">
+                <div>
+                    <div class="hi-name">${entry.profileName || 'VPN'}</div>
+                    <div class="hi-date">${date} &bull; ${entry.profileType || ''}</div>
+                </div>
+                <div style="text-align:right">
+                    <div class="hi-dur">${dur} &bull; ${reason}</div>
+                    <div class="hi-date">RX ${rx} / TX ${tx}</div>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        listEl.innerHTML = '<div style="color:#f44336;font-size:0.75rem;padding:8px 0">Erro ao carregar histórico</div>';
+    }
+}
+
+if (window.electronAPI && window.electronAPI.onVpnTrafficStats) {
+    window.electronAPI.onVpnTrafficStats((data) => {
+        updateTrafficStats(data);
+    });
+}
+
+if (window.electronAPI && window.electronAPI.onVPNConnected) {
+    window.electronAPI.onVPNConnected(() => {
+        showStatsPanel();
+    });
+}
+
+if (window.electronAPI && window.electronAPI.onVPNDisconnected) {
+    window.electronAPI.onVPNDisconnected(() => {
+        hideStatsPanel();
+    });
 }

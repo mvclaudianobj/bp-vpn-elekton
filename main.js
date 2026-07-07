@@ -845,6 +845,10 @@ let currentConnectionMeta = null;
 let suppressNextReconnect = false;
 let currentLocalChallengeContext = null;
 
+// RF011: Kill Switch
+let killSwitchEnabled = false;
+let killSwitchActive = false;
+
 // RF010: controle de reconexão automática
 const AUTO_RECONNECT = {
   enabled: true,       // habilita reconexão automática
@@ -903,6 +907,20 @@ function cancelReconnect() {
 // Caminhos dos arquivos
 const cachePath = path.join(os.tmpdir(), 'electron_token_cache.json');
 const authPath = path.join(os.tmpdir(), 'openvpn_auth.txt');
+
+function writeTokenCache(data) {
+  const encrypted = encrypt(JSON.stringify(data));
+  fs.writeFileSync(cachePath, JSON.stringify(encrypted), { mode: 0o600 });
+}
+
+function readTokenCache() {
+  const raw = fs.readFileSync(cachePath, 'utf-8');
+  const parsed = JSON.parse(raw);
+  if (parsed && parsed.encrypted && parsed.iv && parsed.authTag) {
+    return JSON.parse(decrypt(parsed));
+  }
+  return parsed;
+}
 
 // Função para copiar a política para o local correto (se necessário)
 function ensurePolicyFile() {
@@ -1871,6 +1889,148 @@ function detectTwoFactorRequirementFromOvpn(ovpnContent) {
   };
 }
 
+// ============ DNS LEAK PROTECTION ============
+
+const historyPath = path.join(app.getPath('userData'), 'connection_history.json');
+let activeTunInterface = null;
+let trafficStatsInterval = null;
+let activeHistoryEntry = null;
+let lastBytesIn = 0;
+let lastBytesOut = 0;
+
+function appendConnectionHistory(entry) {
+  try {
+    let history = [];
+    if (fs.existsSync(historyPath)) {
+      try { history = JSON.parse(fs.readFileSync(historyPath, 'utf-8')); } catch (_) { history = []; }
+    }
+    if (!Array.isArray(history)) history = [];
+    const idx = history.findIndex(e => e.id === entry.id);
+    if (idx >= 0) {
+      history[idx] = entry;
+    } else {
+      history.push(entry);
+    }
+    if (history.length > 50) history = history.slice(history.length - 50);
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+  } catch (err) {
+    console.log('⚠️ Erro ao salvar histórico:', err.message);
+  }
+}
+
+function getConnectionHistory() {
+  try {
+    if (!fs.existsSync(historyPath)) return [];
+    const raw = fs.readFileSync(historyPath, 'utf-8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function detectActiveTunInterface() {
+  if (process.platform !== 'linux') return null;
+  try {
+    const out = execSync('ip link show', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 3000 });
+    const match = out.match(/\btun\d+\b/);
+    return match ? match[0] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readLinuxNetDevBytes(iface) {
+  try {
+    const content = fs.readFileSync('/proc/net/dev', 'utf-8');
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith(iface + ':')) {
+        const parts = trimmed.split(':')[1].trim().split(/\s+/);
+        const bytesIn = parseInt(parts[0], 10) || 0;
+        const bytesOut = parseInt(parts[8], 10) || 0;
+        return { bytesIn, bytesOut };
+      }
+    }
+  } catch (_) {}
+  return { bytesIn: 0, bytesOut: 0 };
+}
+
+async function applyDnsLeakProtection(tunInterface) {
+  if (process.platform === 'linux' && tunInterface) {
+    try {
+      execSync(`resolvectl dns ${tunInterface} 1.1.1.1 1.0.0.1 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
+      logger.log('VPN', 'DNS_LEAK_PROTECTION_APPLIED', { tunInterface, dns: ['1.1.1.1', '1.0.0.1'] });
+    } catch (_) {}
+  }
+}
+
+async function revertDnsLeakProtection(tunInterface) {
+  if (process.platform === 'linux' && tunInterface) {
+    try {
+      execSync(`resolvectl revert ${tunInterface} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
+      logger.log('VPN', 'DNS_LEAK_PROTECTION_REVERTED', { tunInterface });
+    } catch (_) {}
+  }
+}
+
+function startTrafficStats(profileName, profileType) {
+  const tun = detectActiveTunInterface();
+  activeTunInterface = tun;
+  lastBytesIn = 0;
+  lastBytesOut = 0;
+
+  if (tun) {
+    const initial = readLinuxNetDevBytes(tun);
+    lastBytesIn = initial.bytesIn;
+    lastBytesOut = initial.bytesOut;
+  }
+
+  if (trafficStatsInterval) clearInterval(trafficStatsInterval);
+
+  trafficStatsInterval = setInterval(() => {
+    if (!activeTunInterface || !mainWindow || mainWindow.isDestroyed()) return;
+    const stats = readLinuxNetDevBytes(activeTunInterface);
+    const speedIn = Math.max(0, stats.bytesIn - lastBytesIn);
+    const speedOut = Math.max(0, stats.bytesOut - lastBytesOut);
+    lastBytesIn = stats.bytesIn;
+    lastBytesOut = stats.bytesOut;
+    mainWindow.webContents.send('vpn-traffic-stats', {
+      bytesIn: stats.bytesIn,
+      bytesOut: stats.bytesOut,
+      speedIn,
+      speedOut
+    });
+    if (activeHistoryEntry) {
+      activeHistoryEntry.bytesIn = stats.bytesIn;
+      activeHistoryEntry.bytesOut = stats.bytesOut;
+    }
+  }, 2000);
+}
+
+function stopTrafficStats(disconnectReason) {
+  if (trafficStatsInterval) {
+    clearInterval(trafficStatsInterval);
+    trafficStatsInterval = null;
+  }
+  if (activeHistoryEntry) {
+    activeHistoryEntry.endedAt = new Date().toISOString();
+    const startMs = new Date(activeHistoryEntry.startedAt).getTime();
+    activeHistoryEntry.durationSeconds = Math.round((Date.now() - startMs) / 1000);
+    activeHistoryEntry.disconnectReason = disconnectReason || 'manual';
+    activeHistoryEntry.status = 'completed';
+    appendConnectionHistory(activeHistoryEntry);
+    activeHistoryEntry = null;
+  }
+  if (activeTunInterface) {
+    revertDnsLeakProtection(activeTunInterface).catch(() => {});
+    activeTunInterface = null;
+  }
+}
+
+ipcMain.handle('get-connection-history', () => getConnectionHistory());
+
 // ============ CONEXÕES VPN ============
 
 // Conexão OpenVPN com usuário/senha usando perfil
@@ -2013,6 +2173,15 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
           authRetryMode
         });
       }
+
+        if (process.platform === 'win32') {
+          try {
+            const currentRuntimeContent = fs.readFileSync(runtimeConfigPath, 'utf-8');
+            if (!/^\s*block-outside-dns\b/im.test(currentRuntimeContent)) {
+              fs.writeFileSync(runtimeConfigPath, currentRuntimeContent + '\nblock-outside-dns\n', 'utf-8');
+            }
+          } catch (_) {}
+        }
 
         authFilePath = path.join(profileDir, `openvpn_auth_${Date.now()}.txt`);
         const authLineBreak = '\n';
@@ -2227,11 +2396,12 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
            platform: process.platform,
            supported: ['linux', 'win32']
          }, 'ERROR');
-         throw new Error('Plataforma não suportada');
-       }
-     
-         vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
-         vpnConnectionActive = true;
+          throw new Error('Plataforma não suportada');
+        }
+
+          await disableKillSwitch();
+          vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, spawnOptions);
+          vpnConnectionActive = true;
 
           currentOvpnPath = runtimeConfigPath;
           currentConnectionMeta = buildBluepexConnectionMeta({
@@ -2397,13 +2567,33 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             currentConnectionMeta = { ...currentConnectionMeta, vpnPid: bluepexPid };
             persistBluepexConnectionMeta(currentConnectionMeta);
             console.log('✅ [MAIN] VPN conectada com sucesso!');
-            logger.logConnectionSuccess(profileId, 'user', { pid: bluepexPid, wrapperPid: vpnProcess.pid });
-            mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
-            resolveOnce({ pid: bluepexPid });
+             logger.logConnectionSuccess(profileId, 'user', { pid: bluepexPid, wrapperPid: vpnProcess.pid });
 
-           if (connectionTimeout) clearTimeout(connectionTimeout);
-           if (challengeTimeout) clearTimeout(challengeTimeout);
-         }
+             const userProfileName = (allProfiles && allProfiles.length > 0 ? allProfiles : []).find && undefined;
+             activeHistoryEntry = {
+               id: connectionId,
+               profileName: profileId,
+               profileType: 'userpass',
+               startedAt: new Date().toISOString(),
+               endedAt: null,
+               durationSeconds: 0,
+               disconnectReason: null,
+               bytesIn: 0,
+               bytesOut: 0,
+               status: 'active'
+             };
+             appendConnectionHistory(activeHistoryEntry);
+             setTimeout(() => {
+               startTrafficStats(profileId, 'userpass');
+               applyDnsLeakProtection(activeTunInterface).catch(() => {});
+             }, 3000);
+
+             mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
+             resolveOnce({ pid: bluepexPid });
+
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            if (challengeTimeout) clearTimeout(challengeTimeout);
+          }
 
         if (isChallengePrompt(output) && !challengeDetected && !authFailed) {
           console.log('🔐 Static challenge detectado!');
@@ -2505,18 +2695,23 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
          vpnProcess.on('close', (code) => {
            console.log(`OpenVPN encerrado com código ${code}`);
            const wasEstablished = connectionEstablished;
-           vpnConnectionActive = false;
-           vpnProcess = null;
-           ipcMain.removeAllListeners('send-challenge-response');
-           transientPassword = null;
-           if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
-           if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
-             mainWindow.webContents.send('vpn-disconnected');
-           }
+            vpnConnectionActive = false;
+            vpnProcess = null;
+            ipcMain.removeAllListeners('send-challenge-response');
+            transientPassword = null;
+            if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+            if (wasEstablished) {
+              const disconnReason = authFailed ? 'error' : (code !== 0 ? 'reconnect' : 'manual');
+              stopTrafficStats(disconnReason);
+            }
+             if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
+               if (killSwitchEnabled && !suppressNextReconnect) { enableKillSwitch().catch(() => {}); }
+               mainWindow.webContents.send('vpn-disconnected');
+             }
 
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (challengeTimeout) clearTimeout(challengeTimeout);
-            cleanupTempConfig();
+             if (connectionTimeout) clearTimeout(connectionTimeout);
+             if (challengeTimeout) clearTimeout(challengeTimeout);
+             cleanupTempConfig();
 
             if (code === 0) {
              logger.logConnectionDisconnect(profileId, 'user', 'normal_exit');
@@ -3513,7 +3708,7 @@ ipcMain.handle('login-azure', async () => {
       username: account.username,
       expires_at: expiresAtIso
     };
-    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+    writeTokenCache(cache);
 
     logger.logAuthSuccess('azure_device_code', 'azure_ad', {
       username: account.username,
@@ -3556,13 +3751,13 @@ ipcMain.handle('publish-token', async (event, username, token) => {
     // Persiste short_id para o próximo connect-openvpn
     try {
       const existing = fs.existsSync(cachePath)
-        ? JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+        ? readTokenCache()
         : {};
 
       existing.short_id = shortId;
       existing.shortID = shortId;
       existing.short_id_generated_at = new Date().toISOString();
-      fs.writeFileSync(cachePath, JSON.stringify(existing, null, 2));
+      writeTokenCache(existing);
     } catch (persistErr) {
       logger.log('AZURE', 'TOKEN_PUBLISH_CACHE_WARN', {
         username,
@@ -3611,7 +3806,7 @@ ipcMain.handle('connect-openvpn', async () => {
 
     let cache;
     try {
-      cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      cache = readTokenCache();
     } catch (err) {
       reject(new Error('Token não encontrado. Faça login primeiro.'));
       return;
@@ -3649,6 +3844,13 @@ ipcMain.handle('connect-openvpn', async () => {
 
     fs.writeFileSync(authPath, `${azureUpn}\n${shortID}`, 'utf-8');
     console.log(`🔐 [Azure] auth-user-pass preparado com UPN: ${azureUpn}`);
+
+    if (process.platform === 'win32' && configContent && !/^\s*block-outside-dns\b/im.test(configContent)) {
+      try {
+        fs.writeFileSync(config.openvpn_config, configContent + '\nblock-outside-dns\n', 'utf-8');
+        configContent = configContent + '\nblock-outside-dns\n';
+      } catch (_) {}
+    }
 
     const openvpnArgs = ['--config', config.openvpn_config, '--auth-user-pass', authPath];
     if (shouldEnableExplicitExitNotify(configContent)) {
@@ -3796,6 +3998,23 @@ ipcMain.handle('connect-openvpn', async () => {
         mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
       }
       console.log('✅ [Azure] VPN conectada com sucesso!');
+      activeHistoryEntry = {
+        id: connectionId,
+        profileName: 'azure',
+        profileType: 'azure',
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        durationSeconds: 0,
+        disconnectReason: null,
+        bytesIn: 0,
+        bytesOut: 0,
+        status: 'active'
+      };
+      appendConnectionHistory(activeHistoryEntry);
+      setTimeout(() => {
+        startTrafficStats('azure', 'azure');
+        applyDnsLeakProtection(activeTunInterface).catch(() => {});
+      }, 3000);
       logger.logConnectionSuccess('azure', 'azure', {
         pid: bluepexPid,
         wrapperPid: vpnProcess.pid,
@@ -3879,6 +4098,7 @@ ipcMain.handle('connect-openvpn', async () => {
     };
 
     try {
+      disableKillSwitch().catch(() => {});
       vpnProcess = spawn(openvpnCommand, openvpnArgsFinal, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, SYSTEMD_ASK_PASSWORD: '' }
@@ -4033,9 +4253,14 @@ ipcMain.handle('connect-openvpn', async () => {
         vpnProcess = null;
         clearBluepexConnectionMeta();
 
+       if (wasEstablished) {
+         const azureDisconnReason = azureAuthFailed ? 'error' : (code !== 0 ? 'reconnect' : 'manual');
+         stopTrafficStats(azureDisconnReason);
+       }
        if (wasEstablished && mainWindow && !mainWindow.isDestroyed()) {
-         mainWindow.webContents.send('vpn-disconnected');
          const manualDisconnect = suppressNextReconnect;
+         if (killSwitchEnabled && !manualDisconnect) { enableKillSwitch().catch(() => {}); }
+         mainWindow.webContents.send('vpn-disconnected');
          if (manualDisconnect) {
            console.log('🛑 [RF010] Reconexão automática Azure ignorada: desconexão manual solicitada');
            suppressNextReconnect = false;
@@ -4323,7 +4548,10 @@ async function killVPNConnection() {
       };
     }
 
-    // Notificar desconexão
+    stopTrafficStats('manual');
+
+    await disableKillSwitch();
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vpn-log', '✅ VPN desconectada com sucesso\n');
       mainWindow.webContents.send('vpn-disconnected');
@@ -4347,6 +4575,48 @@ async function killVPNConnection() {
   }
 }
 
+// RF011: Kill Switch — execPromise helper
+const execPromise = (cmd) => new Promise((res, rej) => exec(cmd, (err, stdout, stderr) => err ? rej(err) : res(stdout)));
+
+// RF011: Kill Switch — ativa bloqueio de rede exceto loopback e tun+
+async function enableKillSwitch() {
+  if (killSwitchActive) return;
+  killSwitchActive = true;
+  try {
+    if (process.platform === 'linux') {
+      const pkexecAvail = await checkPkexecAvailable();
+      const sudo = pkexecAvail ? 'pkexec' : 'sudo';
+      await execPromise(`${sudo} iptables -I OUTPUT 1 -o lo -j ACCEPT`);
+      await execPromise(`${sudo} iptables -I OUTPUT 2 -o tun+ -j ACCEPT`);
+      await execPromise(`${sudo} iptables -A OUTPUT -j DROP`);
+    } else if (process.platform === 'win32') {
+      await execPromise('netsh advfirewall firewall add rule name="BluePexVPN-KillSwitch" protocol=any dir=out action=block');
+    }
+  } catch (e) {
+    killSwitchActive = false;
+    logger.log('KILLSWITCH', 'ENABLE_ERROR', { error: e.message });
+  }
+}
+
+// RF011: Kill Switch — remove bloqueio de rede
+async function disableKillSwitch() {
+  if (!killSwitchActive) return;
+  try {
+    if (process.platform === 'linux') {
+      const pkexecAvail = await checkPkexecAvailable();
+      const sudo = pkexecAvail ? 'pkexec' : 'sudo';
+      await execPromise(`${sudo} iptables -D OUTPUT -j DROP`).catch(() => {});
+      await execPromise(`${sudo} iptables -D OUTPUT -o tun+ -j ACCEPT`).catch(() => {});
+      await execPromise(`${sudo} iptables -D OUTPUT -o lo -j ACCEPT`).catch(() => {});
+    } else if (process.platform === 'win32') {
+      await execPromise('netsh advfirewall firewall delete rule name="BluePexVPN-KillSwitch"').catch(() => {});
+    }
+    killSwitchActive = false;
+  } catch (e) {
+    logger.log('KILLSWITCH', 'DISABLE_ERROR', { error: e.message });
+  }
+}
+
 // APENAS UM HANDLER - REMOVER O DUPLICADO!
 ipcMain.handle('kill-vpn-connection', async () => {
   console.log('🔌 [MAIN] Executando kill-vpn-connection via IPC');
@@ -4361,6 +4631,22 @@ ipcMain.handle('disconnect-openvpn', async (event, pid) => {
   // RF010: cancelar reconexão automática quando usuário desconectar manualmente
   cancelReconnect();
   return await killVPNConnection();
+});
+
+// RF011: Kill Switch — handlers IPC
+ipcMain.handle('enable-kill-switch', async () => {
+  killSwitchEnabled = true;
+  return { success: true };
+});
+
+ipcMain.handle('disable-kill-switch', async () => {
+  killSwitchEnabled = false;
+  await disableKillSwitch();
+  return { success: true };
+});
+
+ipcMain.handle('get-kill-switch-status', () => {
+  return { enabled: killSwitchEnabled, active: killSwitchActive };
 });
 
 // RF010: handler interno de reconexão automática
