@@ -1578,6 +1578,35 @@
                     <div id="killSwitchStatus" style="font-size:0.8em;display:none;"></div>
                 </div>
             </div>
+
+            <!-- RNF013/RNF014: Modo Compacto -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section" style="width:100%;">
+                    <h4>Interface</h4>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="compactModeToggle">
+                            <label for="compactModeToggle" class="weight-600">Modo compacto</label>
+                        </div>
+                    </div>
+                    <p class="mt-1" style="font-size:0.85em;color:#aaa;">Reduz a janela para telas menores.</p>
+                </div>
+            </div>
+
+            <!-- RNF012: Logo Customizado -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section" style="width:100%;">
+                    <h4>Logotipo personalizado</h4>
+                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                        <img id="customLogoPreview" src="local-resource://logo.png" alt="Preview logo"
+                            style="width:40px;height:40px;object-fit:contain;border-radius:6px;border:1px solid #0078BE;background:#001A2E;">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="customLogoChangeBtn">Alterar logo</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="customLogoRemoveBtn">Remover</button>
+                        <input type="file" id="customLogoFileInput" accept="image/*" style="display:none;">
+                    </div>
+                    <p class="mt-1" style="font-size:0.85em;color:#aaa;">Substitua o logotipo exibido no topo da aplicação por uma imagem personalizada.</p>
+                </div>
+            </div>
         </div>
     </div>
 

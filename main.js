@@ -647,6 +647,27 @@ const AZURE_PROFILES_PATH = path.join(USER_DATA_DIR, 'azure_profiles.json');
 const APP_STATE_PATH = path.join(USER_DATA_DIR, 'app_state.json');
 const USER_CREDENTIALS_PATH = path.join(USER_DATA_DIR, 'user_credentials.json');
 const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
+const APP_SETTINGS_PATH = path.join(USER_DATA_DIR, 'app_settings.json');
+
+function loadAppSettings() {
+  try {
+    if (fs.existsSync(APP_SETTINGS_PATH)) {
+      return JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8'));
+    }
+  } catch (_) {}
+  return {};
+}
+
+function saveAppSettings(settings) {
+  try {
+    const current = loadAppSettings();
+    const merged = Object.assign({}, current, settings);
+    fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify(merged, null, 2));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
 
 // ============ UTILITÁRIOS DE CRIPTOGRAFIA ============
 // IS004: chave derivada do machine-id do sistema (não hardcoded)
@@ -1109,6 +1130,13 @@ function createSplashWindow() {
      });
 
     console.log('✅ Janela principal criada com sucesso');
+
+    const savedSettings = loadAppSettings();
+    if (savedSettings.compactMode) {
+      mainWindow.setSize(640, 520);
+    } else {
+      mainWindow.setSize(640, 712);
+    }
 
    // Menu removido conforme solicitado
    Menu.setApplicationMenu(null);
@@ -2645,6 +2673,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                ipcMain.removeAllListeners('send-challenge-response');
                transientPassword = null;
                if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+               if (mainWindow && !mainWindow.isDestroyed()) {
+                 mainWindow.webContents.send('vpn-challenge-expired');
+               }
                abortPendingConnection('timeout_desafio_2fa_stdout');
                rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
              }
@@ -2704,6 +2735,9 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                  ipcMain.removeAllListeners('send-challenge-response');
                  transientPassword = null;
                  if (currentLocalChallengeContext?.connectionId === connectionId) currentLocalChallengeContext = null;
+                 if (mainWindow && !mainWindow.isDestroyed()) {
+                   mainWindow.webContents.send('vpn-challenge-expired');
+                 }
                  abortPendingConnection('timeout_desafio_2fa_stderr');
                 rejectOnce(new Error('Timeout: Token 2FA não foi fornecido a tempo'));
                }
@@ -2914,6 +2948,18 @@ ipcMain.handle('cancel-challenge-response', async () => {
     return { success: true };
   }
   return { success: false, error: 'Desafio 2FA não encontrado' };
+});
+
+ipcMain.handle('cancel-challenge', async () => {
+  if (currentLocalChallengeContext) {
+    const ctx = currentLocalChallengeContext;
+    currentLocalChallengeContext = null;
+    if (ctx.abort) ctx.abort('desafio_2fa_timer_expirado_renderer');
+  }
+  if (vpnProcess && !vpnProcess.killed) {
+    vpnProcess.kill('SIGTERM');
+  }
+  return { success: true };
 });
 
 // Handler para senha do sudo
@@ -3497,6 +3543,7 @@ ipcMain.handle('save-app-state', async (event, appState) => {
     const mergedState = {
       ...currentState,
       ...appState,
+      killSwitchEnabled,
       lastSaved: new Date().toISOString()
     };
 
@@ -3558,7 +3605,15 @@ ipcMain.handle('load-app-state', async () => {
         } else {
           state.vpnPid = bluepexPid;
           state.vpnConnected = true;
+          if (state.killSwitchEnabled) {
+            killSwitchEnabled = true;
+            enableKillSwitch().catch(() => {});
+          }
         }
+      }
+
+      if (state.killSwitchEnabled !== undefined) {
+        killSwitchEnabled = !!state.killSwitchEnabled;
       }
 
       return { success: true, state };
@@ -3567,6 +3622,17 @@ ipcMain.handle('load-app-state', async () => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('load-app-settings', () => loadAppSettings());
+ipcMain.handle('save-app-settings', (_, settings) => saveAppSettings(settings));
+
+ipcMain.handle('set-compact-mode', (_, enabled) => {
+  saveAppSettings({ compactMode: enabled });
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setSize(640, enabled ? 520 : 712);
+  }
+  return { success: true };
 });
 
 ipcMain.handle('load-azure-profiles', async () => {
@@ -4609,7 +4675,9 @@ async function enableKillSwitch() {
       await execPromise(`${sudo} iptables -I OUTPUT 2 -o tun+ -j ACCEPT`);
       await execPromise(`${sudo} iptables -A OUTPUT -j DROP`);
     } else if (process.platform === 'win32') {
-      await execPromise('netsh advfirewall firewall add rule name="BluePexVPN-KillSwitch" protocol=any dir=out action=block');
+      await execPromise('powershell -NoProfile -Command "New-NetFirewallRule -DisplayName \'BluePexVPN-KillSwitch-Block\' -Direction Outbound -Action Block -Enabled True -Profile Any"').catch(() => {});
+      await execPromise('powershell -NoProfile -Command "New-NetFirewallRule -DisplayName \'BluePexVPN-KillSwitch-Allow-VPN\' -Direction Outbound -Action Allow -InterfaceAlias \'*TAP*\',\'*tun*\',\'*OpenVPN*\' -Enabled True -Profile Any"').catch(() => {});
+      await execPromise('powershell -NoProfile -Command "New-NetFirewallRule -DisplayName \'BluePexVPN-KillSwitch-Allow-Lo\' -Direction Outbound -Action Allow -InterfaceAlias \'Loopback*\' -Enabled True -Profile Any"').catch(() => {});
     }
   } catch (e) {
     killSwitchActive = false;
@@ -4628,7 +4696,7 @@ async function disableKillSwitch() {
       await execPromise(`${sudo} iptables -D OUTPUT -o tun+ -j ACCEPT`).catch(() => {});
       await execPromise(`${sudo} iptables -D OUTPUT -o lo -j ACCEPT`).catch(() => {});
     } else if (process.platform === 'win32') {
-      await execPromise('netsh advfirewall firewall delete rule name="BluePexVPN-KillSwitch"').catch(() => {});
+      await execPromise('powershell -NoProfile -Command "Remove-NetFirewallRule -DisplayName \'BluePexVPN-KillSwitch*\' -ErrorAction SilentlyContinue"').catch(() => {});
     }
     killSwitchActive = false;
   } catch (e) {
@@ -5440,6 +5508,38 @@ ipcMain.handle('quit-app', async () => {
 
   app.quit();
   return { success: true };
+});
+
+// ============ RNF012: LOGO CUSTOMIZADO ============
+
+const CUSTOM_LOGO_PATH = path.join(app.getPath('userData'), 'custom_logo.dat');
+
+ipcMain.handle('save-custom-logo', (event, base64) => {
+  try {
+    fs.writeFileSync(CUSTOM_LOGO_PATH, base64, 'utf8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('load-custom-logo', () => {
+  try {
+    if (!fs.existsSync(CUSTOM_LOGO_PATH)) return { success: false };
+    const data = fs.readFileSync(CUSTOM_LOGO_PATH, 'utf8');
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('remove-custom-logo', () => {
+  try {
+    if (fs.existsSync(CUSTOM_LOGO_PATH)) fs.unlinkSync(CUSTOM_LOGO_PATH);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 // ============ FUNÇÃO PARA SALVAR ESTADO DA APLICAÇÃO ============

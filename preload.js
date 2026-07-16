@@ -77,6 +77,7 @@ globalThis.electronAPI = {
   // Desafio de autenticação
   sendChallengeResponse: (response) => ipcRenderer.invoke('send-challenge-response', response),
   cancelChallengeResponse: () => ipcRenderer.invoke('cancel-challenge-response'),
+  cancelChallenge: () => ipcRenderer.invoke('cancel-challenge'),
   onVpnChallenge: (callback) => ipcRenderer.on('vpn-challenge', (event, data) => {
     ipcRenderer.invoke('send-renderer-log', {
       category: 'PRELOAD',
@@ -85,6 +86,7 @@ globalThis.electronAPI = {
     });
     callback(event, data);
   }),
+  onVpnChallengeExpired: (callback) => ipcRenderer.on('vpn-challenge-expired', callback),
   sendSystemdChallengeResponse: (response) => ipcRenderer.invoke('send-systemd-challenge-response', response),
   sendSudoPassword: (password) => ipcRenderer.invoke('send-sudo-password', password),
 
@@ -151,6 +153,18 @@ globalThis.electronAPI = {
    enableKillSwitch: () => ipcRenderer.invoke('enable-kill-switch'),
    disableKillSwitch: () => ipcRenderer.invoke('disable-kill-switch'),
    getKillSwitchStatus: () => ipcRenderer.invoke('get-kill-switch-status'),
+
+   // RNF014b: Gráfico de tráfego e histórico de conexões
+   getConnectionHistory: () => ipcRenderer.invoke('get-connection-history'),
+   onVpnTrafficStats: (cb) => ipcRenderer.on('vpn-traffic-stats', (_, data) => cb(data)),
+   removeVpnTrafficStatsListener: () => ipcRenderer.removeAllListeners('vpn-traffic-stats'),
+
+   // RNF014: Settings persistentes
+   loadAppSettings: () => ipcRenderer.invoke('load-app-settings'),
+   saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
+
+   // RNF013: Modo compacto
+   setCompactMode: (enabled) => ipcRenderer.invoke('set-compact-mode', enabled),
 };
 
 // Send success log

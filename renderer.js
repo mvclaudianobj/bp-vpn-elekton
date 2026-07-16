@@ -630,6 +630,9 @@ async function initializeApp() {
         // Inicializar elementos de atualização
         initializeUpdateElements();
 
+        // RNF012: Carregar logo customizado
+        await loadAndApplyCustomLogo();
+
         // Configurar event listeners primeiro
         setupEventListeners();
 
@@ -2095,6 +2098,11 @@ if (window.electronAPI) {
                 clearInterval(timerInterval);
                 modal.style.display = 'none';
                 showStatus('Tempo esgotado para o token 2FA', 'error');
+                if (window.electronAPI.cancelChallenge) {
+                    window.electronAPI.cancelChallenge().catch((err) => {
+                        console.error('Erro ao cancelar challenge no main:', err);
+                    });
+                }
             }
         }, 1000);
 
@@ -2147,6 +2155,16 @@ if (window.electronAPI) {
         document.getElementById('cancelChallengeBtn').addEventListener('click', onCancel);
         inputEl.addEventListener('keydown', onKeyDown);
     });
+
+    if (window.electronAPI.onVpnChallengeExpired) {
+        window.electronAPI.onVpnChallengeExpired(() => {
+            const modal = document.getElementById('challengeModal');
+            if (modal && modal.style.display !== 'none') {
+                modal.style.display = 'none';
+                showStatus('Tempo esgotado para o token 2FA', 'error');
+            }
+        });
+    }
 
     // Função para extrair versão do update info (centralizada como app.getVersion())
     async function getUpdateVersion(info) {
@@ -2291,6 +2309,24 @@ if (window.electronAPI) {
         }
     });
 
+    // RNF013/RNF014: Modo compacto
+    const compactModeToggle = document.getElementById('compactModeToggle');
+    if (compactModeToggle && window.electronAPI?.loadAppSettings) {
+        window.electronAPI.loadAppSettings().then((settings) => {
+            compactModeToggle.checked = !!settings.compactMode;
+        }).catch(() => {});
+
+        compactModeToggle.addEventListener('change', async () => {
+            const enabled = compactModeToggle.checked;
+            if (window.electronAPI?.setCompactMode) {
+                await window.electronAPI.setCompactMode(enabled);
+            }
+            if (window.electronAPI?.saveAppSettings) {
+                await window.electronAPI.saveAppSettings({ compactMode: enabled });
+            }
+        });
+    }
+
     // RF011: Kill Switch toggle
     const killSwitchToggle = document.getElementById('killSwitchToggle');
     const killSwitchStatus = document.getElementById('killSwitchStatus');
@@ -2328,6 +2364,55 @@ if (window.electronAPI) {
         showStatus('Sessão encerrada com sucesso.', 'success');
         console.log('🔓 Sessão limpa pelo processo principal');
     });
+
+    // RNF012: Logo customizado
+    const customLogoChangeBtn = document.getElementById('customLogoChangeBtn');
+    const customLogoRemoveBtn = document.getElementById('customLogoRemoveBtn');
+    const customLogoFileInput = document.getElementById('customLogoFileInput');
+
+    if (customLogoChangeBtn && customLogoFileInput) {
+        customLogoChangeBtn.addEventListener('click', () => customLogoFileInput.click());
+        customLogoFileInput.addEventListener('change', async (event) => {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result;
+                await window.electronAPI.saveCustomLogo(base64);
+                applyCustomLogo(base64);
+            };
+            reader.readAsDataURL(file);
+            customLogoFileInput.value = '';
+        });
+    }
+
+    if (customLogoRemoveBtn) {
+        customLogoRemoveBtn.addEventListener('click', async () => {
+            await window.electronAPI.removeCustomLogo();
+            applyCustomLogo(null);
+        });
+    }
+}
+
+// RNF012: aplica logo customizado ao header e ao preview
+function applyCustomLogo(base64OrNull) {
+    const headerLogo = document.querySelector('img.logo');
+    const preview = document.getElementById('customLogoPreview');
+    const src = base64OrNull || 'local-resource://logo.png';
+    if (headerLogo) headerLogo.src = src;
+    if (preview) preview.src = src;
+}
+
+async function loadAndApplyCustomLogo() {
+    try {
+        if (!window.electronAPI || !window.electronAPI.loadCustomLogo) return;
+        const result = await window.electronAPI.loadCustomLogo();
+        if (result && result.success && result.data) {
+            applyCustomLogo(result.data);
+        }
+    } catch (error) {
+        console.warn('RNF012: erro ao carregar logo customizado:', error);
+    }
 }
 
 async function updateCopyright() {
