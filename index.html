@@ -387,14 +387,14 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0,0,0,0.85);
             z-index: 2000;
-            align-items: center;
-            justify-content: center;
+            overflow-y: auto;
+            padding: 24px 16px;
         }
 
         .config-modal.show {
-            display: flex;
+            display: block;
         }
 
         /* Modal de Logs */
@@ -498,16 +498,14 @@
 
         .config-content {
             background: #061c2e;
-            padding: 1rem;
+            padding: 1.5rem;
             border-radius: 15px;
             max-width: 760px;
-            width: 95%;
-            max-height: 90vh;
-            overflow-y: auto;
+            width: 100%;
+            margin: 0 auto;
+            border: 1px solid #0d2030;
             scrollbar-width: thin;
             scrollbar-color: #0078BE #061c2e;
-            border: 1px solid rgb(13 32 48);
-            margin: 4rem auto;
         }
         .config-content::-webkit-scrollbar { width: 6px; }
         .config-content::-webkit-scrollbar-track { background: #061c2e; }
@@ -515,9 +513,14 @@
 
         .config-sections-container {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             gap: 20px;
             margin-bottom: 20px;
+        }
+
+        .config-section.full-width {
+            width: 100%;
+            flex: none;
         }
 
         .config-section {
@@ -1576,7 +1579,7 @@
 
             <!-- RF011: Kill Switch -->
             <div class="config-sections-container mt-2">
-                <div class="config-section" style="width:100%;">
+                <div class="config-section full-width">
                     <h4>Segurança de Rede</h4>
                     <div class="checkbox-group">
                         <div class="checkbox-item">
@@ -1591,7 +1594,7 @@
 
             <!-- RNF013/RNF014: Modo Compacto -->
             <div class="config-sections-container mt-2">
-                <div class="config-section" style="width:100%;">
+                <div class="config-section full-width">
                     <h4>Interface</h4>
                     <div class="checkbox-group">
                         <div class="checkbox-item">
@@ -1605,7 +1608,7 @@
 
             <!-- Identidade Visual -->
             <div class="config-sections-container mt-2">
-              <div class="config-section" style="width:100%">
+              <div class="config-section full-width">
                 <h4><i class="bi bi-palette"></i> Identidade Visual</h4>
                 <div style="display:flex; flex-wrap:wrap; gap:16px; margin-top:12px;">
                   <div style="display:flex; flex-direction:column; gap:6px;">
@@ -1631,7 +1634,7 @@
 
             <!-- RNF012: Logo Customizado -->
             <div class="config-sections-container mt-2">
-                <div class="config-section" style="width:100%;">
+                <div class="config-section full-width">
                     <h4>Logotipo personalizado</h4>
                     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                         <img id="customLogoPreview" src="local-resource://logo.png" alt="Preview logo"
