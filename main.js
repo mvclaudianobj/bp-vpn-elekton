@@ -648,6 +648,7 @@ const APP_STATE_PATH = path.join(USER_DATA_DIR, 'app_state.json');
 const USER_CREDENTIALS_PATH = path.join(USER_DATA_DIR, 'user_credentials.json');
 const CONFIG_PATH = path.join(USER_DATA_DIR, 'config.json');
 const APP_SETTINGS_PATH = path.join(USER_DATA_DIR, 'app_settings.json');
+const CUSTOM_LOGO_PATH = path.join(USER_DATA_DIR, 'custom_logo.dat');
 
 function loadAppSettings() {
   try {
@@ -5511,8 +5512,6 @@ ipcMain.handle('quit-app', async () => {
 });
 
 // ============ RNF012: LOGO CUSTOMIZADO ============
-
-const CUSTOM_LOGO_PATH = path.join(app.getPath('userData'), 'custom_logo.dat');
 
 ipcMain.handle('save-custom-logo', (event, base64) => {
   try {

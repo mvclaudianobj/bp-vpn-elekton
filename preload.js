@@ -165,6 +165,11 @@ globalThis.electronAPI = {
 
    // RNF013: Modo compacto
    setCompactMode: (enabled) => ipcRenderer.invoke('set-compact-mode', enabled),
+
+   // RNF012: Logo customizado
+   saveCustomLogo: (base64) => ipcRenderer.invoke('save-custom-logo', base64),
+   loadCustomLogo: () => ipcRenderer.invoke('load-custom-logo'),
+   removeCustomLogo: () => ipcRenderer.invoke('remove-custom-logo'),
 };
 
 // Send success log
