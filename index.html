@@ -7,8 +7,13 @@
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        :root {
+            --color-primary: #0078BE;
+            --color-accent: #00eeff;
+            --color-bg: #0A162E;
+        }
         body {
-            background: #0A162E;
+            background: var(--color-bg);
             color: white;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
@@ -497,11 +502,16 @@
             border-radius: 15px;
             max-width: 760px;
             width: 95%;
-            max-height: 85vh;
+            max-height: 90vh;
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #0078BE #061c2e;
             border: 1px solid rgb(13 32 48);
             margin: 4rem auto;
         }
+        .config-content::-webkit-scrollbar { width: 6px; }
+        .config-content::-webkit-scrollbar-track { background: #061c2e; }
+        .config-content::-webkit-scrollbar-thumb { background: #0078BE; border-radius: 3px; }
 
         .config-sections-container {
             display: flex;
@@ -1591,6 +1601,32 @@
                     </div>
                     <p class="mt-1" style="font-size:0.85em;color:#aaa;">Reduz a janela para telas menores.</p>
                 </div>
+            </div>
+
+            <!-- Identidade Visual -->
+            <div class="config-sections-container mt-2">
+              <div class="config-section" style="width:100%">
+                <h4><i class="bi bi-palette"></i> Identidade Visual</h4>
+                <div style="display:flex; flex-wrap:wrap; gap:16px; margin-top:12px;">
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="font-size:0.8rem; color:#9bb8d4;">Cor primária</label>
+                    <input type="color" id="colorPrimary" value="#0078BE" style="width:48px; height:32px; border:1px solid #0078BE33; border-radius:6px; background:transparent; cursor:pointer; padding:2px;">
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="font-size:0.8rem; color:#9bb8d4;">Cor de destaque</label>
+                    <input type="color" id="colorAccent" value="#00eeff" style="width:48px; height:32px; border:1px solid #0078BE33; border-radius:6px; background:transparent; cursor:pointer; padding:2px;">
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="font-size:0.8rem; color:#9bb8d4;">Cor de fundo</label>
+                    <input type="color" id="colorBackground" value="#0A162E" style="width:48px; height:32px; border:1px solid #0078BE33; border-radius:6px; background:transparent; cursor:pointer; padding:2px;">
+                  </div>
+                  <div style="display:flex; align-items:flex-end; gap:8px; margin-top:auto;">
+                    <button id="applyColorsBtn" style="background:#0078BE; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:0.82rem; cursor:pointer;">Aplicar</button>
+                    <button id="resetColorsBtn" style="background:transparent; color:#6a9ab8; border:1px solid #0078BE33; border-radius:6px; padding:6px 14px; font-size:0.82rem; cursor:pointer;">Restaurar</button>
+                  </div>
+                </div>
+                <p style="font-size:0.75rem; color:#4a7a9a; margin-top:10px;"><i class="bi bi-info-circle"></i> As cores são aplicadas imediatamente e salvas com o perfil.</p>
+              </div>
             </div>
 
             <!-- RNF012: Logo Customizado -->

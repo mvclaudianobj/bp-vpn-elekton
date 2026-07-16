@@ -633,6 +633,28 @@ async function initializeApp() {
         // RNF012: Carregar logo customizado
         await loadAndApplyCustomLogo();
 
+        // Identidade Visual: carregar cores salvas
+        try {
+            if (window.electronAPI?.loadAppSettings) {
+                const savedSettings = await window.electronAPI.loadAppSettings();
+                if (savedSettings && savedSettings.colorPrimary) {
+                    const elPrimary = document.getElementById('colorPrimary');
+                    const elAccent = document.getElementById('colorAccent');
+                    const elBg = document.getElementById('colorBackground');
+                    if (elPrimary) elPrimary.value = savedSettings.colorPrimary;
+                    if (elAccent) elAccent.value = savedSettings.colorAccent || '#00eeff';
+                    if (elBg) elBg.value = savedSettings.colorBackground || '#0A162E';
+                    applyThemeColors(
+                        savedSettings.colorPrimary,
+                        savedSettings.colorAccent || '#00eeff',
+                        savedSettings.colorBackground || '#0A162E'
+                    );
+                }
+            }
+        } catch (e) {
+            console.warn('Identidade Visual: erro ao carregar cores:', e);
+        }
+
         // Configurar event listeners primeiro
         setupEventListeners();
 
@@ -2392,6 +2414,47 @@ if (window.electronAPI) {
             applyCustomLogo(null);
         });
     }
+
+    // Identidade Visual: botões Aplicar e Restaurar
+    const applyColorsBtn = document.getElementById('applyColorsBtn');
+    const resetColorsBtn = document.getElementById('resetColorsBtn');
+
+    if (applyColorsBtn) {
+        applyColorsBtn.addEventListener('click', async () => {
+            const primary = document.getElementById('colorPrimary').value;
+            const accent = document.getElementById('colorAccent').value;
+            const bg = document.getElementById('colorBackground').value;
+            applyThemeColors(primary, accent, bg);
+            if (window.electronAPI?.saveAppSettings) {
+                await window.electronAPI.saveAppSettings({ colorPrimary: primary, colorAccent: accent, colorBackground: bg });
+            }
+        });
+    }
+
+    if (resetColorsBtn) {
+        resetColorsBtn.addEventListener('click', async () => {
+            const defaults = { colorPrimary: '#0078BE', colorAccent: '#00eeff', colorBackground: '#0A162E' };
+            const elPrimary = document.getElementById('colorPrimary');
+            const elAccent = document.getElementById('colorAccent');
+            const elBg = document.getElementById('colorBackground');
+            if (elPrimary) elPrimary.value = defaults.colorPrimary;
+            if (elAccent) elAccent.value = defaults.colorAccent;
+            if (elBg) elBg.value = defaults.colorBackground;
+            applyThemeColors(defaults.colorPrimary, defaults.colorAccent, defaults.colorBackground);
+            if (window.electronAPI?.saveAppSettings) {
+                await window.electronAPI.saveAppSettings(defaults);
+            }
+        });
+    }
+}
+
+// Identidade Visual: aplica cores ao tema
+function applyThemeColors(primary, accent, bg) {
+    document.documentElement.style.setProperty('--color-primary', primary);
+    document.documentElement.style.setProperty('--color-accent', accent);
+    document.documentElement.style.setProperty('--color-bg', bg);
+    document.body.style.background = bg;
+    document.querySelectorAll('.btn-connect, .card-btn, #connectBtn').forEach(el => el.style.background = primary);
 }
 
 // RNF012: aplica logo customizado ao header e ao preview
