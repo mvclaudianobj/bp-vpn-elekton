@@ -2454,7 +2454,15 @@ function applyThemeColors(primary, accent, bg) {
     document.documentElement.style.setProperty('--color-accent', accent);
     document.documentElement.style.setProperty('--color-bg', bg);
     document.body.style.background = bg;
-    document.querySelectorAll('.btn-connect, .card-btn, #connectBtn').forEach(el => el.style.background = primary);
+    const appWrapper = document.querySelector('.app-wrapper');
+    if (appWrapper) appWrapper.style.background = bg;
+    const loginContainer = document.querySelector('.login-container');
+    if (loginContainer) loginContainer.style.background = bg;
+    document.querySelectorAll('.btn-connect, #connectBtn').forEach(el => { el.style.background = primary; el.style.borderColor = primary; });
+    document.querySelectorAll('.topbar').forEach(el => el.style.background = primary);
+    document.querySelectorAll('.profile-header').forEach(el => el.style.background = primary);
+    document.querySelectorAll('a').forEach(el => el.style.color = accent);
+    document.querySelectorAll('.config-section h4').forEach(el => el.style.color = accent);
 }
 
 // RNF012: aplica logo customizado ao header e ao preview
@@ -2464,6 +2472,9 @@ function applyCustomLogo(base64OrNull) {
     const src = base64OrNull || 'local-resource://logo.png';
     if (headerLogo) headerLogo.src = src;
     if (preview) preview.src = src;
+    if (window.electronAPI && window.electronAPI.setAppIcon) {
+        window.electronAPI.setAppIcon(base64OrNull).catch(() => {});
+    }
 }
 
 async function loadAndApplyCustomLogo() {

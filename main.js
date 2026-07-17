@@ -5541,6 +5541,25 @@ ipcMain.handle('remove-custom-logo', () => {
   }
 });
 
+ipcMain.handle('set-app-icon', (event, base64OrNull) => {
+  try {
+    const { nativeImage } = require('electron');
+    let img;
+    if (base64OrNull) {
+      const buf = Buffer.from(base64OrNull.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      img = nativeImage.createFromBuffer(buf);
+    } else {
+      const iconExt = process.platform === 'win32' ? 'ico' : 'png';
+      img = nativeImage.createFromPath(path.join(__dirname, `icon.${iconExt}`));
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(img);
+    if (tray && !tray.isDestroyed()) tray.setImage(img);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // ============ FUNÇÃO PARA SALVAR ESTADO DA APLICAÇÃO ============
 
 async function saveApplicationState() {

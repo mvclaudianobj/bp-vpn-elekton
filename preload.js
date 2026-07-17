@@ -170,6 +170,7 @@ globalThis.electronAPI = {
    saveCustomLogo: (base64) => ipcRenderer.invoke('save-custom-logo', base64),
    loadCustomLogo: () => ipcRenderer.invoke('load-custom-logo'),
    removeCustomLogo: () => ipcRenderer.invoke('remove-custom-logo'),
+   setAppIcon: (base64OrNull) => ipcRenderer.invoke('set-app-icon', base64OrNull),
 };
 
 // Send success log
