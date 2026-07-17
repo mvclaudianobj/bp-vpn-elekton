@@ -2464,7 +2464,7 @@ function applyThemeColors(primary, accent, bg) {
     document.querySelectorAll('a').forEach(el => el.style.color = accent);
     document.querySelectorAll('.config-section h4').forEach(el => el.style.color = accent);
     const footer = document.getElementById('appFooter');
-    if (footer) footer.style.backgroundColor = primary;
+    if (footer) footer.style.backgroundColor = (primary && primary !== '#0078BE') ? primary : '#061C30';
 }
 
 // RNF012: aplica logo customizado ao header e ao preview
