@@ -170,7 +170,10 @@ globalThis.electronAPI = {
    saveCustomLogo: (base64) => ipcRenderer.invoke('save-custom-logo', base64),
    loadCustomLogo: () => ipcRenderer.invoke('load-custom-logo'),
    removeCustomLogo: () => ipcRenderer.invoke('remove-custom-logo'),
-   setAppIcon: (base64OrNull) => ipcRenderer.invoke('set-app-icon', base64OrNull),
+    setAppIcon: (base64OrNull) => ipcRenderer.invoke('set-app-icon', base64OrNull),
+
+    // RNF003: monitoramento de consumo de RAM
+    getMemoryUsage: () => ipcRenderer.invoke('get-memory-usage'),
 };
 
 // Send success log

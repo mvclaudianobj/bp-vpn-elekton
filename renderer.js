@@ -682,6 +682,9 @@ async function initializeApp() {
         logToMain('RENDERER', 'INIT_SUCCESS', {});
         showStatus('Aplicação carregada com sucesso!', 'success');
 
+        // RNF003: iniciar monitoramento de consumo de RAM
+        startMemoryMonitor();
+
         // Abrir modal de atualização automaticamente no modo debug
         if (document.title.includes('DEBUG')) {
             setTimeout(() => {

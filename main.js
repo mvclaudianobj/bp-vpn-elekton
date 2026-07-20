@@ -4737,6 +4737,20 @@ ipcMain.handle('get-kill-switch-status', () => {
   return { enabled: killSwitchEnabled, active: killSwitchActive };
 });
 
+// RNF003: monitoramento de consumo de RAM < 100MB
+ipcMain.handle('get-memory-usage', () => {
+  const m = process.memoryUsage();
+  return {
+    rss: Math.round(m.rss / 1024 / 1024),
+    heapUsed: Math.round(m.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(m.heapTotal / 1024 / 1024),
+    external: Math.round(m.external / 1024 / 1024),
+    arrayBuffers: Math.round(m.arrayBuffers / 1024 / 1024),
+    threshold: 100,
+    exceeded: Math.round(m.rss / 1024 / 1024) > 100
+  };
+});
+
 // RF010: handler interno de reconexão automática
 ipcMain.on('internal-reconnect', (profileId, profileType) => {
   console.log(`🔄 [RF010] Tentando reconexão para perfil ${profileId} (tipo: ${profileType})`);
