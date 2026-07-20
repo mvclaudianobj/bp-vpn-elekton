@@ -2631,10 +2631,21 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
                status: 'active'
              };
              appendConnectionHistory(activeHistoryEntry);
-             setTimeout(() => {
-               startTrafficStats(profileId, 'userpass');
-               applyDnsLeakProtection(activeTunInterface).catch(() => {});
-             }, 3000);
+             {
+               const detectedTun = detectActiveTunInterface();
+               if (detectedTun) {
+                 activeTunInterface = detectedTun;
+                 startTrafficStats(profileId, 'userpass');
+                 applyDnsLeakProtection(detectedTun).catch(() => {});
+               } else {
+                 setTimeout(() => {
+                   const t = detectActiveTunInterface();
+                   if (t) activeTunInterface = t;
+                   startTrafficStats(profileId, 'userpass');
+                   if (activeTunInterface) applyDnsLeakProtection(activeTunInterface).catch(() => {});
+                 }, 1500);
+               }
+             }
 
              mainWindow.webContents.send('vpn-connected', { pid: bluepexPid });
              resolveOnce({ pid: bluepexPid });
@@ -4097,10 +4108,21 @@ ipcMain.handle('connect-openvpn', async () => {
         status: 'active'
       };
       appendConnectionHistory(activeHistoryEntry);
-      setTimeout(() => {
-        startTrafficStats('azure', 'azure');
-        applyDnsLeakProtection(activeTunInterface).catch(() => {});
-      }, 3000);
+      {
+        const detectedTunAz = detectActiveTunInterface();
+        if (detectedTunAz) {
+          activeTunInterface = detectedTunAz;
+          startTrafficStats('azure', 'azure');
+          applyDnsLeakProtection(detectedTunAz).catch(() => {});
+        } else {
+          setTimeout(() => {
+            const t = detectActiveTunInterface();
+            if (t) activeTunInterface = t;
+            startTrafficStats('azure', 'azure');
+            if (activeTunInterface) applyDnsLeakProtection(activeTunInterface).catch(() => {});
+          }, 1500);
+        }
+      }
       logger.logConnectionSuccess('azure', 'azure', {
         pid: bluepexPid,
         wrapperPid: vpnProcess.pid,
