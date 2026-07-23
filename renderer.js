@@ -123,7 +123,8 @@ function adjustWindowSize() {
 }
 
 // Chamar após mudanças no DOM
-const observer = new MutationObserver(adjustWindowSize);
+let adjustWindowPaused = false;
+const observer = new MutationObserver(() => { if (!adjustWindowPaused) adjustWindowSize(); });
 observer.observe(document.body, { childList: true, subtree: true });
 
 // Ajustar inicialmente
@@ -473,10 +474,7 @@ function setupEventListeners() {
     if (openStatsBtn) openStatsBtn.addEventListener('click', () => openStatsModal());
 
     const statsCloseBtn = document.getElementById('statsCloseBtn');
-    if (statsCloseBtn) statsCloseBtn.addEventListener('click', () => {
-        const modal = document.getElementById('statsModal');
-        if (modal) modal.classList.remove('show');
-    });
+    if (statsCloseBtn) statsCloseBtn.addEventListener('click', () => closeStatsModal());
 
     const statsRefreshBtn = document.getElementById('statsRefreshBtn');
     if (statsRefreshBtn) statsRefreshBtn.addEventListener('click', () => refreshStatsModal());
@@ -796,6 +794,8 @@ function populateProfileSelect() {
     });
 
     console.log(`📋 Select populado com ${allProfiles.length} perfis`);
+    const cfgLink = document.getElementById('configureProfilesLink');
+    if (cfgLink) cfgLink.style.display = allProfiles.length > 0 ? 'none' : 'inline';
 }
 
 function getTwoFactorBadge(profile) {
@@ -1328,11 +1328,13 @@ function toggleConfigModal() {
         const isVisible = configModal.classList.contains('show');
 
         if (isVisible) {
+            adjustWindowPaused = false;
             configModal.classList.remove('show');
             configModal.style.display = 'none';
             clearConfigStatus();
         } else {
             clearConfigStatus();
+            adjustWindowPaused = true;
             configModal.style.display = 'flex';
             configModal.classList.add('show');
             if (window.electronAPI?.loadAppSettings) {
@@ -2926,9 +2928,16 @@ function drawStatsChart() {
 }
 
 async function openStatsModal() {
+    adjustWindowPaused = true;
     const modal = document.getElementById('statsModal');
     if (modal) modal.classList.add('show');
     await refreshStatsModal();
+}
+
+function closeStatsModal() {
+    adjustWindowPaused = false;
+    const modal = document.getElementById('statsModal');
+    if (modal) modal.classList.remove('show');
 }
 
 async function refreshStatsModal() {
