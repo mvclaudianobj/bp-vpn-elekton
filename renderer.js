@@ -469,6 +469,18 @@ function setupEventListeners() {
         });
     }
 
+    const openStatsBtn = document.getElementById('openStatsBtn');
+    if (openStatsBtn) openStatsBtn.addEventListener('click', () => openStatsModal());
+
+    const statsCloseBtn = document.getElementById('statsCloseBtn');
+    if (statsCloseBtn) statsCloseBtn.addEventListener('click', () => {
+        const modal = document.getElementById('statsModal');
+        if (modal) modal.classList.remove('show');
+    });
+
+    const statsRefreshBtn = document.getElementById('statsRefreshBtn');
+    if (statsRefreshBtn) statsRefreshBtn.addEventListener('click', () => refreshStatsModal());
+
     // Logs da conexão
     if (logsBtn) {
         logsBtn.addEventListener('click', toggleConnLogsModal);
@@ -2468,6 +2480,60 @@ function applyThemeColors(primary, accent, bg) {
     document.querySelectorAll('.config-section h4').forEach(el => el.style.color = accent);
     const footer = document.getElementById('appFooter');
     if (footer) footer.style.backgroundColor = (primary && primary !== '#0078BE') ? primary : '#061C30';
+
+    const configContent = document.querySelector('.config-content');
+    if (configContent) {
+        configContent.style.background = bg === '#0A162E' ? '#061c2e' : bg;
+        configContent.style.borderColor = primary + '33';
+    }
+    document.querySelectorAll('.config-section').forEach(el => {
+        el.style.borderColor = primary + '22';
+    });
+    document.querySelectorAll('.config-section h4').forEach(el => {
+        el.style.color = accent;
+        el.style.borderBottomColor = primary + '55';
+    });
+
+    document.querySelectorAll('.logs-modal .modal-content').forEach(el => {
+        el.style.background = bg === '#0A162E' ? '#061c2e' : bg;
+    });
+
+    const challengeContent = document.querySelector('.challenge-content');
+    if (challengeContent) challengeContent.style.background = bg === '#0A162E' ? '#0A162E' : bg;
+    const challengeInput = document.querySelector('.challenge-input');
+    if (challengeInput) challengeInput.style.background = primary + '22';
+
+    const updateContent = document.querySelector('.update-content');
+    if (updateContent) {
+        updateContent.style.background = bg === '#0A162E' ? '#061c2e' : bg;
+        updateContent.style.borderColor = primary;
+    }
+    document.querySelectorAll('.spinner').forEach(el => {
+        el.style.borderTopColor = primary;
+    });
+
+    document.querySelectorAll('.profile-item.active').forEach(el => {
+        el.style.background = primary + '33';
+        el.style.borderLeftColor = primary;
+    });
+
+    document.documentElement.style.setProperty('--scrollbar-thumb', primary);
+    document.documentElement.style.setProperty('--scrollbar-track', bg);
+
+    document.querySelectorAll('.btn-outline-info').forEach(el => {
+        el.style.borderColor = primary;
+        el.style.color = primary;
+    });
+    document.querySelectorAll('.btn-outline-primary').forEach(el => {
+        el.style.borderColor = primary;
+        el.style.color = primary;
+    });
+
+    document.querySelectorAll('.status-indicator, .vpn-status').forEach(el => {
+        if (!el.classList.contains('connected') && !el.classList.contains('error')) {
+            el.style.borderColor = primary;
+        }
+    });
 }
 
 // RNF012: aplica logo customizado ao header e ao preview
@@ -2675,7 +2741,21 @@ function updateTrafficStats(data) {
     if (bytesInEl) bytesInEl.textContent = formatBytes(data.bytesIn || 0);
     if (bytesOutEl) bytesOutEl.textContent = formatBytes(data.bytesOut || 0);
 
+    const statsSpeedIn = document.getElementById('statsSpeedIn');
+    const statsSpeedOut = document.getElementById('statsSpeedOut');
+    const statsTotalIn = document.getElementById('statsTotalIn');
+    const statsTotalOut = document.getElementById('statsTotalOut');
+    if (statsSpeedIn) statsSpeedIn.textContent = formatSpeed(data.speedIn || 0);
+    if (statsSpeedOut) statsSpeedOut.textContent = formatSpeed(data.speedOut || 0);
+    if (statsTotalIn) statsTotalIn.textContent = formatBytes(data.bytesIn || 0);
+    if (statsTotalOut) statsTotalOut.textContent = formatBytes(data.bytesOut || 0);
+
     if (statsCurrentTab === 'chart') drawTrafficChart();
+
+    const statsModal = document.getElementById('statsModal');
+    if (statsModal && statsModal.classList.contains('show')) {
+        drawStatsChart();
+    }
 }
 
 function showStatsPanel() {
@@ -2746,6 +2826,131 @@ async function renderConnectionHistory() {
     } catch (err) {
         listEl.innerHTML = '<div style="color:#f44336;font-size:0.75rem;padding:8px 0">Erro ao carregar histórico</div>';
     }
+}
+
+function startMemoryMonitor() {
+    const memEl = document.getElementById('memoryUsage');
+    if (!memEl) return;
+    const update = async () => {
+        try {
+            if (window.electronAPI && window.electronAPI.getMemoryUsage) {
+                const mem = await window.electronAPI.getMemoryUsage();
+                memEl.textContent = `RAM: ${mem.rss} MB`;
+                if (mem.exceeded) memEl.style.color = '#f44336';
+                else memEl.style.color = '#6a9ab8';
+            }
+        } catch (e) {}
+    };
+    update();
+    setInterval(update, 5000);
+}
+
+function drawStatsChart() {
+    const canvas = document.getElementById('statsTrafficChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = '#001220';
+    ctx.fillRect(0, 0, w, h);
+
+    const maxVal = Math.max(1, ...chartSpeedIn, ...chartSpeedOut);
+    const stepX = w / (CHART_POINTS - 1);
+
+    const drawLine = (data, color) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        data.forEach((val, i) => {
+            const x = i * stepX;
+            const y = h - (val / maxVal) * (h - 8) - 4;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    };
+
+    const fillLine = (data, color) => {
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        data.forEach((val, i) => {
+            const x = i * stepX;
+            const y = h - (val / maxVal) * (h - 8) - 4;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.lineTo((CHART_POINTS - 1) * stepX, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+    };
+
+    fillLine(chartSpeedIn, 'rgba(79,195,247,0.18)');
+    fillLine(chartSpeedOut, 'rgba(102,187,106,0.18)');
+    drawLine(chartSpeedIn, '#4fc3f7');
+    drawLine(chartSpeedOut, '#66bb6a');
+
+    ctx.fillStyle = 'rgba(79,195,247,0.9)';
+    ctx.font = '11px monospace';
+    ctx.fillText('RX', 8, 18);
+    ctx.fillStyle = 'rgba(102,187,106,0.9)';
+    ctx.fillText('TX', 8, 34);
+}
+
+async function openStatsModal() {
+    const modal = document.getElementById('statsModal');
+    if (modal) modal.classList.add('show');
+    await refreshStatsModal();
+}
+
+async function refreshStatsModal() {
+    if (window.electronAPI && window.electronAPI.getMemoryUsage) {
+        try {
+            const mem = await window.electronAPI.getMemoryUsage();
+            const rssEl = document.getElementById('statRssVal');
+            const heapEl = document.getElementById('statHeapVal');
+            const rssBar = document.getElementById('statRssBar');
+            const heapBar = document.getElementById('statHeapBar');
+            if (rssEl) rssEl.textContent = mem.rss + ' MB';
+            if (heapEl) heapEl.textContent = mem.heapUsed + ' MB';
+            if (rssBar) {
+                rssBar.style.width = Math.min(100, (mem.rss / mem.threshold) * 100) + '%';
+                rssBar.style.background = mem.exceeded ? '#f44336' : '#0078BE';
+            }
+            if (heapBar) {
+                heapBar.style.width = Math.min(100, (mem.heapUsed / mem.threshold) * 100) + '%';
+            }
+        } catch (e) {
+            console.warn('Stats modal: erro ao obter memória:', e);
+        }
+    }
+
+    if (window.electronAPI && window.electronAPI.getConnectionHistory) {
+        try {
+            const history = await window.electronAPI.getConnectionHistory();
+            const list = document.getElementById('statsHistoryList');
+            if (list && Array.isArray(history)) {
+                if (history.length === 0) {
+                    list.innerHTML = '<div style="color:#4a7a9a;padding:12px;text-align:center;">Nenhuma conexão registrada</div>';
+                } else {
+                    list.innerHTML = history.slice().reverse().map(h => {
+                        const start = h.startedAt ? new Date(h.startedAt).toLocaleString('pt-BR') : '--';
+                        const dur = h.durationSeconds ? (h.durationSeconds >= 60 ? Math.floor(h.durationSeconds / 60) + 'min' : h.durationSeconds + 's') : '--';
+                        const reason = h.disconnectReason === 'manual'
+                            ? '<span class="hist-reason-manual">manual</span>'
+                            : h.disconnectReason === 'error'
+                                ? '<span class="hist-reason-error">erro</span>'
+                                : (h.status === 'active' ? '<span style="color:#2196F3">ativa</span>' : '--');
+                        return `<div class="hist-item"><span>${h.profileName || 'perfil'}</span><span>${start}</span><span>${dur}</span><span>${reason}</span></div>`;
+                    }).join('');
+                }
+            }
+        } catch (e) {
+            console.warn('Stats modal: erro ao obter histórico:', e);
+        }
+    }
+
+    drawStatsChart();
 }
 
 if (window.electronAPI && window.electronAPI.onVpnTrafficStats) {

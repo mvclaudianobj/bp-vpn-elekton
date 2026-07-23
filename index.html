@@ -11,6 +11,8 @@
             --color-primary: #0078BE;
             --color-accent: #00eeff;
             --color-bg: #0A162E;
+            --scrollbar-thumb: #0078BE;
+            --scrollbar-track: #061c2e;
         }
         body {
             background: var(--color-bg);
@@ -508,11 +510,11 @@
             flex-shrink: 0;
             border: 1px solid #0d2030;
             scrollbar-width: thin;
-            scrollbar-color: #0078BE #061c2e;
+            scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
         }
         .config-content::-webkit-scrollbar { width: 6px; }
-        .config-content::-webkit-scrollbar-track { background: #061c2e; }
-        .config-content::-webkit-scrollbar-thumb { background: #0078BE; border-radius: 3px; }
+        .config-content::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+        .config-content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
         .config-sections-container {
             display: flex;
@@ -808,16 +810,16 @@
         }
 
         .profiles-list::-webkit-scrollbar-track {
-            background: #1A2B4F;
+            background: var(--scrollbar-track);
         }
 
         .profiles-list::-webkit-scrollbar-thumb {
-            background: #007BFF;
+            background: var(--scrollbar-thumb);
             border-radius: 3px;
         }
 
         .profiles-list::-webkit-scrollbar-thumb:hover {
-            background: #0056b3;
+            background: var(--scrollbar-thumb);
         }
 
         .profile-credentials {
@@ -1247,8 +1249,25 @@
         .history-item .hi-date { color: #6c8fa8; font-size: 0.7rem; }
 
         #connection-history-list::-webkit-scrollbar { width: 4px; }
-        #connection-history-list::-webkit-scrollbar-track { background: #0a1628; }
-        #connection-history-list::-webkit-scrollbar-thumb { background: #007BFF; border-radius: 2px; }
+        #connection-history-list::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+        #connection-history-list::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+
+        .stat-box {
+            background: #001220;
+            border: 1px solid #0078BE22;
+            border-radius: 8px;
+            padding: 10px 16px;
+            min-width: 120px;
+            flex: 1;
+        }
+        .stat-label { font-size: 0.72rem; color: #4a7a9a; text-transform: uppercase; letter-spacing: 0.06em; }
+        .stat-value { font-size: 1.1rem; font-weight: 700; color: #e0eaf4; margin-top: 4px; }
+        .stat-bar { background: #0d2030; border-radius: 4px; height: 6px; margin-top: 6px; }
+        .stat-bar-fill { background: #0078BE; border-radius: 4px; height: 6px; transition: width 0.5s; }
+        #statsHistoryList .hist-item { padding: 8px 12px; border-bottom: 1px solid #0d2030; display:flex; justify-content:space-between; font-size:0.82rem; }
+        #statsHistoryList .hist-item:last-child { border-bottom: none; }
+        .hist-reason-manual { color: #4CAF50; }
+        .hist-reason-error { color: #f44336; }
 
         /* Disable scrolling */
     body {
@@ -1370,6 +1389,7 @@
                     <li><a class="dropdown-item weight-600" href="#" id="logsBtn"><img src="local-resource://icon-logs.png" alt="Icon Logs" class="mg-top-icon"> Logs da Conexão</a></li>
                     <li><a class="dropdown-item weight-600" href="#" id="appLogsBtn"><img src="local-resource://icon-log-system.png" alt="Icon Logs System" class="mg-top-icon"> Logs da Aplicação</a></li>
                     <li><a class="dropdown-item weight-600" href="#" id="updateBtn"><img src="local-resource://icon-update.png" alt="Icon Update" class="mg-top-icon"> Atualizações</a></li>
+                    <li><a class="dropdown-item weight-600" href="#" id="openStatsBtn">📊 Estatísticas VPN</a></li>
                      <li><a class="dropdown-item" href="#" id="minimizeBtn"><img src="local-resource://icon-minimize.png" alt="Icon Minimize" class="mg-top-icon"> Minimizar</a></li>
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="#" id="closeBtn"><img src="local-resource://icon-close.png" alt="Icon Close" class="mg-top-icon"> Fechar</a></li>
@@ -1746,6 +1766,78 @@
     ">
         <strong id="copyright">BluePex® CyberSecurity © Copyright 2025</strong>
         <span id="memoryUsage" style="display:block; margin-top:2px; font-size: 0.7rem; color: #6a9ab8; font-weight: 400;">RAM: -- MB</span>
+    </div>
+
+    <!-- Modal de Estatísticas VPN -->
+    <div class="config-modal" id="statsModal">
+        <div class="config-content">
+            <div class="config-header">
+                <h3 class="text-uppercase mt-2">📊 Estatísticas VPN</h3>
+                <button class="btn close-modal weight-600" id="statsCloseBtn">X</button>
+            </div>
+
+            <!-- RAM e CPU -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section full-width">
+                    <h4><i class="bi bi-memory"></i> Consumo de Recursos</h4>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:10px;">
+                        <div class="stat-box" id="statRss">
+                            <div class="stat-label">RAM (RSS)</div>
+                            <div class="stat-value" id="statRssVal">-- MB</div>
+                            <div class="stat-bar"><div class="stat-bar-fill" id="statRssBar" style="width:0%"></div></div>
+                        </div>
+                        <div class="stat-box" id="statHeap">
+                            <div class="stat-label">Heap Usado</div>
+                            <div class="stat-value" id="statHeapVal">-- MB</div>
+                            <div class="stat-bar"><div class="stat-bar-fill" id="statHeapBar" style="width:0%"></div></div>
+                        </div>
+                        <div class="stat-box" id="statThreshold">
+                            <div class="stat-label">Limite RAM</div>
+                            <div class="stat-value" style="color:#4CAF50;">100 MB</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráfico de Tráfego -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section full-width">
+                    <h4><i class="bi bi-graph-up"></i> Tráfego em Tempo Real</h4>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; margin-bottom:10px;">
+                        <div class="stat-box">
+                            <div class="stat-label">↓ Download</div>
+                            <div class="stat-value" id="statsSpeedIn">0 B/s</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">↑ Upload</div>
+                            <div class="stat-value" id="statsSpeedOut">0 B/s</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Total RX</div>
+                            <div class="stat-value" id="statsTotalIn">0 B</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Total TX</div>
+                            <div class="stat-value" id="statsTotalOut">0 B</div>
+                        </div>
+                    </div>
+                    <canvas id="statsTrafficChart" width="680" height="140" style="width:100%;border-radius:8px;background:#001220;"></canvas>
+                </div>
+            </div>
+
+            <!-- Histórico de Conexões -->
+            <div class="config-sections-container mt-2">
+                <div class="config-section full-width">
+                    <h4><i class="bi bi-clock-history"></i> Histórico de Conexões</h4>
+                    <div id="statsHistoryList" style="max-height:200px;overflow-y:auto;margin-top:10px;"></div>
+                </div>
+            </div>
+
+            <!-- Botão atualizar -->
+            <div style="text-align:right; margin-top:12px;">
+                <button class="btn btn-outline-info btn-sm" id="statsRefreshBtn"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
+            </div>
+        </div>
     </div>
 
     <!-- Bootstrap JS -->
