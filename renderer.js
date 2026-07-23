@@ -2543,6 +2543,21 @@ function applyThemeColors(primary, accent, bg) {
             el.style.borderColor = primary;
         }
     });
+
+    const statsContent = document.querySelector('#statsModal .config-content');
+    if (statsContent) {
+        statsContent.style.background = bg === '#0A162E' ? '#061c2e' : bg;
+        statsContent.style.borderColor = primary + '33';
+    }
+    document.querySelectorAll('.stat-box').forEach(el => {
+        el.style.borderColor = primary + '33';
+    });
+    document.querySelectorAll('.stat-bar-fill').forEach(el => {
+        if (el.style.background !== '#f44336') el.style.background = primary;
+    });
+    document.querySelectorAll('.stat-label').forEach(el => {
+        el.style.color = accent;
+    });
 }
 
 // RNF012: aplica logo customizado ao header e ao preview

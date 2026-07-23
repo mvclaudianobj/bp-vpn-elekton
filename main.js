@@ -5540,6 +5540,8 @@ ipcMain.handle('send-renderer-log', async (event, logData) => {
 
 ipcMain.on('adjust-window-size', (event, { width, height }) => {
   if (mainWindow) {
+    const settings = loadAppSettings();
+    if (settings.compactMode) return;
     mainWindow.setSize(width, Math.min(height, 800));
   }
 });
