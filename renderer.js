@@ -2829,20 +2829,24 @@ async function renderConnectionHistory() {
 }
 
 function startMemoryMonitor() {
-    const memEl = document.getElementById('memoryUsage');
-    if (!memEl) return;
     const update = async () => {
         try {
             if (window.electronAPI && window.electronAPI.getMemoryUsage) {
                 const mem = await window.electronAPI.getMemoryUsage();
-                memEl.textContent = `RAM: ${mem.rss} MB`;
-                if (mem.exceeded) memEl.style.color = '#f44336';
-                else memEl.style.color = '#6a9ab8';
+                const rssEl = document.getElementById('statRssVal');
+                const heapEl = document.getElementById('statHeapVal');
+                const rssBar = document.getElementById('statRssBar');
+                const heapBar = document.getElementById('statHeapBar');
+                if (rssEl) rssEl.textContent = mem.rss + ' MB';
+                if (heapEl) heapEl.textContent = mem.heapUsed + ' MB';
+                if (rssBar) { rssBar.style.width = Math.min(100, (mem.rss / mem.threshold) * 100) + '%'; rssBar.style.background = mem.exceeded ? '#f44336' : '#0078BE'; }
+                if (heapBar) heapBar.style.width = Math.min(100, (mem.heapUsed / mem.threshold) * 100) + '%';
+                if (mem.exceeded) { try { logToMain('SYSTEM', 'MEMORY_THRESHOLD_EXCEEDED', { rss: mem.rss }); } catch(_) {} }
             }
         } catch (e) {}
     };
     update();
-    setInterval(update, 5000);
+    setInterval(update, 10000);
 }
 
 function drawStatsChart() {
