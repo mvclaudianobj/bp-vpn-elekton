@@ -879,6 +879,7 @@
         body.compact .login-container {
             max-height: 420px;
             overflow-y: auto;
+            overflow-x: hidden;
             scrollbar-width: thin;
             scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
         }
@@ -1413,7 +1414,7 @@
                     <option value="">Selecione um perfil...</option>
                     <!-- Perfis serão carregados dinamicamente -->
                     </select>
-                    <div class="mt-1 text-end">
+                    <div id="configureProfilesWrapper" class="mt-1 text-end" style="display:none;">
                         <a href="#" id="configureProfilesLink" class="small">Configurar Perfis</a>
                     </div>
                 </div>

@@ -186,6 +186,7 @@ let selectedAzureOvpnFile = null;
 const statusEl = document.getElementById('status');
 const profileSelect = document.getElementById('profileSelect');
 const configureProfilesLink = document.getElementById('configureProfilesLink');
+const configureProfilesWrapper = document.getElementById('configureProfilesWrapper');
 const selectedProfileInfo = document.getElementById('selectedProfileInfo');
 const profileIcon = document.getElementById('profileIcon');
 const profileName = document.getElementById('profileName');
@@ -647,6 +648,7 @@ async function initializeApp() {
         try {
             if (window.electronAPI?.loadAppSettings) {
                 const savedSettings = await window.electronAPI.loadAppSettings();
+                document.body.classList.toggle('compact', !!savedSettings.compactMode);
                 if (savedSettings && savedSettings.colorPrimary) {
                     const elPrimary = document.getElementById('colorPrimary');
                     const elAccent = document.getElementById('colorAccent');
@@ -796,6 +798,8 @@ function populateProfileSelect() {
     console.log(`📋 Select populado com ${allProfiles.length} perfis`);
     const cfgLink = document.getElementById('configureProfilesLink');
     if (cfgLink) cfgLink.style.display = allProfiles.length > 0 ? 'none' : 'inline';
+    const cfgWrap = document.getElementById('configureProfilesWrapper');
+    if (cfgWrap) cfgWrap.style.display = allProfiles.length > 0 ? 'none' : 'block';
 }
 
 function getTwoFactorBadge(profile) {
