@@ -779,6 +779,17 @@ async function loadLastProfile() {
     }
 }
 
+function syncConfigureProfilesLinkVisibility() {
+    const hasProfiles = Array.isArray(allProfiles) && allProfiles.length > 0;
+    const cfgLink = document.getElementById('configureProfilesLink');
+    const cfgWrap = document.getElementById('configureProfilesWrapper');
+    if (cfgLink) cfgLink.style.display = hasProfiles ? 'none' : 'inline';
+    if (cfgWrap) {
+        cfgWrap.style.display = hasProfiles ? 'none' : 'block';
+        cfgWrap.hidden = hasProfiles;
+    }
+}
+
 function populateProfileSelect() {
     if (!profileSelect) return;
 
@@ -796,10 +807,7 @@ function populateProfileSelect() {
     });
 
     console.log(`📋 Select populado com ${allProfiles.length} perfis`);
-    const cfgLink = document.getElementById('configureProfilesLink');
-    if (cfgLink) cfgLink.style.display = allProfiles.length > 0 ? 'none' : 'inline';
-    const cfgWrap = document.getElementById('configureProfilesWrapper');
-    if (cfgWrap) cfgWrap.style.display = allProfiles.length > 0 ? 'none' : 'block';
+    syncConfigureProfilesLinkVisibility();
 }
 
 function getTwoFactorBadge(profile) {
@@ -2378,6 +2386,7 @@ if (window.electronAPI) {
                 await window.electronAPI.setCompactMode(enabled);
             }
             document.body.classList.toggle('compact', enabled);
+            syncConfigureProfilesLinkVisibility();
         });
     }
 
