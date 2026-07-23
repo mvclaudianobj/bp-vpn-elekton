@@ -1135,8 +1135,14 @@ function createSplashWindow() {
     const savedSettings = loadAppSettings();
     if (savedSettings.compactMode) {
       mainWindow.setSize(640, 520);
+      mainWindow.setResizable(false);
+      mainWindow.setMinimumSize(640, 520);
+      mainWindow.setMaximumSize(640, 520);
     } else {
       mainWindow.setSize(640, 712);
+      mainWindow.setResizable(false);
+      mainWindow.setMinimumSize(640, 712);
+      mainWindow.setMaximumSize(640, 712);
     }
 
    // Menu removido conforme solicitado
@@ -3642,7 +3648,12 @@ ipcMain.handle('save-app-settings', (_, settings) => saveAppSettings(settings));
 ipcMain.handle('set-compact-mode', (_, enabled) => {
   saveAppSettings({ compactMode: enabled });
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setSize(640, enabled ? 520 : 712);
+    const h = enabled ? 520 : 712;
+    mainWindow.setResizable(true);
+    mainWindow.setMinimumSize(640, h);
+    mainWindow.setMaximumSize(640, h);
+    mainWindow.setSize(640, h);
+    mainWindow.setResizable(false);
   }
   return { success: true };
 });
