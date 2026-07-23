@@ -1341,6 +1341,7 @@ function toggleConfigModal() {
                 window.electronAPI.loadAppSettings().then(settings => {
                     const tog = document.getElementById('compactModeToggle');
                     if (tog) tog.checked = !!settings.compactMode;
+                    document.body.classList.toggle('compact', !!settings.compactMode);
                     const colPri = document.getElementById('colorPrimary');
                     const colAcc = document.getElementById('colorAccent');
                     const colBg  = document.getElementById('colorBackground');
@@ -2372,6 +2373,7 @@ if (window.electronAPI) {
             if (window.electronAPI?.setCompactMode) {
                 await window.electronAPI.setCompactMode(enabled);
             }
+            document.body.classList.toggle('compact', enabled);
         });
     }
 
