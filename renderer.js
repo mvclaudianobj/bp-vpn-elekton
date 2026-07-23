@@ -1335,6 +1335,18 @@ function toggleConfigModal() {
             clearConfigStatus();
             configModal.style.display = 'flex';
             configModal.classList.add('show');
+            if (window.electronAPI?.loadAppSettings) {
+                window.electronAPI.loadAppSettings().then(settings => {
+                    const tog = document.getElementById('compactModeToggle');
+                    if (tog) tog.checked = !!settings.compactMode;
+                    const colPri = document.getElementById('colorPrimary');
+                    const colAcc = document.getElementById('colorAccent');
+                    const colBg  = document.getElementById('colorBackground');
+                    if (colPri && settings.colorPrimary) colPri.value = settings.colorPrimary;
+                    if (colAcc && settings.colorAccent)  colAcc.value = settings.colorAccent;
+                    if (colBg  && settings.colorBackground) colBg.value = settings.colorBackground;
+                }).catch(() => {});
+            }
         }
 
         logToMain('RENDERER', 'CONFIG_MODAL_TOGGLE', {
@@ -2357,9 +2369,6 @@ if (window.electronAPI) {
             const enabled = compactModeToggle.checked;
             if (window.electronAPI?.setCompactMode) {
                 await window.electronAPI.setCompactMode(enabled);
-            }
-            if (window.electronAPI?.saveAppSettings) {
-                await window.electronAPI.saveAppSettings({ compactMode: enabled });
             }
         });
     }
