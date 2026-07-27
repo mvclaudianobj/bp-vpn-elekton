@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const fsAsync = require('fs').promises;
 const os = require('os');
-const { spawn, exec, execSync } = require('child_process');
+const { spawn, exec, execSync, execFile, execFileSync } = require('child_process');
 const axios = require('axios');
 const { PublicClientApplication } = require('@azure/msal-node');
 const { dialog } = require('electron');
@@ -1651,7 +1651,8 @@ async function loadOvnFromProfile(profileId, preferredType = null) {
           success: true,
           content,
           path: selectedProfile.ovpnFile,
-          profileDir
+          profileDir,
+          profileName: selectedProfile.name || selectedProfile.ovpnFileName || selectedProfile.id || profileId
         };
       } catch (error) {
         console.log(`⚠️ Falha ao ler OVPN via metadata (${selectedProfile.ovpnFile}): ${error.message}`);
@@ -1947,6 +1948,7 @@ function detectTwoFactorRequirementFromOvpn(ovpnContent) {
 
 const historyPath = path.join(app.getPath('userData'), 'connection_history.json');
 let activeTunInterface = null;
+let dnsLeakProtectionApplied = false;
 let trafficStatsInterval = null;
 let activeHistoryEntry = null;
 let lastBytesIn = 0;
@@ -2011,45 +2013,62 @@ function readLinuxNetDevBytes(iface) {
   return { bytesIn: 0, bytesOut: 0 };
 }
 
+function isValidIpv4(value) {
+  if (typeof value !== 'string') return false;
+  const parts = value.trim().split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    if (part.length > 1 && part.startsWith('0')) return false;
+    const number = Number(part);
+    return number >= 0 && number <= 255;
+  });
+}
+
+function getDnsLeakProtectionSettings() {
+  const settings = loadAppSettings();
+  const dns = [];
+  if (isValidIpv4(settings.primaryDns)) dns.push(settings.primaryDns.trim());
+  if (isValidIpv4(settings.secondaryDns)) dns.push(settings.secondaryDns.trim());
+  return {
+    enabled: settings.dnsLeakProtectionEnabled === true,
+    dns: dns.length ? dns : ['1.1.1.1', '1.0.0.1']
+  };
+}
+
 async function applyDnsLeakProtection(tunInterface) {
   if (process.platform === 'linux' && tunInterface) {
+    const settings = getDnsLeakProtectionSettings();
+    if (!settings.enabled) {
+      dnsLeakProtectionApplied = false;
+      logger.log('VPN', 'DNS_LEAK_PROTECTION_SKIPPED', { tunInterface, reason: 'disabled' });
+      return;
+    }
     try {
-      execSync(`resolvectl dns ${tunInterface} 1.1.1.1 1.0.0.1 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
-      logger.log('VPN', 'DNS_LEAK_PROTECTION_APPLIED', { tunInterface, dns: ['1.1.1.1', '1.0.0.1'] });
+      execFileSync('resolvectl', ['dns', tunInterface, ...settings.dns], { stdio: 'ignore', timeout: 3000 });
+      dnsLeakProtectionApplied = true;
+      logger.log('VPN', 'DNS_LEAK_PROTECTION_APPLIED', { tunInterface, dns: settings.dns });
     } catch (_) {}
   }
 }
 
 async function revertDnsLeakProtection(tunInterface) {
-  if (process.platform === 'linux' && tunInterface) {
+  if (process.platform === 'linux' && tunInterface && dnsLeakProtectionApplied) {
     try {
-      execSync(`resolvectl revert ${tunInterface} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
+      execFileSync('resolvectl', ['revert', tunInterface], { stdio: 'ignore', timeout: 3000 });
+      dnsLeakProtectionApplied = false;
       logger.log('VPN', 'DNS_LEAK_PROTECTION_REVERTED', { tunInterface });
     } catch (_) {}
   }
 }
 
 function startTrafficStats(profileName, profileType) {
-  const tun = detectActiveTunInterface();
-  activeTunInterface = tun;
+  activeTunInterface = detectActiveTunInterface();
   lastBytesIn = 0;
   lastBytesOut = 0;
 
-  if (tun) {
-    const initial = readLinuxNetDevBytes(tun);
-    lastBytesIn = initial.bytesIn;
-    lastBytesOut = initial.bytesOut;
-  }
-
-  if (trafficStatsInterval) clearInterval(trafficStatsInterval);
-
-  trafficStatsInterval = setInterval(() => {
-    if (!activeTunInterface || !mainWindow || mainWindow.isDestroyed()) return;
-    const stats = readLinuxNetDevBytes(activeTunInterface);
-    const speedIn = Math.max(0, stats.bytesIn - lastBytesIn);
-    const speedOut = Math.max(0, stats.bytesOut - lastBytesOut);
-    lastBytesIn = stats.bytesIn;
-    lastBytesOut = stats.bytesOut;
+  const sendTrafficSnapshot = (stats, speedIn = 0, speedOut = 0) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.webContents.send('vpn-traffic-stats', {
       bytesIn: stats.bytesIn,
       bytesOut: stats.bytesOut,
@@ -2060,6 +2079,34 @@ function startTrafficStats(profileName, profileType) {
       activeHistoryEntry.bytesIn = stats.bytesIn;
       activeHistoryEntry.bytesOut = stats.bytesOut;
     }
+  };
+
+  if (activeTunInterface) {
+    const initial = readLinuxNetDevBytes(activeTunInterface);
+    lastBytesIn = initial.bytesIn;
+    lastBytesOut = initial.bytesOut;
+    sendTrafficSnapshot(initial);
+  }
+
+  if (trafficStatsInterval) clearInterval(trafficStatsInterval);
+
+  trafficStatsInterval = setInterval(() => {
+    if (!activeTunInterface) {
+      activeTunInterface = detectActiveTunInterface();
+      if (!activeTunInterface) return;
+      const initial = readLinuxNetDevBytes(activeTunInterface);
+      lastBytesIn = initial.bytesIn;
+      lastBytesOut = initial.bytesOut;
+      sendTrafficSnapshot(initial);
+      return;
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const stats = readLinuxNetDevBytes(activeTunInterface);
+    const speedIn = Math.max(0, stats.bytesIn - lastBytesIn);
+    const speedOut = Math.max(0, stats.bytesOut - lastBytesOut);
+    lastBytesIn = stats.bytesIn;
+    lastBytesOut = stats.bytesOut;
+    sendTrafficSnapshot(stats, speedIn, speedOut);
   }, 2000);
 }
 
@@ -2623,10 +2670,10 @@ ipcMain.handle('connect-openvpn-userpass-profile', async (event, profileId, user
             console.log('✅ [MAIN] VPN conectada com sucesso!');
              logger.logConnectionSuccess(profileId, 'user', { pid: bluepexPid, wrapperPid: vpnProcess.pid });
 
-             const userProfileName = (allProfiles && allProfiles.length > 0 ? allProfiles : []).find && undefined;
-             activeHistoryEntry = {
-               id: connectionId,
-               profileName: profileId,
+              const userProfileName = ovpnResult.profileName || profileId;
+              activeHistoryEntry = {
+                id: connectionId,
+                profileName: userProfileName,
                profileType: 'userpass',
                startedAt: new Date().toISOString(),
                endedAt: null,
@@ -3449,6 +3496,65 @@ ipcMain.handle('detect-2fa-requirement', async (event, profileId) => {
     
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('prepare-linux-elevation', async (event, profileId) => {
+  if (process.platform !== 'linux') {
+    return { success: true, skipped: true, platform: process.platform };
+  }
+
+  try {
+    await ensurePolkitRules();
+    const policyDest = '/usr/share/polkit-1/actions/com.bpvpn.pkexec.policy';
+    const rulesDest  = '/usr/share/polkit-1/rules.d/com.bluepex.vpn.rules';
+    const pkexecAvailable = await checkPkexecAvailable();
+    const ready = fs.existsSync(policyDest) && fs.existsSync(rulesDest);
+    const openvpnPath = await new Promise((resolve) => {
+      exec('which openvpn', (error, stdout) => {
+        if (error) resolve('openvpn');
+        else resolve(stdout.trim() || 'openvpn');
+      });
+    });
+    const preauthResult = await new Promise((resolve) => {
+      if (!pkexecAvailable) {
+        resolve({ ok: false, reason: 'pkexec_unavailable' });
+        return;
+      }
+
+      execFile('pkexec', [openvpnPath, '--version'], { timeout: 15000 }, (error) => {
+        if (error) {
+          resolve({
+            ok: false,
+            reason: error.killed ? 'timeout' : 'pkexec_failed',
+            code: error.code || null,
+            signal: error.signal || null
+          });
+          return;
+        }
+
+        resolve({ ok: true });
+      });
+    });
+
+    logger.log('SYSTEM', 'LINUX_ELEVATION_PREPARED', {
+      profileId,
+      pkexecAvailable,
+      polkitRulesReady: ready,
+      displayAvailable: !!process.env.DISPLAY,
+      openvpnPath,
+      preauthOk: preauthResult.ok,
+      preauthFailure: preauthResult.ok ? null : {
+        reason: preauthResult.reason,
+        code: preauthResult.code,
+        signal: preauthResult.signal
+      }
+    });
+
+    return { success: true, pkexecAvailable, polkitRulesReady: ready, openvpnPath, preauthOk: preauthResult.ok };
+  } catch (error) {
+    logger.logSystemError('LINUX_ELEVATION_PREPARE_FAILED', error, { profileId });
+    return { success: true, preauthOk: false, error: error.message };
   }
 });
 
@@ -4770,17 +4876,24 @@ ipcMain.handle('get-kill-switch-status', () => {
   return { enabled: killSwitchEnabled, active: killSwitchActive };
 });
 
-// RNF003: monitoramento de consumo de RAM < 100MB
 ipcMain.handle('get-memory-usage', () => {
   const m = process.memoryUsage();
+  const rss = Math.round(m.rss / 1024 / 1024);
+  const warningThreshold = 250;
+  const criticalThreshold = 350;
+  const level = rss >= criticalThreshold ? 'critical' : (rss >= warningThreshold ? 'warning' : 'normal');
   return {
-    rss: Math.round(m.rss / 1024 / 1024),
+    rss,
     heapUsed: Math.round(m.heapUsed / 1024 / 1024),
     heapTotal: Math.round(m.heapTotal / 1024 / 1024),
     external: Math.round(m.external / 1024 / 1024),
     arrayBuffers: Math.round(m.arrayBuffers / 1024 / 1024),
-    threshold: 100,
-    exceeded: Math.round(m.rss / 1024 / 1024) > 100
+    threshold: warningThreshold,
+    warningThreshold,
+    criticalThreshold,
+    level,
+    exceeded: level !== 'normal',
+    critical: level === 'critical'
   };
 });
 

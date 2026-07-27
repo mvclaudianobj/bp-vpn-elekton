@@ -1615,8 +1615,22 @@
                             <input type="checkbox" id="killSwitchToggle">
                             <label for="killSwitchToggle" class="weight-600">Kill Switch</label>
                         </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="dnsLeakProtectionToggle">
+                            <label for="dnsLeakProtectionToggle" class="weight-600">Proteção contra vazamento de DNS</label>
+                        </div>
                     </div>
                     <p class="mt-1" style="font-size:0.85em;color:#aaa;">Bloqueia todo tráfego de rede quando a VPN cai inesperadamente. Liberado ao conectar ou desconectar manualmente.</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;">
+                        <div style="flex:1;min-width:180px;">
+                            <label for="primaryDnsInput" class="form-label">DNS primário</label>
+                            <input type="text" id="primaryDnsInput" class="form-control form-control-sm" placeholder="1.1.1.1">
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label for="secondaryDnsInput" class="form-label">DNS secundário</label>
+                            <input type="text" id="secondaryDnsInput" class="form-control form-control-sm" placeholder="1.0.0.1">
+                        </div>
+                    </div>
                     <div id="killSwitchStatus" style="font-size:0.8em;display:none;"></div>
                 </div>
             </div>
@@ -1670,9 +1684,9 @@
                             style="width:40px;height:40px;object-fit:contain;border-radius:6px;border:1px solid #0078BE;background:#001A2E;">
                         <button type="button" class="btn btn-outline-info btn-sm" id="customLogoChangeBtn">Alterar logo</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="customLogoRemoveBtn">Remover</button>
-                        <input type="file" id="customLogoFileInput" accept="image/*" style="display:none;">
+                        <input type="file" id="customLogoFileInput" accept=".jpeg,.jpg,.bmp,.png,.gif,image/jpeg,image/bmp,image/png,image/gif" style="display:none;">
                     </div>
-                    <p class="mt-1" style="font-size:0.85em;color:#aaa;">Substitua o logotipo exibido no topo da aplicação por uma imagem personalizada.</p>
+                    <p class="mt-1" style="font-size:0.85em;color:#aaa;">Recomenda-se imagens no formato (JPEG, JPG, BMP, PNG, GIF) por 120x120 pixels</p>
                 </div>
             </div>
         </div>
@@ -1798,8 +1812,8 @@
                             <div class="stat-bar"><div class="stat-bar-fill" id="statHeapBar" style="width:0%"></div></div>
                         </div>
                         <div class="stat-box" id="statThreshold">
-                            <div class="stat-label">Limite RAM</div>
-                            <div class="stat-value" style="color:#4CAF50;">100 MB</div>
+                            <div class="stat-label" id="statThresholdLabel">Limite RAM</div>
+                            <div class="stat-value" id="statThresholdVal" style="color:#0078BE;">Alerta 250 MB / Crítico 350 MB</div>
                         </div>
                     </div>
                 </div>

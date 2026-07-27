@@ -73,6 +73,7 @@ globalThis.electronAPI = {
 
   // Detecção de 2FA
   detect2FARequirement: (profileId) => ipcRenderer.invoke('detect-2fa-requirement', profileId),
+  prepareLinuxElevation: (profileId) => ipcRenderer.invoke('prepare-linux-elevation', profileId),
 
   // Desafio de autenticação
   sendChallengeResponse: (response) => ipcRenderer.invoke('send-challenge-response', response),

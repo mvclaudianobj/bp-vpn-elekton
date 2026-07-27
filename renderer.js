@@ -986,6 +986,21 @@ function getFriendlyIpcErrorMessage(error) {
     return message;
 }
 
+function sanitizeChallengeInput(inputEl) {
+    const sanitized = String(inputEl.value || '').replace(/\D/g, '').slice(0, 6);
+    if (inputEl.value !== sanitized) inputEl.value = sanitized;
+    return sanitized;
+}
+
+function bindChallengeAutoSubmit(inputEl, onSubmit) {
+    const onInput = () => {
+        const token = sanitizeChallengeInput(inputEl);
+        if (token.length === 6) onSubmit();
+    };
+    inputEl.addEventListener('input', onInput);
+    return () => inputEl.removeEventListener('input', onInput);
+}
+
 function promptTotpTokenBeforeConnection(message) {
     return new Promise((resolve) => {
         const modal = document.getElementById('challengeModal');
@@ -1016,19 +1031,25 @@ function promptTotpTokenBeforeConnection(message) {
         submitBtn.replaceWith(submitClone);
         cancelBtn.replaceWith(cancelClone);
 
+        let submitted = false;
+        let unbindAutoSubmit = null;
+
         const closeModal = (value) => {
             modal.style.display = 'none';
             inputEl.value = '';
             inputEl.removeEventListener('keydown', onKeyDown);
+            if (unbindAutoSubmit) unbindAutoSubmit();
             resolve(value);
         };
 
         const onSubmit = () => {
-            const token = inputEl.value.trim();
+            if (submitted) return;
+            const token = sanitizeChallengeInput(inputEl);
             if (!/^\d{6}$/.test(token)) {
                 showStatus('Token deve ser exatamente 6 dígitos numéricos.', 'alert');
                 return;
             }
+            submitted = true;
             closeModal(token);
         };
 
@@ -1048,6 +1069,7 @@ function promptTotpTokenBeforeConnection(message) {
         submitClone.addEventListener('click', onSubmit);
         cancelClone.addEventListener('click', onCancel);
         inputEl.addEventListener('keydown', onKeyDown);
+        unbindAutoSubmit = bindChallengeAutoSubmit(inputEl, onSubmit);
         setTimeout(() => inputEl.focus(), 100);
     });
 }
@@ -1171,6 +1193,13 @@ async function handleConnect() {
                 } catch (_) {}
 
                 if (twoFaCheck && twoFaCheck.requires2FA) {
+                    if (window.electronAPI.prepareLinuxElevation) {
+                        try {
+                            await window.electronAPI.prepareLinuxElevation(currentProfile.id);
+                        } catch (prepError) {
+                            console.warn('Falha ao preparar elevação Linux antes do 2FA:', prepError?.message || prepError);
+                        }
+                    }
                     const tokenResult = await promptTotpTokenBeforeConnection('Este perfil requer 2FA. Informe o token TOTP para iniciar a conexão.');
                     if (tokenResult === null) {
                         showStatus('Autenticação 2FA cancelada', 'alert');
@@ -2159,8 +2188,7 @@ if (window.electronAPI) {
             secondsLeft--;
             timerEl.textContent = `Tempo restante: ${secondsLeft} segundos`;
             if (secondsLeft <= 0) {
-                clearInterval(timerInterval);
-                modal.style.display = 'none';
+                closeModal();
                 showStatus('Tempo esgotado para o token 2FA', 'error');
                 if (window.electronAPI.cancelChallenge) {
                     window.electronAPI.cancelChallenge().catch((err) => {
@@ -2170,24 +2198,36 @@ if (window.electronAPI) {
             }
         }, 1000);
 
+        let submitted = false;
+        let unbindAutoSubmit = null;
+        const submitClone = submitBtn.cloneNode(true);
+        const cancelClone = cancelBtn.cloneNode(true);
+        submitBtn.replaceWith(submitClone);
+        cancelBtn.replaceWith(cancelClone);
+
         const closeModal = () => {
             clearInterval(timerInterval);
             modal.style.display = 'none';
             inputEl.value = '';
+            inputEl.removeEventListener('keydown', onKeyDown);
+            if (unbindAutoSubmit) unbindAutoSubmit();
         };
 
         // Enviar token
         const onSubmit = async () => {
-            const token = inputEl.value.trim();
+            if (submitted) return;
+            const token = sanitizeChallengeInput(inputEl);
             if (!/^\d{6}$/.test(token)) {
                 showStatus('Token deve ser exatamente 6 dígitos numéricos.', 'alert');
                 return;
             }
+            submitted = true;
             console.log('📤 Enviando token 2FA');
             try {
                 await window.electronAPI.sendChallengeResponse(token);
                 closeModal();
             } catch (err) {
+                submitted = false;
                 console.error('Erro ao enviar token 2FA:', err);
                 showStatus('Erro ao enviar token 2FA. Tente novamente.', 'error');
             }
@@ -2210,14 +2250,10 @@ if (window.electronAPI) {
             if (e.key === 'Escape') onCancel();
         };
 
-        // Limpar listeners anteriores e registrar novos
-        submitBtn.replaceWith(submitBtn.cloneNode(true));
-        cancelBtn.replaceWith(cancelBtn.cloneNode(true));
-        inputEl.removeEventListener('keydown', onKeyDown);
-
-        document.getElementById('submitChallengeBtn').addEventListener('click', onSubmit);
-        document.getElementById('cancelChallengeBtn').addEventListener('click', onCancel);
+        submitClone.addEventListener('click', onSubmit);
+        cancelClone.addEventListener('click', onCancel);
         inputEl.addEventListener('keydown', onKeyDown);
+        unbindAutoSubmit = bindChallengeAutoSubmit(inputEl, onSubmit);
     });
 
     if (window.electronAPI.onVpnChallengeExpired) {
@@ -2415,6 +2451,39 @@ if (window.electronAPI) {
         });
     }
 
+    const dnsLeakProtectionToggle = document.getElementById('dnsLeakProtectionToggle');
+    const primaryDnsInput = document.getElementById('primaryDnsInput');
+    const secondaryDnsInput = document.getElementById('secondaryDnsInput');
+    if (dnsLeakProtectionToggle && primaryDnsInput && secondaryDnsInput && window.electronAPI?.loadAppSettings) {
+        const syncDnsInputs = () => {
+            primaryDnsInput.disabled = !dnsLeakProtectionToggle.checked;
+            secondaryDnsInput.disabled = !dnsLeakProtectionToggle.checked;
+        };
+        const saveDnsSettings = async () => {
+            if (window.electronAPI?.saveAppSettings) {
+                await window.electronAPI.saveAppSettings({
+                    dnsLeakProtectionEnabled: dnsLeakProtectionToggle.checked,
+                    primaryDns: primaryDnsInput.value.trim(),
+                    secondaryDns: secondaryDnsInput.value.trim()
+                });
+            }
+        };
+        window.electronAPI.loadAppSettings().then((settings) => {
+            dnsLeakProtectionToggle.checked = settings.dnsLeakProtectionEnabled === true;
+            primaryDnsInput.value = settings.primaryDns || '';
+            secondaryDnsInput.value = settings.secondaryDns || '';
+            syncDnsInputs();
+        }).catch(() => {
+            syncDnsInputs();
+        });
+        dnsLeakProtectionToggle.addEventListener('change', async () => {
+            syncDnsInputs();
+            await saveDnsSettings();
+        });
+        primaryDnsInput.addEventListener('change', saveDnsSettings);
+        secondaryDnsInput.addEventListener('change', saveDnsSettings);
+    }
+
     // RF004: sessão limpa pelo processo principal (após logout)
     window.electronAPI.onSessionCleared(() => {
         vpnPid = null;
@@ -2438,14 +2507,39 @@ if (window.electronAPI) {
         customLogoFileInput.addEventListener('change', async (event) => {
             const file = event.target.files && event.target.files[0];
             if (!file) return;
+            const allowedExtensions = ['jpeg', 'jpg', 'bmp', 'png', 'gif'];
+            const allowedMimeTypes = ['image/jpeg', 'image/bmp', 'image/png', 'image/gif'];
+            const extension = file.name.split('.').pop().toLowerCase();
+            if (!allowedExtensions.includes(extension) || !allowedMimeTypes.includes(file.type)) {
+                showStatus('Logo inválido. Use apenas arquivos JPEG, JPG, BMP, PNG ou GIF.', 'alert');
+                customLogoFileInput.value = '';
+                return;
+            }
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const base64 = e.target.result;
-                await window.electronAPI.saveCustomLogo(base64);
-                applyCustomLogo(base64);
+                const image = new Image();
+                image.onload = async () => {
+                    if (image.naturalWidth !== 120 || image.naturalHeight !== 120) {
+                        showStatus('Logo inválido. A imagem deve ter exatamente 120x120 pixels.', 'alert');
+                        customLogoFileInput.value = '';
+                        return;
+                    }
+                    await window.electronAPI.saveCustomLogo(base64);
+                    applyCustomLogo(base64);
+                    customLogoFileInput.value = '';
+                };
+                image.onerror = () => {
+                    showStatus('Logo inválido. Não foi possível carregar a imagem selecionada.', 'alert');
+                    customLogoFileInput.value = '';
+                };
+                image.src = base64;
+            };
+            reader.onerror = () => {
+                showStatus('Logo inválido. Não foi possível ler o arquivo selecionado.', 'alert');
+                customLogoFileInput.value = '';
             };
             reader.readAsDataURL(file);
-            customLogoFileInput.value = '';
         });
     }
 
@@ -2869,20 +2963,57 @@ async function renderConnectionHistory() {
     }
 }
 
+let lastMemoryLevel = null;
+
+function getMemoryLevelColor(level) {
+    if (level === 'critical') return '#f44336';
+    if (level === 'warning') return '#ffc107';
+    return '#0078BE';
+}
+
+function updateMemoryStats(mem) {
+    const rssEl = document.getElementById('statRssVal');
+    const heapEl = document.getElementById('statHeapVal');
+    const rssBar = document.getElementById('statRssBar');
+    const heapBar = document.getElementById('statHeapBar');
+    const thresholdEl = document.getElementById('statThresholdVal');
+    const thresholdLabelEl = document.getElementById('statThresholdLabel');
+    const criticalThreshold = mem.criticalThreshold || mem.threshold || 350;
+    const warningThreshold = mem.warningThreshold || mem.threshold || 250;
+    const color = getMemoryLevelColor(mem.level);
+    if (rssEl) rssEl.textContent = mem.rss + ' MB';
+    if (heapEl) heapEl.textContent = mem.heapUsed + ' MB';
+    if (rssBar) {
+        rssBar.style.width = Math.min(100, (mem.rss / criticalThreshold) * 100) + '%';
+        rssBar.style.background = color;
+    }
+    if (heapBar) {
+        heapBar.style.width = Math.min(100, (mem.heapUsed / criticalThreshold) * 100) + '%';
+        heapBar.style.background = color;
+    }
+    if (thresholdEl) {
+        thresholdEl.textContent = 'Alerta ' + warningThreshold + ' MB / Crítico ' + criticalThreshold + ' MB';
+        thresholdEl.style.color = color;
+    }
+    if (thresholdLabelEl) thresholdLabelEl.textContent = mem.level === 'critical' ? 'Limite RAM Crítico' : (mem.level === 'warning' ? 'Limite RAM Alerta' : 'Limite RAM');
+}
+
+function logMemoryLevelChange(mem) {
+    if (lastMemoryLevel === mem.level) return;
+    lastMemoryLevel = mem.level;
+    try {
+        const payload = { rss: mem.rss, level: mem.level, warningThreshold: mem.warningThreshold, criticalThreshold: mem.criticalThreshold };
+        logToMain('SYSTEM', mem.level === 'normal' ? 'MEMORY_USAGE_NORMALIZED' : 'MEMORY_THRESHOLD_EXCEEDED', payload);
+    } catch(_) {}
+}
+
 function startMemoryMonitor() {
     const update = async () => {
         try {
             if (window.electronAPI && window.electronAPI.getMemoryUsage) {
                 const mem = await window.electronAPI.getMemoryUsage();
-                const rssEl = document.getElementById('statRssVal');
-                const heapEl = document.getElementById('statHeapVal');
-                const rssBar = document.getElementById('statRssBar');
-                const heapBar = document.getElementById('statHeapBar');
-                if (rssEl) rssEl.textContent = mem.rss + ' MB';
-                if (heapEl) heapEl.textContent = mem.heapUsed + ' MB';
-                if (rssBar) { rssBar.style.width = Math.min(100, (mem.rss / mem.threshold) * 100) + '%'; rssBar.style.background = mem.exceeded ? '#f44336' : '#0078BE'; }
-                if (heapBar) heapBar.style.width = Math.min(100, (mem.heapUsed / mem.threshold) * 100) + '%';
-                if (mem.exceeded) { try { logToMain('SYSTEM', 'MEMORY_THRESHOLD_EXCEEDED', { rss: mem.rss }); } catch(_) {} }
+                updateMemoryStats(mem);
+                logMemoryLevelChange(mem);
             }
         } catch (e) {}
     };
@@ -2959,19 +3090,7 @@ async function refreshStatsModal() {
     if (window.electronAPI && window.electronAPI.getMemoryUsage) {
         try {
             const mem = await window.electronAPI.getMemoryUsage();
-            const rssEl = document.getElementById('statRssVal');
-            const heapEl = document.getElementById('statHeapVal');
-            const rssBar = document.getElementById('statRssBar');
-            const heapBar = document.getElementById('statHeapBar');
-            if (rssEl) rssEl.textContent = mem.rss + ' MB';
-            if (heapEl) heapEl.textContent = mem.heapUsed + ' MB';
-            if (rssBar) {
-                rssBar.style.width = Math.min(100, (mem.rss / mem.threshold) * 100) + '%';
-                rssBar.style.background = mem.exceeded ? '#f44336' : '#0078BE';
-            }
-            if (heapBar) {
-                heapBar.style.width = Math.min(100, (mem.heapUsed / mem.threshold) * 100) + '%';
-            }
+            updateMemoryStats(mem);
         } catch (e) {
             console.warn('Stats modal: erro ao obter memória:', e);
         }
