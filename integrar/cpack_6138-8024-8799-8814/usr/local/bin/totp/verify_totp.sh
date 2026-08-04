@@ -24,7 +24,7 @@ if [ ! -f "$VERIFY_PY" ]; then
     exit 1
 fi
 
-python3 "$VERIFY_PY" "$USERNAME" "$TOTP_CODE"
+python3.8 "$VERIFY_PY" "$USERNAME" "$TOTP_CODE"
 RC=$?
 
 if [ $RC -eq 0 ]; then
